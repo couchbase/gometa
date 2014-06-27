@@ -345,10 +345,10 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 	
 	// Get epoch from follower message		
 	info := packet.(LeaderInfoMsg)
-	epoch := info.GetEpoch()
+	epoch := info.GetAcceptedEpoch()
 
-	currentEpoch := l.handler.getCurrentEpoch() 	
-	if epoch > l.handler.getAcceptedEpoch() {
+	currentEpoch := l.handler.GetCurrentEpoch() 	
+	if epoch > l.handler.GetAcceptedEpoch() {
 		// update the accepted epoch based on the quorum result
 		l.handler.NotifyNewAcceptedEpoch(epoch)
 	} else {
