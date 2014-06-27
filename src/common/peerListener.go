@@ -1,0 +1,159 @@
+package common 
+
+import (
+	"net"
+	"sync"
+	"log"
+)
+
+/////////////////////////////////////////////////
+// Type Declaration 
+/////////////////////////////////////////////////
+
+//
+// PeerListener - Listener for TCP connection
+// If there is a new connection request, send
+// the new connection through connch.  If 
+// the listener is closed, connch will be closed.
+//
+type PeerListener struct {
+	naddr		 string
+	listener     net.Listener
+	connch       chan net.Conn
+	mutex        sync.Mutex
+	isClosed     bool
+}
+
+/////////////////////////////////////////////////
+// Public Function
+/////////////////////////////////////////////////
+
+//
+// Start a new PeerListener for listening to new connection request for 
+// processing messages.   
+// laddr - local network address (host:port)
+//
+func StartPeerListener(laddr string) (*PeerListener, error) {
+	
+	listener := &PeerListener{naddr : laddr,
+							  connch : make(chan net.Conn, MAX_PEERS),
+							  isClosed : false}
+	
+	li, err := net.Listen(MESSAGE_TRANSPORT_TYPE, laddr)
+	if err != nil {
+		return nil, err
+	}
+	listener.listener = li
+
+	go listener.listen()	
+	return listener, nil
+}
+
+//
+// Get a connection for election votes.  
+//
+func GetElectionConn(laddr string) (net.PacketConn, error) {
+
+	addrObj, err := net.ResolveUDPAddr(ELECTION_TRANSPORT_TYPE, laddr)
+	if err != nil {
+		return nil, err
+	}
+	
+	conn, err := net.ListenUDP(ELECTION_TRANSPORT_TYPE, addrObj)
+	if err != nil {
+		return nil, err
+	}
+	
+	return conn, nil
+}
+
+//
+// Get the channel for new peer connection request.
+// Return nil if the listener is closed. The consumer
+// should also check if the channel is closed when
+// dequeueing from the channel.
+//
+func (l *PeerListener) ConnChannel() (<-chan net.Conn) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	if !l.isClosed {
+		return (<-chan net.Conn)(l.connch)
+	}
+	return nil
+}
+
+//
+// Close the PeerListener.  The connection channel will be closed
+// as well.  This function is syncronized and will not close the
+// channel twice.
+//	
+func (l *PeerListener) Close() bool {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	if !l.isClosed { 
+		l.isClosed = true
+		
+		SafeRun("PeerListener.Close()", 
+					func() {
+						close(l.connch)
+					})
+		SafeRun("PeerListener.Close()", 
+					func() {
+						l.listener.Close()
+					})
+		return true
+	}
+	
+	return false 
+}
+
+/////////////////////////////////////////////////
+// Private Function 
+/////////////////////////////////////////////////
+
+//
+// Goroutine.  This function listens to any incoming new network
+// request.  It will send the new connection onto the connection
+// channel (connch).   If there is an error or the listener is
+// closed, this function will terminate, as well as closing the
+// connection channel (if it is not yet closed).
+//
+func (l *PeerListener) listen() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in PeerListener.listen() : %s\n", r)
+		}
+		
+		// This will close the connection channel 
+		l.Close()
+	}()
+	
+	for {
+		conn, err := l.listener.Accept()
+		if err != nil {
+			// if there is error, just terminate the listener loop.
+			break	
+		}
+		
+		// We get a new connection.  Pass it to the channel and let
+		// the consumer handle the connection.
+		l.queue(conn)
+	}
+}
+
+//
+// Put the connection onto the channel for consumption.
+// This function acquires the mutex to ensure that the 
+// there is no goroutine concurrently try to close
+// the listener.
+//
+func (l *PeerListener) queue(conn net.Conn) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+
+	if !l.isClosed {
+		l.connch <- conn
+	}
+}
