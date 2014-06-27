@@ -1,0 +1,67 @@
+package message;
+
+message Proposal {
+    required uint32          version   = 1; // protocol version TBD
+   	required uint64          txnid     = 2; 
+   	required string          fid       = 3;
+   	required uint32          opCode    = 4; 
+   	required string          key       = 5; 
+   	required bytes           content   = 6;
+}
+
+message Accept {
+    required uint32          version   = 1; // protocol version TBD
+   	required uint64          txnid     = 2; 
+   	required string          fid       = 3; 
+}
+
+message Commit {
+    required uint32          version   = 1; // protocol version TBD
+   	required uint64          txnid     = 2; 
+}
+
+message Vote {
+    required uint32          version   = 1; // protocol version TBD
+   	required uint64          round     = 2; // round
+   	required uint32          status    = 3; // status - ELECTING,LEADING,FOLLOWING 
+   	required uint32          epoch     = 4; // epoch (leader term)
+   	required string          cndId     = 5; // proposed candidate Id
+   	required uint64          cndTxnId  = 6; // proposed candidate TxnId
+}
+
+// TODO : Cleanup
+message Ballot {
+    required uint32          version   = 1; // protocol version TBD
+   	required uint64          id        = 2; 
+}
+
+message FollowerInfo {
+    required uint32          version   		= 1; // protocol version TBD
+   	required uint32          acceptedEpoch  = 2; 
+}
+
+message EpochAck {
+    required uint32          version        = 1; // protocol version TBD
+   	required uint32          currentEpoch   = 2; 
+}
+
+message LeaderInfo {
+    required uint32          version   		= 1; // protocol version TBD
+   	required uint32          acceptedEpoch  = 2; 
+}
+
+message NewLeader {
+    required uint32          version   = 1; // protocol version TBD
+   	required uint32          epoch     = 2; 
+}
+
+message NewLeaderAck {
+    required uint32          version   = 1; // protocol version TBD
+}
+
+message LogEntry {
+    required uint32          version   = 1; // protocol version TBD
+   	required uint32          opCode    = 2; 
+   	required string          key       = 3; 
+   	required bytes           content   = 4;
+}
