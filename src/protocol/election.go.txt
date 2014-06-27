@@ -1,0 +1,695 @@
+package protocol
+
+import (
+	"net"
+	"time"
+	"sync"
+	"common"
+)
+
+/////////////////////////////////////////////////////////////////////////////
+// Leader Election for ZK 
+/////////////////////////////////////////////////////////////////////////////
+
+/*
+- create a initial vote for the local node (sid, lastLoggedZxid -> zkDB.getDataTreeLastProcessZxid)
+  - last logged zxid is recorded at time of processing a commit (FinalRequestProcessor)
+- set the initial vote as the current vote
+- create the next epoch (xid) for this round of voting 
+- each server also know about the existence of other peer 
+- send/recieve a datagram packet for each peer in round robin manner
+  - in QuorumPeer responder thread
+     - if peer is looking
+	   - return its current <sid, zxid>
+     - if peer is leader
+	   - return my sid and lastProposedZxid (pending proposal from request)
+	 - if peer is follower
+	   - return its leader sid + my DataTreeLastProcessedZxid in ZK DB @loadData() 
+	   
+- check if response has the same xid, if not go to next participant in the list   
+  - record that receiving a response from this peer 
+  - record the vote recieved from this peer (sid, zxid)
+  
+- count votes
+  - only count vote if the sid is from a known peer 
+  - keep track of the max zxid for a particular sid
+  - set the max zxid (of particular sid) for all the votes on that has the same sid
+  - do a count on each sid
+  
+- if there is no valid vote,
+  - set myself as the current vote
+  - cast the next round by voting myself again, but with the same xid
+- if there is a winner, but no majority
+   - get the peer with the last zxid and largest sid 
+   - cast the next round with this peer (using the same xid)
+- if vote gets quorum majority
+  - set the winner as the current vote 
+  - if sid is myself, set the state of server as leader
+  - otherwise, set the server state as follower
+- this will continue until a leader is found
+*/
+
+/////////////////////////////////////////////////////////////////////////////
+// Type Declaration 
+/////////////////////////////////////////////////////////////////////////////
+
+//
+// The ElectionSite controls all the participants of a election.
+// 1) messenger - repsonsible for sending messages to other voter
+// 2) ballot master - manages a ballot orginated from this node.   This includes
+//    re-balloting if there is no convergence on the votes. 
+// 3) poll worker - recieve votes from other voters and determine if majority is reached
+// 4) voter - respond to ballot casted by other node
+//
+type ElectionSite struct {
+	messenger       *common.PeerMessenger
+	master  		*BallotMaster
+	worker			*PollWorker
+	voter			*Voter
+	ensemble         []net.Addr
+	isClosed         bool
+	mutex            sync.Mutex
+	factory          MsgFactory
+}
+
+type BallotResult struct {
+	// Do we have a winner?
+    hasWinner       bool
+	winner		    string	
+	winningCnt      uint32
+	winningTxid     common.Txnid
+
+	// Which voter is most recent (highest txid)?	
+	mostRecent	    string	
+	mostRecentCnt   uint32
+    mostRecentTxid  common.Txnid				
+    
+	receivedVotes   map[string]VoteMsg
+	validVotes      map[string]VoteMsg
+}
+
+type Ballot struct {
+	msg				 BallotMsg
+	result			*BallotResult
+	timeout          time.Duration 
+	resultch         chan bool  // should only be closed by PollWorker
+}
+
+type BallotMaster struct {
+	site	         *ElectionSite	
+	currentVote      *BallotResult
+	ballotInProg     *Ballot
+	mutex            sync.Mutex
+}
+
+type PollWorker struct {
+	site			 *ElectionSite	
+	ballot           *Ballot
+	listench         chan *Ballot 
+	killch           chan bool 
+}
+
+type Voter struct {
+	site			 *ElectionSite	
+	killch            chan bool 
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// ElectionSite 
+/////////////////////////////////////////////////////////////////////////////
+
+//
+// Create ElectionSite
+// 
+func CreateElectionSite(laddr string, 
+						peers []net.Addr, 
+						lastLoggedTxid common.Txnid,
+						factory MsgFactory) (election *ElectionSite, err error) {
+
+	election = &ElectionSite{isClosed : false}
+
+	// Create a new messenger
+	election.messenger, err = newMessenger(laddr)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Create a new ballot master	
+	election.master = newBallotMaster(laddr, election, lastLoggedTxid)
+
+	// Create a new poll worker.  This will start the
+	// goroutine for the pollWorker.
+	election.worker = newPollWorker(election)
+	
+	// Create a new voter.  The voter is used for listening the 
+	// incoming ballot and responds with a vote.	This will 
+	// start the goroutine for the voter.
+    election.voter = newVoter(election)
+   
+	return election, nil
+}
+
+//
+// Start a new Election.  If there is a ballot in progress, this function
+// will return false.  The ballot will happen indefinitely until a winner
+// merge.   The winner will be returned through winnerch.
+//
+func (e *ElectionSite) StartElection(lastLoggedTxid common.Txnid, winnerch chan string) bool {
+
+	// ballot in progress
+	if e.master.getBallotInProg() != nil || e.IsClosed() {
+		return false
+	}
+
+	go e.master.castBallot(lastLoggedTxid, winnerch)
+	
+	return true
+}
+
+//
+// Close ElectionSite.  Any pending ballot will be closed immediately.
+// This will also terminate the ability as a voter.
+//
+func (e *ElectionSite) Close() {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	
+	if !e.isClosed {
+		e.isClosed = true
+		
+		e.messenger.Close()	
+		e.master.close()
+		e.worker.close()
+		e.voter.close()
+	}
+}
+
+//
+// Tell if the ElectionSite is closed.
+//
+func (e *ElectionSite) IsClosed() bool {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	
+	return e.isClosed
+}
+
+
+
+/////////////////////////////////////////////////////////////////////////////
+// BallotMaster 
+/////////////////////////////////////////////////////////////////////////////
+
+//
+// Create a new BallotMaster. 
+//
+func newBallotMaster(laddr string, site *ElectionSite, lastLoggedTxid common.Txnid) *BallotMaster {
+
+	master := &BallotMaster{site : site,
+	                        ballotInProg : nil}
+	                     
+	master.currentVote = master.createInitialVote(laddr, lastLoggedTxid)
+	                     
+	return master
+}
+
+//
+// Start a new round of ballot.  
+//
+func (b* BallotMaster) castBallot(lastLoggedTxid common.Txnid, winnerch chan string) {
+
+	// create a channel to receive the ballot result 
+	// should only be closed by Poll Worker
+	resultch := make(chan bool)
+	
+	// Get the ballot id.  For ZK, it uses one ballot id
+	// every time when looking for a new leader,  even
+	// though it may send a new ballot mutiple times (if there
+	// is no winner at each round). This implies ZK will allow
+	// 1) Old peer responses in previous round to be used
+	// in the current round.  
+	// 2) It will only allow each peer to contribute once
+	// in each round.  The last response will be used. 
+	bid := b.getNextId()
+
+	var ballot *Ballot = nil
+	success := false
+	done := false
+	for !success && !done {
+		// Create a new ballot with the ballot id. 
+		ballot = b.createBallot(b.site.messenger.GetLocalAddr(), bid, resultch, common.BALLOT_TIMEOUT)
+		b.setBallotInProg(ballot)
+			
+		// Tell the worker to observe this ballot.  This forces
+		// the worker to start collecting new ballot result.
+		b.site.worker.observe(ballot)
+	
+		// let the peer to know about this ballot.  It is expected
+		// that the peer will reply with a vote.  
+		b.site.messenger.Multicast(ballot.msg, b.site.ensemble)	                      
+		
+		success, ok := <- resultch
+		if !ok {
+			// channel close. Ballot done
+			done = true
+		} else {
+			b.setCurrentVote(ballot.result)
+			if !success {
+				// If there is no result, then sleep and resume a new ballot.
+				time.Sleep(common.BALLOT_PAUSE_TIME * time.Millisecond)
+			}
+		}
+	}
+	
+	// Announce the winner 
+	if success {
+		common.SafeRun("BallotMaster.castBallot()", 
+							func() {
+								winnerch <- ballot.result.winner
+							})
+	} else {
+		// close the winnerch if we cannot finish the ballot.
+		common.SafeRun("BallotMaster.castBallot()", 
+							func() {
+								close(winnerch)
+							})
+	}
+							
+    // balloting complete							
+	b.setBallotInProg(nil)
+}
+
+//
+// close the ballot master.
+//
+func (b *BallotMaster) close() {
+	// Nothing to do now.   The current ballot
+	// is closed when the ballot resultch is closed.
+	// Instead of doing it in this method, should
+	// do it in the poll worker to avoid race condition.
+}
+
+//
+// Set the current ballot
+//
+func (b *BallotMaster) setBallotInProg(ballot *Ballot) {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+	
+	b.ballotInProg = ballot
+}
+
+//
+// Get the current ballot
+//
+func (b *BallotMaster) getBallotInProg() *Ballot {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+	
+	return b.ballotInProg
+}
+
+//
+// Set my vote
+//
+func (b *BallotMaster) setCurrentVote(result *BallotResult) {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+	
+	b.currentVote = result 
+}
+
+//
+// Get my vote 
+//
+func (b *BallotMaster) getCurrentVote() *BallotResult {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+	
+	return b.currentVote
+}
+
+//
+// Get the next id for ballot.
+//
+func (b *BallotMaster) getNextId() uint64 {
+
+	//TODO: use a UUID generator
+ 	return 0 
+}
+
+//
+// Create a ballot 
+//
+func (b *BallotMaster) createBallot(laddr string, bid uint64, resultch chan bool, timeout time.Duration) *Ballot {
+
+	// Create a ballot message with just the ballot id.   
+	// ZK ballot is like a poll -- without specifying the intended candidate to vote for.
+	msg := b.site.factory.CreateBallot(bid)
+	
+	result := &BallotResult{hasWinner : false,
+						   receivedVotes : make(map[string]VoteMsg),
+						   validVotes : make(map[string]VoteMsg)}	
+						   
+	ballot := &Ballot{msg : msg, 
+					result : result, 
+					resultch : resultch, 
+					timeout : timeout}
+					
+	// if there is a current vote, then we should put our vote in the BallotResult.
+	// The current vote is the candidate this node votes for.
+	cur := b.getCurrentVote()
+	if cur != nil {
+		newVote := b.site.factory.CreateVote(0, cur.mostRecent, uint64(cur.mostRecentTxid))
+		result.validVotes[laddr] = newVote 
+	}
+	
+	return ballot
+}
+
+//
+// Create a ballot for initialization. 
+//
+func (b *BallotMaster) createInitialVote(laddr string, lastLoggedTxid common.Txnid) *BallotResult {
+	result := &BallotResult{hasWinner : false,
+							mostRecent : laddr,
+							mostRecentCnt : 1,
+							mostRecentTxid : lastLoggedTxid}
+
+	// vote for myself to being with							
+	vote := b.site.factory.CreateVote(0, laddr, uint64(lastLoggedTxid))
+	result.validVotes[laddr] = vote
+							
+	return result 
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// PollWorker 
+/////////////////////////////////////////////////////////////////////////////
+
+//
+// Create a new PollWorker.  The PollWorker listens to the Vote receving from
+// the peers for a particular ballot.
+//
+func newPollWorker(site *ElectionSite) *PollWorker {
+
+	worker := &PollWorker{site : site,
+						  killch : make(chan bool),
+	                      listench : make(chan *Ballot)}
+	     
+	go worker.gatherVote()                      
+	
+	return worker
+}
+
+//
+// Close the PollWorker
+//
+func (p *PollWorker) close() {
+	p.killch <- true
+}
+
+//
+// Goroutine.  Listen to vote coming from the peer for a
+// particular ballot. 
+//
+// Voter -> the peer that replies the ballot with a vote
+// Candidate -> the peer that is voted for by the voter.  
+// It is the peer (CndId) that is inside the vote. 
+//
+func (w *PollWorker) gatherVote() {
+
+	// Initially, there is no ballot.
+	var ballot *Ballot = nil
+
+	// Get the channel for receiving votes from the peer.
+	reqch := w.site.messenger.ReceiveChannel("Vote")
+	timeout := time.After(common.BALLOT_TIMEOUT * time.Millisecond)	
+	
+	for {
+		select {
+			// If we receive a vote.
+            // The vote would contain 
+            // 1) ballot id
+            // 2) candidate id
+            // 3) candidate last logged txnid
+			case msg, ok := <- reqch :	
+			{
+				if !ok {
+					// TODO: Channel closed.  
+					return 
+				}
+				
+				// If we have a ballot on hand.
+				if ballot != nil {
+					var obj interface{} = msg.Content
+					vote := obj.(VoteMsg)
+					voter := msg.Peer
+				
+					// Validate if it is a valid vote
+					if w.validateVote(voter, vote) {
+						// accept this vote
+						w.accept(voter.String(), vote, ballot.result)
+					
+						// have we reach consensus?	
+						if w.reachConsensus(ballot.result) {			
+							// announce result	
+							ballot.resultch <- true 
+							
+							// reset the ballot 
+							ballot = nil
+						}
+					}
+				}
+			}		
+			case ballot := <- w.listench : 
+			{
+				// There is a new ballot.
+				timeout = time.After(ballot.timeout * time.Millisecond)	
+			}
+			case <- timeout :
+			{
+				// There is a timeout before we reach consensus.
+				if ballot != nil {
+					ballot.resultch <- false	
+				} else {
+					timeout = time.After(common.BALLOT_TIMEOUT * time.Millisecond)	
+				}
+			}
+			case <- w.killch :
+			{
+				// It is done.  Close the ballot.
+				common.SafeRun("PollWorker.gatherVote()", 
+							func() {
+								close(ballot.resultch)
+							})
+				return	
+			}
+		}
+	}
+}
+
+//
+// Notify the PollWorker that there is a new ballot.
+//
+func (w *PollWorker) observe(ballot *Ballot) {
+	// This synchronous.  This is to ensure that gather() receives the ballot 
+	// before this function return to the BallotMaster.
+	w.ballot = ballot
+	w.listench <- ballot 
+}
+
+//
+// Validate if the vote is valid.  This function checks if the ballot id from 
+// the vote changes.  In accept(), it will check if the candidate is a known 
+// peer. 
+//
+func (w *PollWorker) validateVote(voter net.Addr, vote VoteMsg) bool {
+
+	return w.ballot.msg.GetId() == vote.GetBallotId()
+}
+
+//
+// Add this vote to the BallotResult.  
+// 1) If the same voter sends out mutliple votes, it is the last vote that is taken.
+// But since it uses UDP, the last vote does not mean the latest vote. It is possible
+// for to recieve multiple votes since each round of ballot is using the same ballot id.
+// 2) It is the last vote that is used for figuring out the candidate max txnid.
+//
+func (w *PollWorker) accept(voterId string, vote VoteMsg, result *BallotResult) {
+
+	// If I have recieved a vote for this candidate, then it means
+	// that I have sent a ballot to this candidate and receive a vote.
+	// So I can reach this candidate -> make this a valid vote.
+	_, hasReceived := result.receivedVotes[vote.GetCndId()]  
+	_, isValid := result.validVotes[vote.GetCndId()] 
+	if hasReceived || isValid  {
+		result.validVotes[voterId] = vote
+		delete(result.receivedVotes,voterId)	
+	} else {
+		// I have not receieved any response from this candidate yet.
+		// So I don't know if this is a valid candidate.  It could
+		// also be a candidate that I cannot reach. So just keep this in 
+		// received list.   
+		result.receivedVotes[voterId] = vote
+	}
+	
+	// Go through the list of receivedVotes.  If the current voter is also a candidate
+	// in the recievedVotes, then accept these votes.
+	for oldVoter, oldVote := range result.receivedVotes {
+		if voterId == oldVote.GetCndId() {
+			delete(result.receivedVotes,oldVoter)
+			w.accept(oldVoter, oldVote, result)
+		}
+	}
+}
+
+//
+// This function counts the valid votes to see if there is a winner.
+// If there are multiple votes for the winner, but each vote has a
+// different txnid, this will pick the highest txnid for the winner.
+// If there is no winner, it remembers the candidate with the highest
+// txnid.  
+//
+func (w *PollWorker) reachConsensus(result *BallotResult) bool {
+
+	countedVotes := make(map[string]uint32)
+	maxTxnids := make(map[string]common.Txnid)
+
+	// go through the valid votes.  
+	// 1) Find the count for each candidate
+	// 2) Find the max Txnid for each candidate
+	for _, vote := range result.validVotes {
+		count, ok1 := countedVotes[vote.GetCndId()] 
+		if !ok1 {
+			count = 0	
+		}
+		countedVotes[vote.GetCndId()] = count + 1
+		
+		maxTxnid, ok2 := maxTxnids[vote.GetCndId()]
+		if !ok2 {
+			maxTxnid = 0
+		}
+		if  maxTxnid < common.Txnid(vote.GetCndTxnId()) {
+			maxTxnids[vote.GetCndId()] = common.Txnid(vote.GetCndTxnId())
+		}
+	}
+
+	// go through each candidate and find the one with the
+	// highest count
+	var winningCount uint32 = 0	
+	var winner string 
+	for cndId, count := range countedVotes {
+		if count > winningCount {
+			winningCount = count
+			winner = cndId 
+		}	
+	}
+
+	// check if the candidate has the quorum.  if so,
+	// declare this candidate as the winner.
+	var quorum uint32 = uint32(len(w.site.voters) / 2)
+	if winningCount > quorum {
+		result.winner = winner
+		result.winningCnt = winningCount
+		result.winningTxid = common.Txnid(maxTxnids[winner])
+		result.hasWinner = true
+	}
+
+	// Also update the candidate with the most recent
+	// txnid.   	
+	result.mostRecentCnt = 0 
+	for cndId, txid := range maxTxnids {
+		if txid > result.mostRecentTxid {
+			result.mostRecent = cndId	    
+			result.mostRecentTxid = txid
+			result.mostRecentCnt =  countedVotes[cndId]
+		}
+	}
+	
+	return (winningCount > quorum)
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// Voter 
+/////////////////////////////////////////////////////////////////////////////
+
+func newVoter(site *ElectionSite) *Voter {
+	voter := &Voter{site : site,
+	                killch : make(chan bool)}
+
+	go voter.listen()	
+	
+	return voter
+}
+
+func (v *Voter) close() {
+	v.killch <- true
+}
+
+func (v *Voter) listen() {
+
+	// Get the ballot message from the peer.
+	reqch := v.site.messenger.ReceiveChannel("Ballot")
+	if reqch == nil {
+		// TODO: report error
+		return 
+	}
+	
+	for {
+		select {
+			// If we receive a ballot. 
+			case msg, ok := <- reqch :	
+			{
+				if !ok {
+					// TODO reqch closed
+					return 
+				}
+				
+				var vote VoteMsg = nil
+				var obj interface{} = msg.Content
+				ballot := obj.(BallotMsg)
+				sender := msg.Peer
+				
+				current := v.site.master.getCurrentVote()
+				
+				if current.hasWinner {
+					vote = v.site.factory.CreateVote(ballot.GetId(), current.winner, uint64(current.winningTxid))
+				} else {
+					vote = v.site.factory.CreateVote(ballot.GetId(), current.mostRecent, uint64(current.mostRecentTxid))
+				}
+				
+				// Ignore if Send() returns false (messenger is closed).   
+				// We don't really need to worry if the vote is not send to the balloter.
+				v.site.messenger.Send(vote, sender)	
+			}
+			case <- v.killch :
+			{
+				return
+			}
+		}
+	}			
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// Private Function 
+/////////////////////////////////////////////////////////////////////////////
+
+func newMessenger(laddr string) (*common.PeerMessenger, error) {
+
+    conn, err := common.GetElectionConn(laddr) 
+    if err != nil {
+    	return nil, err
+    }
+    
+	splitter := make(map[string]chan*common.Message)
+	splitter["Vote"] = make(chan*common.Message)
+	splitter["Ballot"] = make(chan*common.Message)
+	
+    messenger , err := common.NewPeerMessenger(conn, splitter)
+    if err != nil {
+    	return nil, err
+    }
+    
+    return messenger, nil
+}
