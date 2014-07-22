@@ -2,6 +2,7 @@ package protocol
 
 import (
     "common"
+    "sync"
 )
 
 /////////////////////////////////////////////////
@@ -51,6 +52,7 @@ type Leader struct {
     quorums        map[common.Txnid][]string
     handler        ActionHandler
     factory		   MsgFactory 
+    mutex          sync.Mutex
 }
 
 /////////////////////////////////////////////////
@@ -72,9 +74,38 @@ func NewLeader(naddr string, handler ActionHandler, factory MsgFactory) (*Leader
 }
 
 //
+// Create a new proposal from request
+//
+func (l *Leader) CreateProposal(host string, req RequestMsg) error {
+
+    // Create a new proposal.  Note that there is a possibility that
+    // GetNextTnxId() returns a id that is overflow.  In this case,
+    // the epoch portion of the TxnId will be incremented.  In other
+    // words, the leader will be automatically granted a new term.
+    
+    // TODO : In ZK, when the id is overflow, the server is being restarted. Check
+    //        if this implementation is safe for leader election.
+    txnid := l.handler.GetNextTxnId()
+    proposal := l.factory.CreateProposal(uint64(txnid), 
+    								   host,
+                                       req.GetReqId(),
+                                       req.GetOpCode(),
+                                       req.GetKey(),
+                                       req.GetContent())
+
+    l.NewProposal(proposal)
+    
+    return nil
+}
+
+//
 // Handle a new proposal 
 //
 func (l *Leader) NewProposal(proposal ProposalMsg) {
+
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
 	// Keep track of the pending proposal	                           
 	l.pendings = append(l.pendings, proposal)	
 	
@@ -112,6 +143,7 @@ func (l *Leader) sendProposal(proposal ProposalMsg) {
 	for _, f := range l.followers {
 	    msg := l.factory.CreateProposal(proposal.GetTxnid(),
 	                          proposal.GetFid(),
+	                          proposal.GetReqId(),
 	                          proposal.GetOpCode(),
 	                          proposal.GetKey(),
 	                          proposal.GetContent())
@@ -135,7 +167,7 @@ loop:
         case req, ok := <-reqch:
             if ok {
                 // TODO : handle error
-               	l.handleMessage(req) 
+               	l.handleMessage(req, follower.GetAddr()) 
             } else {
         		// TODO : the channel is closed.  Need to shutdown the server itself.
                 break loop
@@ -147,8 +179,10 @@ loop:
 //
 // handle message from follower.
 //
-func (l *Leader) handleMessage(msg common.Packet) (err error) {
+func (l *Leader) handleMessage(msg common.Packet, follower string) (err error) {
     switch request := msg.(type) {
+    case RequestMsg:
+        l.CreateProposal(follower, request)
     case AcceptMsg:
         err = l.handleAccept(request)
     default:

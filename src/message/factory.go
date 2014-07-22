@@ -25,6 +25,7 @@ func NewConcreteMsgFactory() *ConcreteMsgFactory {
 
 func (f *ConcreteMsgFactory) CreateProposal(txnid uint64, 
 											fid string, 
+											reqId uint64,
 											op uint32, 
 											key string,
 											content []byte) protocol.ProposalMsg {
@@ -32,6 +33,7 @@ func (f *ConcreteMsgFactory) CreateProposal(txnid uint64,
 	return &Proposal{Version : proto.Uint32(ProtoVersion()),
 					Txnid : proto.Uint64(txnid),
 					Fid : proto.String(fid),
+					ReqId : proto.Uint64(reqId),
 					OpCode : proto.Uint32(op),
 					Key : proto.String(key),
 					Content : content}
@@ -94,9 +96,10 @@ func (f *ConcreteMsgFactory) CreateLeaderInfo(epoch uint32) protocol.LeaderInfoM
 					AcceptedEpoch : proto.Uint32(epoch)}
 }
 
-func (f *ConcreteMsgFactory) CreateEpochAck(epoch uint32) protocol.EpochAckMsg {
+func (f *ConcreteMsgFactory) CreateEpochAck(txid uint64, epoch uint32) protocol.EpochAckMsg {
 
 	return &EpochAck{Version : proto.Uint32(ProtoVersion()),
+					LastLoggedTxid : proto.Uint64(txid),
 					CurrentEpoch : proto.Uint32(epoch)}
 }
 
@@ -109,6 +112,18 @@ func (f *ConcreteMsgFactory) CreateNewLeader(epoch uint32) protocol.NewLeaderMsg
 func (f *ConcreteMsgFactory) CreateNewLeaderAck() protocol.NewLeaderAckMsg {
 
 	return &NewLeaderAck{Version : proto.Uint32(ProtoVersion())}
+}
+
+func (f *ConcreteMsgFactory) CreateRequest(reqid  uint64,
+										   opCode uint32, 
+										   key string, 
+										   content []byte) protocol.RequestMsg {
+
+	return &Request{Version : proto.Uint32(ProtoVersion()),
+				    ReqId : proto.Uint64(reqid), 
+					OpCode : proto.Uint32(opCode),
+					Key : proto.String(key),
+					Content : content} 
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -128,4 +143,5 @@ func registerMessages() {
 	common.RegisterPacketByName("NewLeader", &NewLeader{})
 	common.RegisterPacketByName("NewLeaderAck", &NewLeaderAck{})
 	common.RegisterPacketByName("LogEntry", &LogEntry{})
+	common.RegisterPacketByName("Request", &Request{})
 }

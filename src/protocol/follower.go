@@ -35,8 +35,18 @@ func NewFollower(kind PeerRole, pipe *common.PeerPipe, handler ActionHandler, fa
 	return follower
 }
 
+//
+// Return the follower ID
+//
 func (f *Follower) GetId() string {
 	return f.pipe.GetAddr()
+}
+
+//
+// Forward the request to the leader
+//
+func (f *Follower) ForwardRequest(request RequestMsg) {
+	f.pipe.Send(request)
 }
 
 /////////////////////////////////////////////////

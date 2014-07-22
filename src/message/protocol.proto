@@ -4,9 +4,10 @@ message Proposal {
     required uint32          version   = 1; // protocol version TBD
    	required uint64          txnid     = 2; 
    	required string          fid       = 3;
-   	required uint32          opCode    = 4; 
-   	required string          key       = 5; 
-   	required bytes           content   = 6;
+   	required uint64          reqId     = 4;
+   	required uint32          opCode    = 5; 
+   	required string          key       = 6; 
+   	required bytes           content   = 7;
 }
 
 message Accept {
@@ -42,7 +43,8 @@ message FollowerInfo {
 
 message EpochAck {
     required uint32          version        = 1; // protocol version TBD
-   	required uint32          currentEpoch   = 2; 
+   	required uint64          lastLoggedTxid = 2; 
+   	required uint32          currentEpoch   = 3; 
 }
 
 message LeaderInfo {
@@ -64,4 +66,12 @@ message LogEntry {
    	required uint32          opCode    = 2; 
    	required string          key       = 3; 
    	required bytes           content   = 4;
+}
+
+message Request {
+    required uint32          version   = 1; // protocol version TBD
+   	required uint64          reqId     = 2; 
+   	required uint32          opCode    = 3; 
+   	required string          key       = 4; 
+   	required bytes           content   = 5;
 }

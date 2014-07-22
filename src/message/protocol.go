@@ -168,3 +168,18 @@ func (req *NewLeaderAck) Encode() (data []byte, err error) {
 func (req *NewLeaderAck) Decode(data []byte) (err error) {
     return proto.Unmarshal(data, req)
 }
+
+//
+// Request - implement Packet interface
+//
+func (req *Request) Name() string {
+    return "Request"
+}
+
+func (req *Request) Encode() (data []byte, err error) {
+    return proto.Marshal(req)
+}
+
+func (req *Request) Decode(data []byte) (err error) {
+    return proto.Unmarshal(data, req)
+}

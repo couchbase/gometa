@@ -17,12 +17,29 @@ type Repository struct {
 	db          FakeDB
 }
 
-type FakeDB interface {
-	SetKV(key []byte, content []byte)	error
-	GetKV(key []byte)	([]byte, error)
-	DeleteKV(key []byte)	error
-	Close()	error
+/*
+type Iterator struct {
+	iter	   FakeIter	
 }
+*/
+
+type FakeIteratorOpt uint8
+
+type FakeDB interface {
+	SetKV(key []byte, content []byte) error
+	GetKV(key []byte)	([]byte, error)
+	DeleteKV(key []byte) error
+	Close()	error
+	
+	//IteratorInit(startKey, endKey []byte, opt FakeIteratorOpt) (*FakeIter, error)
+}
+
+/*
+type FakeIter interface {
+	Next() (*Doc, error) 
+	Close() error 
+}
+*/
 
 /////////////////////////////////////////////////////////////////////////////
 // Public Function 
@@ -103,7 +120,7 @@ func (r *Repository) Close() {
 func collateString(key string) ([]byte, error) {
     jsoncodec := collatejson.NewCodec()
     buf := new(bytes.Buffer)
-    k, err := buf.Write(jsoncodec.EncodeString(key))
+    _, err := buf.Write(jsoncodec.EncodeString(key))
     if err != nil {
     	return nil, err
     }

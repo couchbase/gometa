@@ -14,6 +14,7 @@ type LeaderSyncProxy struct {
 	follower 		*common.PeerPipe
 	handler          ActionHandler
 	factory          MsgFactory 
+	followerState   *FollowerState
 }
 
 type FollowerSyncProxy struct {
@@ -39,6 +40,11 @@ type ConsentState struct {
 	ensembleSize    	uint64
 }
 
+type FollowerState struct {
+	currentEpoch		uint32
+	lastLoggedTxid		uint64
+}
+
 type LeaderStageCode uint16 
 const (
 	UPDATE_ACCEPTED_EPOCH_AFTER_QUORUM LeaderStageCode = iota
@@ -62,7 +68,7 @@ const (
 // ConsentState 
 /////////////////////////////////////////////////////////////////////////////
 
-func newConsentState(sid string, epoch uint32, ensemble uint64) *ConsentState {
+func NewConsentState(sid string, epoch uint32, ensemble uint64) *ConsentState {
 
 	state := &ConsentState{acceptedEpoch : epoch,
 	                       acceptedEpochSet : make(map[string]uint32),
@@ -168,7 +174,7 @@ func NewLeaderSyncProxy(state *ConsentState,
 	return sync
 }
 
-func (l* LeaderSyncProxy) start(donech chan bool) {
+func (l* LeaderSyncProxy) Start(donech chan bool) {
 	go l.execute(donech)
 }
 
@@ -253,7 +259,8 @@ func (l *LeaderSyncProxy) updateCurrentEpochAfterQuorum() error {
 	// TODO : Validate follower epoch	
 	info := packet.(EpochAckMsg)
 	epoch := info.GetCurrentEpoch()
-	if epoch == 1 {}
+	txid := info.GetLastLoggedTxid()
+	l.followerState = &FollowerState{lastLoggedTxid : txid, currentEpoch : epoch}
 	
 	// update my vote and wait for quorum of ack from followers
 	l.state.voteEpochAck(l.follower.GetAddr())
@@ -266,7 +273,8 @@ func (l *LeaderSyncProxy) updateCurrentEpochAfterQuorum() error {
 
 func (l *LeaderSyncProxy) declareNewLeaderAfterQuorum() error {
 
-	packet := l.factory.CreateNewLeader()
+	// return the new epoch to the follower
+	packet := l.factory.CreateNewLeader(l.handler.GetAcceptedEpoch())
 	err := send(packet, l.follower)
 	if err != nil {
 		return err
@@ -290,6 +298,21 @@ func (l *LeaderSyncProxy) declareNewLeaderAfterQuorum() error {
 /////////////////////////////////////////////////////////////////////////////
 // FollowerSyncProxy 
 /////////////////////////////////////////////////////////////////////////////
+
+func NewFollowerSyncProxy(leader *common.PeerPipe,
+						  handler ActionHandler,
+						  factory MsgFactory) *FollowerSyncProxy {
+
+	sync := &FollowerSyncProxy{leader : leader,
+							 handler : handler,
+							 factory : factory}
+							 
+	return sync
+}
+
+func (f* FollowerSyncProxy) Start(donech chan bool) {
+	go f.execute(donech)
+}
 
 func (l* FollowerSyncProxy) execute(donech chan bool) {
 
@@ -343,11 +366,10 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 		return err
 	}
 	
-	// Get epoch from follower message		
+	// Get epoch from leader message		
 	info := packet.(LeaderInfoMsg)
 	epoch := info.GetAcceptedEpoch()
 
-	currentEpoch := l.handler.GetCurrentEpoch() 	
 	if epoch > l.handler.GetAcceptedEpoch() {
 		// update the accepted epoch based on the quorum result
 		l.handler.NotifyNewAcceptedEpoch(epoch)
@@ -356,8 +378,10 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 	}	
 
 	// Notify the leader that I have accepted the epoch.  Send
-	// the current epoch to the leader.			
-	packet = l.factory.CreateEpochAck(currentEpoch)
+	// the last logged txid and current epoch to the leader.			
+	txid := l.handler.GetLastLoggedTxid()
+	currentEpoch := l.handler.GetCurrentEpoch()
+	packet = l.factory.CreateEpochAck(uint64(txid), currentEpoch)
 	return send(packet, l.leader)
 }
 

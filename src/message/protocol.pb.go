@@ -20,6 +20,7 @@ It has these top-level messages:
 	NewLeader
 	NewLeaderAck
 	LogEntry
+	Request
 */
 package message
 
@@ -34,9 +35,10 @@ type Proposal struct {
 	Version          *uint32 `protobuf:"varint,1,req,name=version" json:"version,omitempty"`
 	Txnid            *uint64 `protobuf:"varint,2,req,name=txnid" json:"txnid,omitempty"`
 	Fid              *string `protobuf:"bytes,3,req,name=fid" json:"fid,omitempty"`
-	OpCode           *uint32 `protobuf:"varint,4,req,name=opCode" json:"opCode,omitempty"`
-	Key              *string `protobuf:"bytes,5,req,name=key" json:"key,omitempty"`
-	Content          []byte  `protobuf:"bytes,6,req,name=content" json:"content,omitempty"`
+	ReqId            *uint64 `protobuf:"varint,4,req,name=reqId" json:"reqId,omitempty"`
+	OpCode           *uint32 `protobuf:"varint,5,req,name=opCode" json:"opCode,omitempty"`
+	Key              *string `protobuf:"bytes,6,req,name=key" json:"key,omitempty"`
+	Content          []byte  `protobuf:"bytes,7,req,name=content" json:"content,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
@@ -63,6 +65,13 @@ func (m *Proposal) GetFid() string {
 		return *m.Fid
 	}
 	return ""
+}
+
+func (m *Proposal) GetReqId() uint64 {
+	if m != nil && m.ReqId != nil {
+		return *m.ReqId
+	}
+	return 0
 }
 
 func (m *Proposal) GetOpCode() uint32 {
@@ -249,7 +258,8 @@ func (m *FollowerInfo) GetAcceptedEpoch() uint32 {
 
 type EpochAck struct {
 	Version          *uint32 `protobuf:"varint,1,req,name=version" json:"version,omitempty"`
-	CurrentEpoch     *uint32 `protobuf:"varint,2,req,name=currentEpoch" json:"currentEpoch,omitempty"`
+	LastLoggedTxid   *uint64 `protobuf:"varint,2,req,name=lastLoggedTxid" json:"lastLoggedTxid,omitempty"`
+	CurrentEpoch     *uint32 `protobuf:"varint,3,req,name=currentEpoch" json:"currentEpoch,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
@@ -260,6 +270,13 @@ func (*EpochAck) ProtoMessage()    {}
 func (m *EpochAck) GetVersion() uint32 {
 	if m != nil && m.Version != nil {
 		return *m.Version
+	}
+	return 0
+}
+
+func (m *EpochAck) GetLastLoggedTxid() uint64 {
+	if m != nil && m.LastLoggedTxid != nil {
+		return *m.LastLoggedTxid
 	}
 	return 0
 }
@@ -369,6 +386,54 @@ func (m *LogEntry) GetKey() string {
 }
 
 func (m *LogEntry) GetContent() []byte {
+	if m != nil {
+		return m.Content
+	}
+	return nil
+}
+
+type Request struct {
+	Version          *uint32 `protobuf:"varint,1,req,name=version" json:"version,omitempty"`
+	ReqId            *uint64 `protobuf:"varint,2,req,name=reqId" json:"reqId,omitempty"`
+	OpCode           *uint32 `protobuf:"varint,3,req,name=opCode" json:"opCode,omitempty"`
+	Key              *string `protobuf:"bytes,4,req,name=key" json:"key,omitempty"`
+	Content          []byte  `protobuf:"bytes,5,req,name=content" json:"content,omitempty"`
+	XXX_unrecognized []byte  `json:"-"`
+}
+
+func (m *Request) Reset()         { *m = Request{} }
+func (m *Request) String() string { return proto.CompactTextString(m) }
+func (*Request) ProtoMessage()    {}
+
+func (m *Request) GetVersion() uint32 {
+	if m != nil && m.Version != nil {
+		return *m.Version
+	}
+	return 0
+}
+
+func (m *Request) GetReqId() uint64 {
+	if m != nil && m.ReqId != nil {
+		return *m.ReqId
+	}
+	return 0
+}
+
+func (m *Request) GetOpCode() uint32 {
+	if m != nil && m.OpCode != nil {
+		return *m.OpCode
+	}
+	return 0
+}
+
+func (m *Request) GetKey() string {
+	if m != nil && m.Key != nil {
+		return *m.Key
+	}
+	return ""
+}
+
+func (m *Request) GetContent() []byte {
 	if m != nil {
 		return m.Content
 	}

@@ -6,6 +6,7 @@ import (
 type ErrorCode byte
 const (
 	PROTOCOL_ERROR ErrorCode = iota  	
+	SERVER_ERROR 
 )
 
 type Error struct {

@@ -37,3 +37,7 @@ func GetOpCode(s string) OpCode {
 	}
 	return OPCODE_INVALID 
 }
+
+func GetOpCodeFromInt(i uint32) OpCode {
+	return OpCode(i)
+}

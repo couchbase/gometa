@@ -56,8 +56,8 @@ func (r *CommitLog) Get(txid common.Txnid) (common.OpCode, string, []byte, error
    	if err != nil {
    		return common.OPCODE_INVALID, "", nil, err
    	}
-   	entry := packet.(message.LogEntry)
-   	return entry.GetOpCode(), entry.GetKey(), entry.GetContent(), nil
+   	entry := packet.(*message.LogEntry)
+   	return common.GetOpCodeFromInt(entry.GetOpCode()), entry.GetKey(), entry.GetContent(), nil
 }
 
 //

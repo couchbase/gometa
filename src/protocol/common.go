@@ -59,6 +59,10 @@ type ActionHandler interface {
 	//
 	// The following API are used during normal execution 
 	//	
+	GetNextTxnId() common.Txnid 
+
+	LogProposal(proposal ProposalMsg) error
+	
 	Commit(proposal ProposalMsg) error
 }
 
@@ -68,7 +72,7 @@ type ActionHandler interface {
 
 type MsgFactory interface {
 
-	CreateProposal(txnid uint64, fid string, op uint32, key string, content []byte) ProposalMsg 
+	CreateProposal(txnid uint64, fid string, reqId uint64, op uint32, key string, content []byte) ProposalMsg 
 	
 	CreateAccept(txnid uint64, fid string) AcceptMsg 
 										
@@ -81,15 +85,17 @@ type MsgFactory interface {
 	
 	CreateFollowerInfo(epoch uint32) FollowerInfoMsg 
 	
-	CreateEpochAck(epoch uint32) EpochAckMsg 
+	CreateEpochAck(lastLoggedTxid uint64, epoch uint32) EpochAckMsg 
 	
 	CreateLeaderInfo(epoch uint32) LeaderInfoMsg 
 	
-	CreateNewLeader() NewLeaderMsg 
+	CreateNewLeader(epoch uint32) NewLeaderMsg 
 	
 	CreateNewLeaderAck() NewLeaderAckMsg 
 	
 	CreateLogEntry(opCode uint32, key string, content []byte) LogEntryMsg
+	
+	CreateRequest(id uint64, opCode uint32, key string, content []byte) RequestMsg 
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -100,6 +106,7 @@ type ProposalMsg interface {
 	common.Packet
     GetTxnid() uint64
     GetFid() string
+    GetReqId() uint64 
 	GetOpCode() uint32
 	GetKey() string 
 	GetContent() []byte
@@ -114,6 +121,14 @@ type AcceptMsg interface {
 type CommitMsg interface {
 	common.Packet
 	GetTxnid() uint64 
+}
+
+type RequestMsg interface {
+	common.Packet
+	GetReqId() uint64 
+	GetOpCode() uint32 
+    GetKey() string 
+    GetContent() []byte 
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -151,6 +166,7 @@ type LeaderInfoMsg interface {
 
 type EpochAckMsg interface {
 	common.Packet
+	GetLastLoggedTxid() uint64
 	GetCurrentEpoch() uint32
 }
 
