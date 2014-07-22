@@ -13,14 +13,14 @@ const (
 type Error struct {
 	code		ErrorCode
 	reason		string	
-	cause       interface{} 
+	cause       error  
 }
 
 func NewError(code ErrorCode, reason string) *Error {
 	return &Error{code : code, reason : reason, cause : nil}
 } 
 
-func NewErrorCause(code ErrorCode, reason string, cause *Error) *Error {
+func WrapError(code ErrorCode, reason string, cause *Error) *Error {
 	return &Error{code : code, reason : reason, cause : cause}
 } 
 
