@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"common"
 	"message"
+	"sync"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -11,8 +12,10 @@ import (
 /////////////////////////////////////////////////////////////////////////////
 
 type CommitLog struct {
-	repo    *Repository
-	factory *message.ConcreteMsgFactory
+	repo             *Repository
+	factory          *message.ConcreteMsgFactory
+	lastLoggedTxnid   common.Txnid
+	mutex             sync.Mutex
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -38,7 +41,25 @@ func (r *CommitLog) Log(txid common.Txnid, op common.OpCode, key string, content
    		return err
    	}
     
-	return r.repo.Set(k, data)	
+	err = r.repo.Set(k, data)	
+	if err != nil {
+		return err
+	}
+
+	r.mutex.Lock()
+	defer r.mutex.Unlock()	
+	r.lastLoggedTxnid = txid
+	
+	return nil
+}
+
+// 
+// Get the last logged Txnid
+//
+func (r *CommitLog) GetLastLoggedTxnId() common.Txnid {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()	
+	return r.lastLoggedTxnid
 }
 
 //

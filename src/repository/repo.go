@@ -2,9 +2,10 @@ package repository
 
 import (
 	// TODO
-	//fdb "github.com/couchbaselabs/goforestdb"
+	fdb "github.com/couchbaselabs/goforestdb"
 	"github.com/prataprc/collatejson"
 	"bytes"
+	"sync"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -12,34 +13,9 @@ import (
 /////////////////////////////////////////////////////////////////////////////
 
 type Repository struct {
-	// TODO
-	/*db 		*fdb.Database */
-	db          FakeDB
+	db 		*fdb.Database 
+	mutex   sync.Mutex
 }
-
-/*
-type Iterator struct {
-	iter	   FakeIter	
-}
-*/
-
-type FakeIteratorOpt uint8
-
-type FakeDB interface {
-	SetKV(key []byte, content []byte) error
-	GetKV(key []byte)	([]byte, error)
-	DeleteKV(key []byte) error
-	Close()	error
-	
-	//IteratorInit(startKey, endKey []byte, opt FakeIteratorOpt) (*FakeIter, error)
-}
-
-/*
-type FakeIter interface {
-	Next() (*Doc, error) 
-	Close() error 
-}
-*/
 
 /////////////////////////////////////////////////////////////////////////////
 // Public Function 
@@ -50,11 +26,10 @@ type FakeIter interface {
 //
 func OpenRepository() (*Repository, error) {
 	
-	//db, err := fdb.Open(common.REPOSITORY_NAME, nil)	
-	var db FakeDB = nil
-	//if err != nil {
-	//	return nil, err
-	//}
+	db, err := fdb.Open(common.REPOSITORY_NAME, nil)	
+	if err != nil {
+		return nil, err
+	}
 	
 	repo := &Repository{db : db}
 	return repo, nil
@@ -64,6 +39,9 @@ func OpenRepository() (*Repository, error) {
 // Update/Insert into the repository 
 //
 func (r *Repository) Set(key string, content []byte) error {
+
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
 
     //convert key to its collatejson encoded byte representation
     k, err := collateString(key)
@@ -93,6 +71,9 @@ func (r *Repository) Get(key string) ([]byte, error) {
 // Delete from repository 
 //
 func (r *Repository) Delete(key string) error {
+
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
 
     //convert key to its collatejson encoded byte representation
     k, err := collateString(key)

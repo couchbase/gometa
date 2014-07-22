@@ -13,6 +13,7 @@ import (
 type ServerAction struct {
     repo    *repo.Repository
     log     *repo.CommitLog
+    config  *repo.ServerConfig
     server   ServerCallback
 }
 
@@ -22,11 +23,13 @@ type ServerAction struct {
 
 func NewServerAction(server ServerCallback, 
                      repo *repo.Repository, 
-                     log *repo.CommitLog) *ServerAction {
+                     log *repo.CommitLog,
+                     config *repo.ServerConfig) *ServerAction {
 
     return &ServerAction{repo : repo,
                          log : log,
-                         server : server}
+                         server : server,
+                         config : config}
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -60,15 +63,13 @@ func (a *ServerAction) Commit(p protocol.ProposalMsg) error {
 
 func (a *ServerAction) LogProposal(p protocol.ProposalMsg) error {
 
-	// TODO
-
     a.server.UpdateStateOnNewProposal(p)
     
    	return nil 
 }
 
 func (a *ServerAction) GetNextTxnId() common.Txnid {
-	return common.Txnid(0) 
+	return common.GetNextTxnId()
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -76,29 +77,31 @@ func (a *ServerAction) GetNextTxnId() common.Txnid {
 /////////////////////////////////////////////////////////////////////////////
 
 func (a *ServerAction) GetLastLoggedTxid() common.Txnid {
-	return common.Txnid(0) 
+	return log.GetLastLoggedTxnId() 
 }
 
 func (a *ServerAction) GetStatus() protocol.PeerStatus {
-	return protocol.LEADING
+	return a.server.GetState().getStatus()
 }
 
 func (a *ServerAction) GetCurrentEpoch() uint32 {
-	return 0
+	return a.config.GetCurrentEpoch()
 }
 	
 func (a *ServerAction) GetAcceptedEpoch() uint32 {
-	return 0
+	return a.config.GetAcceptedEpoch()
 }
 
 ////////////////////////////////////////////////////////////////////////////
 // Server Action for updating repository state 
 /////////////////////////////////////////////////////////////////////////////
 
-func (a *ServerAction) NotifyNewAcceptedEpoch(uint32) {
+func (a *ServerAction) NotifyNewAcceptedEpoch(epoch uint32) {
+	a.config.SetAcceptedEpoch(epoch)
 }
 
-func (a *ServerAction) NotifyNewCurrentEpoch(uint32) {
+func (a *ServerAction) NotifyNewCurrentEpoch(epoch uint32) {
+	a.config.SetCurrentEpoch(epoch)
 }
 	
 ////////////////////////////////////////////////////////////////////////////

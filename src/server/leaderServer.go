@@ -137,6 +137,8 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe,
 //
 func newLeaderState() *LeaderState {
 	serverState := newServerState()
+	serverState.setStatus(protocol.LEADING)
+	
 	state := &LeaderState{serverState : serverState,
 	                     ready : false}
 	

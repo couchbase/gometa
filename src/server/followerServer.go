@@ -81,6 +81,8 @@ func (s *FollowerServer) syncWithLeader(pipe      *common.PeerPipe,
 //
 func newFollowerState() *FollowerState {
 	serverState := newServerState()
+	serverState.setStatus(protocol.FOLLOWING)
+	
 	state := &FollowerState{serverState : serverState}
 	return state                       
 }

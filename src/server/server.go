@@ -19,6 +19,7 @@ type Server struct {
 }
 
 type ServerState struct {
+	status              protocol.PeerStatus 
 	incomings           chan *RequestHandle
 	pendings			map[uint64]*RequestHandle    // request id
 	proposals           map[uint64]*RequestHandle    // txnid
@@ -36,6 +37,7 @@ type StateProvider interface {
 }
 
 type ServerCallback interface {
+	StateProvider
 	UpdateStateOnNewProposal(proposal protocol.ProposalMsg) 
 	UpdateStateOnCommit(proposal protocol.ProposalMsg) 
 }
@@ -57,9 +59,10 @@ func (s *Server) bootstrap() error {
 	}
 
     log := r.NewCommitLog(repo)	
+    config := r.NewServerConfig(repo)	
     
 	s.factory = message.NewConcreteMsgFactory()
-	s.handler = NewServerAction(s, repo, log) 
+	s.handler = NewServerAction(s, repo, log, config) 
 
 	// Create an election site to start leader election.	
 	resultCh := make(chan string)
@@ -102,9 +105,24 @@ func newServerState() *ServerState {
 	proposals := make(map[uint64]*RequestHandle)
 	state := &ServerState{incomings : incomings,
 	                     pendings : pendings,
-	                     proposals : proposals}
+	                     proposals : proposals,
+	                     status : protocol.ELECTING}
 	                       
 	return state                       
+}
+
+func (s *ServerState) getStatus() protocol.PeerStatus {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	
+	return s.status
+}
+
+func (s *ServerState) setStatus(status protocol.PeerStatus) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	
+	s.status = status
 }
 
 /////////////////////////////////////////////////////////////////////////////
