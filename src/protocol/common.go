@@ -42,10 +42,10 @@ type ActionHandler interface {
 	
 	// Current Epoch is set during leader/followr discovery phase.
 	// It is the current epoch (term) of the leader.
-	GetCurrentEpoch() uint32
+	GetCurrentEpoch() (uint32, error)
 
 	// This is the Epoch that leader/follower agrees during discovery/sync phase. 
-	GetAcceptedEpoch() uint32
+	GetAcceptedEpoch() (uint32, error)
 	
 	//
 	// The following API are used during discovery/sync 

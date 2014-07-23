@@ -144,11 +144,22 @@ func (e *ElectionSite) IsClosed() bool {
 //
 func (s *ElectionSite) createVoteFromCurState() VoteMsg {
 
-	return s.factory.CreateVote(s.master.round, 
+	epoch, err := s.handler.GetCurrentEpoch()
+	if err != nil {
+		// if epoch is missing, set the epoch to the smallest possible
+		// number.  This is to allow the voting peers to tell me what
+		// the right epoch would be during balloting.
+		// TODO: look at the error to see if there is more genuine issue
+	 	epoch = 0	
+	}
+
+	vote := s.factory.CreateVote(s.master.round, 
 								uint32(s.handler.GetStatus()),
-								uint32(s.handler.GetCurrentEpoch()),
+								epoch,
 	                            s.messenger.GetLocalAddr(), 
 	                            uint64(s.handler.GetLastLoggedTxid()))
+	                            
+	return vote
 }
 
 //
@@ -201,6 +212,7 @@ func (b* BallotMaster) castBallot(winnerch chan string) {
 	b.site.messenger.Multicast(ballot.result.proposed, b.site.ensemble)	                      
 		
 	success, ok := <- resultch
+	
 	if !ok {
 		// channel close. Ballot done
 		success = false
@@ -278,13 +290,12 @@ func (b *BallotMaster) createInitialBallot(resultch chan bool) *Ballot {
 
 	b.getNextRound()
 	newVote := b.site.createVoteFromCurState()
-	
 	laddr := b.site.messenger.GetLocalAddr()
 	result.receivedVotes[laddr] = newVote 
 	result.proposed = newVote
 	
 	ballot := &Ballot{result : result, 
-					  resultch : resultch} 
+				      resultch : resultch} 
 					
 	return ballot
 }
@@ -292,16 +303,22 @@ func (b *BallotMaster) createInitialBallot(resultch chan bool) *Ballot {
 //
 // Copy a winning vote
 //
-func (b *BallotMaster) cloneWinningVote() VoteMsg {
+func (b *BallotMaster) cloneWinningVote() (VoteMsg, error) {
+
+	epoch, err := b.site.handler.GetCurrentEpoch()
+	if err != nil {
+		return nil, err
+	}
+	
 	if b.winner != nil {
 		return b.site.factory.CreateVote(b.round,
 								uint32(b.site.handler.GetStatus()),	
-								uint32(b.site.handler.GetCurrentEpoch()),	
+								epoch,
 								b.winner.proposed.GetCndId(),
-								b.winner.proposed.GetCndTxnId())		
+								b.winner.proposed.GetCndTxnId()), nil
 	}
 	
-	return nil
+	return nil, nil
 }
 
 //
@@ -451,7 +468,11 @@ func (w *PollWorker) respondInquiry(voter net.Addr, vote VoteMsg) {
 
 	if PeerStatus(vote.GetStatus()) == ELECTING {
 		if w.site.master.winner != nil {
-        	w.site.messenger.Send(w.site.master.cloneWinningVote(), voter)	 
+        	msg, err := w.site.master.cloneWinningVote()
+        	if err == nil { 
+        		// send the winning vote if there is no error
+        		w.site.messenger.Send(msg, voter)	 
+        	}
         }
         // If there is no winner at the moment and this node is not
         // in election, could have send a vote based on the current state 
@@ -494,8 +515,7 @@ func (w *PollWorker) handleVoteForElectingPeer(voter net.Addr, vote VoteMsg) boo
 			w.ballot.reset(vote)
 	 	} else {
 			// otherwise udpate my vote using lastLoggedTxid 
-			vote = w.site.createVoteFromCurState()
-			w.ballot.reset(vote)
+			w.ballot.reset(w.site.createVoteFromCurState())
 	 	}	
 					 
 	 	// notify that our new vote	
@@ -696,12 +716,21 @@ func (w *PollWorker) checkQuorum(votes map[string]VoteMsg, candidate VoteMsg) bo
 // Copy a proposed vote
 //
 func (w *PollWorker) cloneProposedVote() VoteMsg {
+	epoch, err := w.site.handler.GetCurrentEpoch()
+	if err != nil {
+		// if epoch is missing, set the epoch to the smallest possible
+		// number.  This is to allow the voting peers to tell me what
+		// the right epoch would be during balloting.
+		// TODO: look at the error to see if there is more genuine issue
+		epoch = 0
+	}
+	
 	// w.site.master.round should be in sycn with 
 	// w.ballot.result.proposed.round. Use w.site.master.round
 	// to be consistent.
 	return w.site.factory.CreateVote(w.site.master.round, 
 								uint32(w.site.handler.GetStatus()),
-								uint32(w.site.handler.GetCurrentEpoch()),
+								uint32(epoch),
 								w.ballot.result.proposed.GetCndId(),
 								w.ballot.result.proposed.GetCndTxnId())		
 }

@@ -243,7 +243,11 @@ func (l *LeaderSyncProxy) updateAcceptedEpochAfterQuorum() error {
 
 func (l *LeaderSyncProxy) notifyNewEpoch() error {
 
-	packet := l.factory.CreateLeaderInfo(l.handler.GetAcceptedEpoch())
+	epoch, err := l.handler.GetAcceptedEpoch()
+	if err != nil {
+		return err
+	}
+	packet := l.factory.CreateLeaderInfo(epoch)
 	return send(packet, l.follower)
 }
 
@@ -266,7 +270,11 @@ func (l *LeaderSyncProxy) updateCurrentEpochAfterQuorum() error {
 	l.state.voteEpochAck(l.follower.GetAddr())
 	
 	// update the current epock after quorum of followers have ack'ed
-	l.handler.NotifyNewCurrentEpoch(l.handler.GetAcceptedEpoch())
+	epoch, err = l.handler.GetAcceptedEpoch()
+	if err != nil {
+		return err
+	}
+	l.handler.NotifyNewCurrentEpoch(epoch)
 			
 	return nil
 }
@@ -274,8 +282,12 @@ func (l *LeaderSyncProxy) updateCurrentEpochAfterQuorum() error {
 func (l *LeaderSyncProxy) declareNewLeaderAfterQuorum() error {
 
 	// return the new epoch to the follower
-	packet := l.factory.CreateNewLeader(l.handler.GetAcceptedEpoch())
-	err := send(packet, l.follower)
+	epoch, err := l.handler.GetAcceptedEpoch()
+	if err != nil {
+		return err
+	}
+	packet := l.factory.CreateNewLeader(epoch)
+	err = send(packet, l.follower)
 	if err != nil {
 		return err
 	}
@@ -352,7 +364,11 @@ func (l* FollowerSyncProxy) execute(donech chan bool) {
 func (l *FollowerSyncProxy) sendFollowerInfo() error {
 
 	// Send my accepted epoch to the leader for voting (don't send current epoch)
-	packet := l.factory.CreateFollowerInfo(l.handler.GetAcceptedEpoch())
+	epoch, err := l.handler.GetAcceptedEpoch()
+	if err != nil {
+		return err
+	}
+	packet := l.factory.CreateFollowerInfo(epoch)
 	return send(packet, l.leader)
 }
 
@@ -369,8 +385,15 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 	// Get epoch from leader message		
 	info := packet.(LeaderInfoMsg)
 	epoch := info.GetAcceptedEpoch()
+	if err != nil {
+		return err
+	}
 
-	if epoch > l.handler.GetAcceptedEpoch() {
+	acceptedEpoch, err := l.handler.GetAcceptedEpoch() 
+	if err != nil {
+		return err
+	}
+	if epoch > acceptedEpoch {
 		// update the accepted epoch based on the quorum result
 		l.handler.NotifyNewAcceptedEpoch(epoch)
 	} else {
@@ -380,7 +403,10 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 	// Notify the leader that I have accepted the epoch.  Send
 	// the last logged txid and current epoch to the leader.			
 	txid := l.handler.GetLastLoggedTxid()
-	currentEpoch := l.handler.GetCurrentEpoch()
+	currentEpoch, err := l.handler.GetCurrentEpoch()
+	if err != nil {
+		return err
+	} 
 	packet = l.factory.CreateEpochAck(uint64(txid), currentEpoch)
 	return send(packet, l.leader)
 }

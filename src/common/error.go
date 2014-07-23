@@ -20,7 +20,7 @@ func NewError(code ErrorCode, reason string) *Error {
 	return &Error{code : code, reason : reason, cause : nil}
 } 
 
-func WrapError(code ErrorCode, reason string, cause *Error) *Error {
+func WrapError(code ErrorCode, reason string, cause error) *Error {
 	return &Error{code : code, reason : reason, cause : cause}
 } 
 

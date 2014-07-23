@@ -213,3 +213,7 @@ func (s* Server) UpdateStateOnCommit(proposal protocol.ProposalMsg) {
 		handle.condVar.Signal()
 	}
 }
+
+func (s* Server)  GetState() *ServerState {
+	return s.provider.GetState()
+}

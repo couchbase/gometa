@@ -24,20 +24,22 @@ func NewServerConfig(repo *Repository) *ServerConfig {
 	return &ServerConfig{repo : repo}
 }
 
-func (r *ServerConifg) GetCurrentEpoch() uint32 {
-	return uint32(GetInt(common.CONFIG_CURRENT_EPOCH))
+func (r *ServerConfig) GetCurrentEpoch() (uint32, error) {
+	value, err :=  r.GetInt(common.CONFIG_CURRENT_EPOCH)
+	return uint32(value), err
 }
 	
-func (r *ServerConfig) GetAcceptedEpoch() uint32 {
-	return uint32(GetInt(common.CONFIG_ACCEPTED_EPOCH))
+func (r *ServerConfig) GetAcceptedEpoch() (uint32, error) {
+	value, err := r.GetInt(common.CONFIG_ACCEPTED_EPOCH)
+	return uint32(value), err
 }
 
-func (r *ServerConifg) SetCurrentEpoch(epoch uint32) {
-	SetInt(common.CONFIG_CURRENT_EPOCH, epoch)
+func (r *ServerConfig) SetCurrentEpoch(epoch uint32) {
+	r.LogInt(common.CONFIG_CURRENT_EPOCH, uint64(epoch))
 }
 	
-func (r *ServerConfig) GetAcceptedEpoch(epoch uint32) {
-	SetInt(common.CONFIG_ACCEPTED_EPOCH, epoch)
+func (r *ServerConfig) SetAcceptedEpoch(epoch uint32) {
+	r.LogInt(common.CONFIG_ACCEPTED_EPOCH, uint64(epoch))
 }
 
 //
@@ -45,8 +47,8 @@ func (r *ServerConfig) GetAcceptedEpoch(epoch uint32) {
 //
 func (r *ServerConfig) LogStr(key string, content string) error {
 
-    k := createKey(key)
-	return r.repo.Set(k, byte[](content))
+    k := createConfigKey(key)
+	return r.repo.Set(k, []byte(content))
 }
 
 //
@@ -54,8 +56,8 @@ func (r *ServerConfig) LogStr(key string, content string) error {
 //
 func (r *ServerConfig) LogInt(key string, content uint64) error {
 
-    k := createKey(key)
-	return r.repo.Set(k, byte[](strconv.FormatUint(content, 10)))
+    k := createConfigKey(key)
+	return r.repo.Set(k, []byte(strconv.FormatUint(content, 10)))
 }
 
 //
@@ -63,13 +65,13 @@ func (r *ServerConfig) LogInt(key string, content uint64) error {
 //
 func (r *ServerConfig) GetStr(key string) (string, error) {
 
-    k := createKey(key) 
+    k := createConfigKey(key) 
     data, err := r.repo.Get(k) 
     if err != nil {
-    	return nil, common.WrapError(common.SERVER_CONFIG_ERROR, "Key = " + key, err)
+    	return "", common.WrapError(common.SERVER_CONFIG_ERROR, "Key = " + key, err)
     }
     
-    return string(data), nil
+    return string(data), nil 
 }
 
 //
@@ -77,13 +79,13 @@ func (r *ServerConfig) GetStr(key string) (string, error) {
 //
 func (r *ServerConfig) GetInt(key string) (uint64, error) {
 
-    k := createKey(key) 
+    k := createConfigKey(key) 
     data, err := r.repo.Get(k) 
     if err != nil {
-    	return nil, common.WrapError(common.SERVER_CONFIG_ERROR, "Key = " + key, err)
+    	return 0, common.WrapError(common.SERVER_CONFIG_ERROR, "Key = " + key, err)
     }
     
-    return strconv.ParseUint(string(data), 10, 64), nil 
+    return strconv.ParseUint(string(data), 10, 64)
 }
 
 //
@@ -91,7 +93,7 @@ func (r *ServerConfig) GetInt(key string) (uint64, error) {
 //
 func (r *ServerConfig) Delete(key string) error {
 
-    k := createKey(txid)
+    k := createConfigKey(key)
     return r.repo.Delete(k) 
 }
 
@@ -99,6 +101,6 @@ func (r *ServerConfig) Delete(key string) error {
 // Private Function 
 /////////////////////////////////////////////////////////////////////////////
 
-func createKey(key string) (string) {
+func createConfigKey(key string) (string) {
     return common.PREFIX_SERVER_CONFIG_PATH + common.PATH_DELIMITER + key
 }

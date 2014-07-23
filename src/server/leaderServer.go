@@ -39,7 +39,10 @@ func newLeaderServer(naddr string,
 	leader := protocol.NewLeader(naddr, handler, factory)
 					           
 	// create a ConsentState 
-	epoch := handler.GetAcceptedEpoch()
+	epoch, err := handler.GetAcceptedEpoch()
+	if err != nil {
+		return nil, err
+	}
 	ensembleSize := uint64(len(GetPeers()))
 	consentState := protocol.NewConsentState(naddr, epoch, ensembleSize) 
 	

@@ -77,18 +77,18 @@ func (a *ServerAction) GetNextTxnId() common.Txnid {
 /////////////////////////////////////////////////////////////////////////////
 
 func (a *ServerAction) GetLastLoggedTxid() common.Txnid {
-	return log.GetLastLoggedTxnId() 
+	return a.log.GetLastLoggedTxnId() 
 }
 
 func (a *ServerAction) GetStatus() protocol.PeerStatus {
 	return a.server.GetState().getStatus()
 }
 
-func (a *ServerAction) GetCurrentEpoch() uint32 {
+func (a *ServerAction) GetCurrentEpoch() (uint32, error) {
 	return a.config.GetCurrentEpoch()
 }
 	
-func (a *ServerAction) GetAcceptedEpoch() uint32 {
+func (a *ServerAction) GetAcceptedEpoch() (uint32, error) {
 	return a.config.GetAcceptedEpoch()
 }
 

@@ -34,7 +34,7 @@ func NewCommitLog(repo *Repository) *CommitLog {
 //
 func (r *CommitLog) Log(txid common.Txnid, op common.OpCode, key string, content []byte) error {
 
-    k := createKey(txid)
+    k := createLogKey(txid)
     msg := r.factory.CreateLogEntry(uint32(op), key, content)
    	data, err := common.Marshall(msg) 
    	if err != nil {
@@ -57,8 +57,6 @@ func (r *CommitLog) Log(txid common.Txnid, op common.OpCode, key string, content
 // Get the last logged Txnid
 //
 func (r *CommitLog) GetLastLoggedTxnId() common.Txnid {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()	
 	return r.lastLoggedTxnid
 }
 
@@ -67,7 +65,7 @@ func (r *CommitLog) GetLastLoggedTxnId() common.Txnid {
 //
 func (r *CommitLog) Get(txid common.Txnid) (common.OpCode, string, []byte, error) {
 
-    k := createKey(txid) 
+    k := createLogKey(txid) 
     data, err := r.repo.Get(k) 
     if err != nil {
     	return common.OPCODE_INVALID, "", nil, err
@@ -86,7 +84,7 @@ func (r *CommitLog) Get(txid common.Txnid) (common.OpCode, string, []byte, error
 //
 func (r *CommitLog) Delete(txid common.Txnid) error {
 
-    k := createKey(txid)
+    k := createLogKey(txid)
     return r.repo.Delete(k) 
 }
 
@@ -94,7 +92,7 @@ func (r *CommitLog) Delete(txid common.Txnid) error {
 // Private Function 
 /////////////////////////////////////////////////////////////////////////////
 
-func createKey(txid common.Txnid) (string) {
+func createLogKey(txid common.Txnid) (string) {
 	
     buf := []byte(common.PREFIX_COMMIT_LOG_PATH)
     buf = strconv.AppendInt(buf, int64(txid), 10)
