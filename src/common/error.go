@@ -8,6 +8,7 @@ const (
 	PROTOCOL_ERROR ErrorCode = iota  	
 	SERVER_ERROR 
 	SERVER_CONFIG_ERROR
+	FATAL_ERROR
 )
 
 type Error struct {
@@ -23,6 +24,10 @@ func NewError(code ErrorCode, reason string) *Error {
 func WrapError(code ErrorCode, reason string, cause error) *Error {
 	return &Error{code : code, reason : reason, cause : cause}
 } 
+
+func (e *Error) IsFatal() bool {
+	return e.code  == FATAL_ERROR
+}
 
 func (e *Error) Error() string {
 	return codeToStr(e.code) + " : " + e.reason

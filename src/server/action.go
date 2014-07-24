@@ -22,17 +22,13 @@ type ServerAction struct {
 // Public Function
 /////////////////////////////////////////////////////////////////////////////
 
-func NewServerAction(server ServerCallback, 
-                     repo *repo.Repository, 
-                     log *repo.CommitLog,
-                     config *repo.ServerConfig,
-                     factory protocol.MsgFactory) *ServerAction {
+func NewServerAction(s *Server) *ServerAction {
 
-    return &ServerAction{repo : repo,
-                         log : log,
-                         server : server,
-                         config : config,
-                         factory : factory}
+    return &ServerAction{repo : s.repo,
+                         log : s.log,
+                         server : s,
+                         config : s.srvConfig,
+                         factory : s.factory}
 }
 
 ////////////////////////////////////////////////////////////////////////////

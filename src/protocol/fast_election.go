@@ -34,6 +34,7 @@ type ElectionSite struct {
 	mutex            sync.Mutex
 	factory          MsgFactory
 	handler          ActionHandler
+	killch           chan bool
 }
 
 type BallotResult struct {
@@ -72,12 +73,14 @@ type PollWorker struct {
 func CreateElectionSite(laddr string, 
 						peers []net.Addr, 
 						factory MsgFactory,
-						handler ActionHandler) (election *ElectionSite, err error) {
+						handler ActionHandler,
+						killch chan bool) (election *ElectionSite, err error) {
 
 	election = &ElectionSite{isClosed : false,
 							 factory : factory,
 							 handler : handler,
-							 ensemble : peers}
+							 ensemble : peers,
+							 killch : killch}
 
 	// Create a new messenger
 	election.messenger, err = newMessenger(laddr)
@@ -90,7 +93,7 @@ func CreateElectionSite(laddr string,
 
 	// Create a new poll worker.  This will start the
 	// goroutine for the pollWorker.
-	election.worker = newPollWorker(election)
+	election.worker = startPollWorker(election)
 	
 	return election, nil
 }
@@ -357,7 +360,7 @@ func (b *Ballot) reset(proposed VoteMsg) {
 // Create a new PollWorker.  The PollWorker listens to the Vote receving from
 // the peers for a particular ballot.
 //
-func newPollWorker(site *ElectionSite) *PollWorker {
+func startPollWorker(site *ElectionSite) *PollWorker {
 
 	worker := &PollWorker{site : site,
 						  ballot : nil,

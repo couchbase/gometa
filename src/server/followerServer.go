@@ -26,10 +26,13 @@ type FollowerState struct {
 //
 // Create a new FollowerServer
 //
-func newFollowerServer(naddr string, 
+func runFollowerServer(naddr string, 
 					   leader string,
+					   ss *ServerState,
                        handler protocol.ActionHandler, 
-                       factory protocol.MsgFactory) (*FollowerServer, error) {
+                       factory protocol.MsgFactory,
+                       donech chan bool, 
+                       killch chan bool) (*FollowerServer, error) {
 
 	// create connection to leader
 	conn, err := net.Dial("tcp", leader)
@@ -41,11 +44,11 @@ func newFollowerServer(naddr string,
 		return nil, err
 	}
 	
-	// create a follower 
-	follower := protocol.NewFollower(protocol.FOLLOWER, pipe, handler, factory)
+	// Create a follower.  The follower will start listening to messages coming from leader. 
+	follower := protocol.NewFollower(protocol.FOLLOWER, pipe, handler, factory, donech)
 	
 	// create the follower state
-	state := newFollowerState() 
+	state := newFollowerState(ss) 
 	                    
 	// create the server					 
 	server := &FollowerServer{follower : follower,
@@ -79,11 +82,9 @@ func (s *FollowerServer) syncWithLeader(pipe      *common.PeerPipe,
 //
 // Create a new FollowerState
 //
-func newFollowerState() *FollowerState {
-	serverState := newServerState()
-	serverState.setStatus(protocol.FOLLOWING)
+func newFollowerState(ss *ServerState) *FollowerState {
 	
-	state := &FollowerState{serverState : serverState}
+	state := &FollowerState{serverState : ss}
 	return state                       
 }
 

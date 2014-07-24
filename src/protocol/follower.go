@@ -23,14 +23,18 @@ type Follower struct {
 //
 // Create a new Follower.
 //
-func NewFollower(kind PeerRole, pipe *common.PeerPipe, handler ActionHandler, factory MsgFactory) *Follower {
+func NewFollower(kind PeerRole, 
+                 pipe *common.PeerPipe, 
+                 handler ActionHandler, 
+                 factory MsgFactory,
+                 donech chan bool) *Follower {
 	follower := &Follower{kind : kind,
 	                      pipe: pipe, 
 	                      pendings : make([]ProposalMsg, common.MAX_PROPOSALS),
 	                      handler : handler,
-	                      factory : factory} 
+	                      factory : factory}
 	                      
-	go follower.startListener()
+	go follower.startListener(donech)
 	
 	return follower
 }
@@ -46,6 +50,7 @@ func (f *Follower) GetId() string {
 // Forward the request to the leader
 //
 func (f *Follower) ForwardRequest(request RequestMsg) {
+	// TODO : If the request cannot be sent
 	f.pipe.Send(request)
 }
 
@@ -56,8 +61,13 @@ func (f *Follower) ForwardRequest(request RequestMsg) {
 //
 // Goroutine.  Start a new listener for the follower.
 // Listen to any new message coming from the leader.
+// This is the main routine for the follower to interact
+// with the leader.  If there is any error (network
+// error commuincating to leader or internal failure),
+// this loop will terminate.   The server (that contains
+// the follower) will need to run leader election again.
 //
-func (f* Follower) startListener() {
+func (f* Follower) startListener(donech chan bool) {
     reqch := f.pipe.ReceiveChannel()
 
 loop:
@@ -65,16 +75,18 @@ loop:
         select {
         case msg, ok := <-reqch:
             if ok {
-                // TODO : handle error from handleMessage() 
                	err := f.handleMessage(msg.(common.Packet)) 
                	if err != nil {
+               		// If there is an error, terminate	
+               		break loop
                	}
             } else {
-        		// TODO : the channel is closed.  Need to shutdown the server itself.
                 break loop
             }
         }
     }
+    
+    donech <- true
 }
 
 //
@@ -107,9 +119,7 @@ func (f *Follower) handleProposal(msg ProposalMsg) error {
 	// Send Accept Message
 	// TODO: Should only accept if the txnid exceeeds the last one.
 	//       ZK does not do that.  Need to double check Paxos Protocol.
-	f.sendAccept(common.Txnid(msg.GetTxnid()), f.GetId())
-	
-	return nil
+	return f.sendAccept(common.Txnid(msg.GetTxnid()), f.GetId())
 }
 
 //
@@ -148,8 +158,16 @@ func (f *Follower) handleCommit(msg CommitMsg) error {
 //
 // Send accept message to the leader.  
 //
-func (f *Follower) sendAccept(txnid common.Txnid, fid string ) {
+func (f *Follower) sendAccept(txnid common.Txnid, fid string ) error {
 	accept := f.factory.CreateAccept(uint64(txnid), fid)
+
+	// Send the message to the leader through a reliable protocol (TCP).	
+	success := f.pipe.Send(accept)
+	if !success {
+		// It is a fatal error if not able to send to the leader.  It will require the server to
+		// do leader election again.
+		return common.NewError(common.FATAL_ERROR, "Fail to send accept message for to leader from " + fid)  
+	}
 	
-	f.pipe.Send(accept)
+	return nil
 }

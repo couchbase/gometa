@@ -31,9 +31,12 @@ type LeaderState struct {
 //
 // Create a new LeaderServer
 //
-func newLeaderServer(naddr string, 
+func runLeaderServer(naddr string, 
+					 ss *ServerState,
                      handler protocol.ActionHandler, 
-                     factory protocol.MsgFactory) (*LeaderServer, error) {
+                     factory protocol.MsgFactory,
+                     donech chan bool,
+                     killch chan bool) (*LeaderServer, error) {
 
 	// create a leader
 	leader := protocol.NewLeader(naddr, handler, factory)
@@ -47,7 +50,7 @@ func newLeaderServer(naddr string,
 	consentState := protocol.NewConsentState(naddr, epoch, ensembleSize) 
 	
 	// create the leader state
-	state := newLeaderState()
+	state := newLeaderState(ss)
 					
 	// create a listener to listen to connection from the peer/follower				           
 	listener, err := common.StartPeerListener(naddr) 
@@ -138,11 +141,8 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe,
 //
 // Create a new LeaderState
 //
-func newLeaderState() *LeaderState {
-	serverState := newServerState()
-	serverState.setStatus(protocol.LEADING)
-	
-	state := &LeaderState{serverState : serverState,
+func newLeaderState(ss *ServerState) *LeaderState {
+	state := &LeaderState{serverState : ss,
 	                     ready : false}
 	
 	state.condVar = sync.NewCond(&state.mutex)	
