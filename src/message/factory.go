@@ -74,14 +74,16 @@ func (f *ConcreteMsgFactory) CreateBallot(id uint64) protocol.BallotMsg {
 					Id : proto.Uint64(id)} 
 }
 
-func (f *ConcreteMsgFactory) CreateLogEntry(opCode uint32, 
+func (f *ConcreteMsgFactory) CreateLogEntry(txnid uint64,
+                                            opCode uint32, 
 											key string, 
 											content []byte) protocol.LogEntryMsg {
 
 	return &LogEntry{Version : proto.Uint32(ProtoVersion()),
+					Txnid : proto.Uint64(uint64(txnid)),
 					OpCode : proto.Uint32(opCode),
 					Key : proto.String(key),
-					Content : content} 
+					Content : content}
 }
 
 func (f *ConcreteMsgFactory) CreateFollowerInfo(epoch uint32) protocol.FollowerInfoMsg {

@@ -354,9 +354,10 @@ func (m *NewLeaderAck) GetVersion() uint32 {
 
 type LogEntry struct {
 	Version          *uint32 `protobuf:"varint,1,req,name=version" json:"version,omitempty"`
-	OpCode           *uint32 `protobuf:"varint,2,req,name=opCode" json:"opCode,omitempty"`
-	Key              *string `protobuf:"bytes,3,req,name=key" json:"key,omitempty"`
-	Content          []byte  `protobuf:"bytes,4,req,name=content" json:"content,omitempty"`
+	Txnid            *uint64 `protobuf:"varint,2,req,name=txnid" json:"txnid,omitempty"`
+	OpCode           *uint32 `protobuf:"varint,3,req,name=opCode" json:"opCode,omitempty"`
+	Key              *string `protobuf:"bytes,4,req,name=key" json:"key,omitempty"`
+	Content          []byte  `protobuf:"bytes,5,req,name=content" json:"content,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
@@ -367,6 +368,13 @@ func (*LogEntry) ProtoMessage()    {}
 func (m *LogEntry) GetVersion() uint32 {
 	if m != nil && m.Version != nil {
 		return *m.Version
+	}
+	return 0
+}
+
+func (m *LogEntry) GetTxnid() uint64 {
+	if m != nil && m.Txnid != nil {
+		return *m.Txnid
 	}
 	return 0
 }

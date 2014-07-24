@@ -3,6 +3,7 @@ package protocol
 import (
 	"common"
 	"sync"
+	"fmt"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -21,6 +22,7 @@ type FollowerSyncProxy struct {
 	leader  		*common.PeerPipe
 	handler          ActionHandler
 	factory          MsgFactory 
+	state           *FollowerState
 }
 
 type ConsentState struct {
@@ -206,6 +208,11 @@ func (l* LeaderSyncProxy) execute(donech chan bool) {
 				stage = SYNC_SEND
 			}	
 			case SYNC_SEND : {
+				if l.syncWithLeader() != nil {
+					donech <- false
+					return
+				}
+				stage = DECLARE_NEW_LEADER_AFTER_QUORUM 
 			}
 			case DECLARE_NEW_LEADER_AFTER_QUORUM : {
 				if l.declareNewLeaderAfterQuorum() != nil {
@@ -307,6 +314,41 @@ func (l *LeaderSyncProxy) declareNewLeaderAfterQuorum() error {
 	return nil
 }
 
+func (l *LeaderSyncProxy) syncWithLeader() error {
+
+	logChan, errChan, err := l.handler.GetCommitedEntries(l.followerState.lastLoggedTxid)
+	if err != nil {
+		return err
+	} 
+	
+	for {
+		select {
+			case entry, ok := <- logChan :
+				if !ok {
+					// channel close, nothing to send
+					return nil
+				}
+				
+ 				err = send(entry, l.follower) 
+ 				if err != nil {
+ 					// TODO: What to do with the peer?  Need to close the pipe.
+ 					return  err
+ 				}
+ 				
+ 				// TODO: Need to send the proposal in flight
+ 				
+			case err := <- errChan :
+				// TODO : Need to close the pipe
+				if err != nil {
+					return err
+				}
+				return nil
+		}
+	}
+	
+	return nil
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // FollowerSyncProxy 
 /////////////////////////////////////////////////////////////////////////////
@@ -317,7 +359,8 @@ func NewFollowerSyncProxy(leader *common.PeerPipe,
 
 	sync := &FollowerSyncProxy{leader : leader,
 							 handler : handler,
-							 factory : factory}
+							 factory : factory,
+							 state : nil}
 							 
 	return sync
 }
@@ -347,6 +390,11 @@ func (l* FollowerSyncProxy) execute(donech chan bool) {
 				stage = SYNC_RECEIVE 
 			}
 			case SYNC_RECEIVE : {
+				if l.syncReceive() != nil {
+					donech <- false
+					return
+				}
+				stage = RECEIVE_UPDATE_CURRENT_EPOCH
 			}
 			case RECEIVE_UPDATE_CURRENT_EPOCH : {
 				if l.receiveAndUpdateCurrentEpoch() != nil {
@@ -407,6 +455,7 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 	if err != nil {
 		return err
 	} 
+	l.state = &FollowerState{lastLoggedTxid : uint64(txid), currentEpoch : currentEpoch}
 	packet = l.factory.CreateEpochAck(uint64(txid), currentEpoch)
 	return send(packet, l.leader)
 }
@@ -433,6 +482,46 @@ func (l *FollowerSyncProxy) receiveAndUpdateCurrentEpoch() error {
 	// Notify the leader that I have accepted the epoch			
 	packet = l.factory.CreateNewLeaderAck()
 	return send(packet, l.leader)
+}
+
+func (l *FollowerSyncProxy) syncReceive() error {
+
+	receiveFirst := false
+
+	for {
+		packet, err := listen("LogEntryMsg", l.leader)	
+		if err != nil {
+			return err
+		}
+		
+		entry := packet.(LogEntryMsg)
+		lastLoggedTxnid := entry.GetTxnid()
+		
+		// If it is the first entry, we expect the entry txid to be the same as my last logged txid
+		if !receiveFirst && lastLoggedTxnid != l.state.lastLoggedTxid {
+			return common.WrapError(common.PROTOCOL_ERROR, "",  
+				fmt.Errorf("Expect to receive first LogEntryMsg with txnid = %d", lastLoggedTxnid))
+		}
+		
+		if !receiveFirst {
+			// always skip the first entry since I have this entry in my commit log already
+			receiveFirst = true
+		} else {
+			// if this is not the first entry but the entry's txid is the same as my last logged txid.  It signals the
+			// end of the stream.  
+			if lastLoggedTxnid == entry.GetTxnid() {
+				return nil
+			} 
+			
+			// write the new commit entry
+			err = l.handler.CommitEntry(entry.GetTxnid(), entry.GetOpCode(), entry.GetKey(), entry.GetContent())
+			if err != nil {
+				return err
+			}
+		}
+	}
+	
+	return nil
 }
 
 /////////////////////////////////////////////////////////////////////////////

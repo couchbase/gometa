@@ -62,7 +62,7 @@ func (s *Server) bootstrap() error {
     config := r.NewServerConfig(repo)	
     
 	s.factory = message.NewConcreteMsgFactory()
-	s.handler = NewServerAction(s, repo, log, config) 
+	s.handler = NewServerAction(s, repo, log, config, s.factory)
 
 	// Create an election site to start leader election.	
 	resultCh := make(chan string)

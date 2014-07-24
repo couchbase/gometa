@@ -63,9 +63,10 @@ message NewLeaderAck {
 
 message LogEntry {
     required uint32          version   = 1; // protocol version TBD
-   	required uint32          opCode    = 2; 
-   	required string          key       = 3; 
-   	required bytes           content   = 4;
+   	required uint64          txnid     = 2; 
+   	required uint32          opCode    = 3; 
+   	required string          key       = 4; 
+   	required bytes           content   = 5;
 }
 
 message Request {

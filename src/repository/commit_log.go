@@ -18,8 +18,14 @@ type CommitLog struct {
 	mutex             sync.Mutex
 }
 
+type LogIterator struct {
+	repo             *Repository
+	iter             *RepoIterator
+	hasLock           bool
+}
+
 /////////////////////////////////////////////////////////////////////////////
-// Public Function 
+// CommitLog Public Function 
 /////////////////////////////////////////////////////////////////////////////
 
 //
@@ -35,7 +41,7 @@ func NewCommitLog(repo *Repository) *CommitLog {
 func (r *CommitLog) Log(txid common.Txnid, op common.OpCode, key string, content []byte) error {
 
     k := createLogKey(txid)
-    msg := r.factory.CreateLogEntry(uint32(op), key, content)
+    msg := r.factory.CreateLogEntry(uint64(txid), uint32(op), key, content)
    	data, err := common.Marshall(msg) 
    	if err != nil {
    		return err
@@ -71,11 +77,10 @@ func (r *CommitLog) Get(txid common.Txnid) (common.OpCode, string, []byte, error
     	return common.OPCODE_INVALID, "", nil, err
     }
     
-   	packet, err := common.UnMarshall(data[8:])
+    entry, err := unmarshall(data)
    	if err != nil {
    		return common.OPCODE_INVALID, "", nil, err
    	}
-   	entry := packet.(*message.LogEntry)
    	return common.GetOpCodeFromInt(entry.GetOpCode()), entry.GetKey(), entry.GetContent(), nil
 }
 
@@ -88,6 +93,61 @@ func (r *CommitLog) Delete(txid common.Txnid) error {
     return r.repo.Delete(k) 
 }
 
+/////////////////////////////////////////////////////////////////////////////
+// LogIterator Public Function 
+/////////////////////////////////////////////////////////////////////////////
+
+//
+// Create a new iterator
+//
+func (r *CommitLog) NewIterator(txid common.Txnid, exclusive bool) (*LogIterator, error) {
+
+    startKey := createLogKey(txid)
+	iter, err := r.repo.NewIterator(startKey, "")
+	if err != nil {
+		return nil, err
+	}
+
+	if exclusive {
+		r.repo.Lock()
+	}	
+	
+	result := &LogIterator{iter : iter,
+	                       repo : r.repo,
+	                       hasLock : exclusive}
+	return result, nil
+}
+
+// Get value from iterator
+func (i *LogIterator) Next() (txnid common.Txnid, op common.OpCode, key string, content []byte, err error) {
+
+	// TODO: Check if fdb and iterator is closed
+	key, content, err = i.iter.Next()
+	if err != nil {
+		return 0, common.OPCODE_INVALID, "", nil, err
+	}
+	
+    entry, err := unmarshall(content)
+   	if err != nil {
+   		return 0, common.OPCODE_INVALID, "", nil, err
+   	}
+   	
+   	return common.Txnid(entry.GetTxnid()), 
+   	       common.GetOpCodeFromInt(entry.GetOpCode()), 
+   	       entry.GetKey(), entry.GetContent(), nil
+}
+
+// close iterator
+func (i *LogIterator) Close() {
+	// TODO: Check if fdb iterator is closed
+	
+	if i.hasLock {
+		i.repo.Unlock()
+	}
+	
+	i.iter.Close()
+}
+
 ////////////////////////////////////////////////////////////////////////////
 // Private Function 
 /////////////////////////////////////////////////////////////////////////////
@@ -98,4 +158,16 @@ func createLogKey(txid common.Txnid) (string) {
     buf = strconv.AppendInt(buf, int64(txid), 10)
 
    	return string(buf)
+}
+
+func unmarshall(data []byte) (*message.LogEntry, error) {
+
+   	// TODO : why offset by 8? 
+   	packet, err := common.UnMarshall(data[8:])
+   	if err != nil {
+   		return nil, err
+   	}
+   	
+   	entry := packet.(*message.LogEntry)
+   	return entry, nil	
 }

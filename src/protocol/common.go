@@ -51,6 +51,10 @@ type ActionHandler interface {
 	// The following API are used during discovery/sync 
 	//	
 	
+	GetCommitedEntries(txid uint64) (chan LogEntryMsg, chan error, error)
+	
+	CommitEntry(txid uint64, op uint32, key string, content []byte) error
+	
 	// Set new accepted epoch as well as creating new txnid
 	NotifyNewAcceptedEpoch(uint32) 
 	
@@ -93,7 +97,7 @@ type MsgFactory interface {
 	
 	CreateNewLeaderAck() NewLeaderAckMsg 
 	
-	CreateLogEntry(opCode uint32, key string, content []byte) LogEntryMsg
+	CreateLogEntry(txnid uint64, opCode uint32, key string, content []byte) LogEntryMsg
 	
 	CreateRequest(id uint64, opCode uint32, key string, content []byte) RequestMsg 
 }
@@ -181,6 +185,7 @@ type NewLeaderAckMsg interface {
 
 type LogEntryMsg interface {
 	common.Packet
+	GetTxnid() uint64 
 	GetOpCode() uint32 
     GetKey() string 
     GetContent() []byte 

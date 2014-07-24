@@ -15,6 +15,7 @@ type ServerAction struct {
     log     *repo.CommitLog
     config  *repo.ServerConfig
     server   ServerCallback
+    factory  protocol.MsgFactory
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -24,12 +25,14 @@ type ServerAction struct {
 func NewServerAction(server ServerCallback, 
                      repo *repo.Repository, 
                      log *repo.CommitLog,
-                     config *repo.ServerConfig) *ServerAction {
+                     config *repo.ServerConfig,
+                     factory protocol.MsgFactory) *ServerAction {
 
     return &ServerAction{repo : repo,
                          log : log,
                          server : server,
-                         config : config}
+                         config : config,
+                         factory : factory}
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -104,6 +107,57 @@ func (a *ServerAction) NotifyNewCurrentEpoch(epoch uint32) {
 	a.config.SetCurrentEpoch(epoch)
 }
 	
+////////////////////////////////////////////////////////////////////////////
+// Function for discovery phase 
+/////////////////////////////////////////////////////////////////////////////
+
+func (a *ServerAction) GetCommitedEntries(txid uint64) (chan protocol.LogEntryMsg, chan error, error) {
+
+	// Get an iterator thas has exclusive write access.  This means there will not be
+	// new commit entry being written while iterating.
+	iter, err := a.log.NewIterator(common.Txnid(txid), true)	
+	if err != nil {
+		return nil, nil, err
+	}
+	
+	logChan := make(chan protocol.LogEntryMsg)
+	errChan := make(chan error)
+
+	go a.startLogStreamer(txid, iter, logChan, errChan)
+	
+	return logChan, errChan, nil 
+}
+
+func (a *ServerAction) startLogStreamer(startTxid uint64,
+                                        iter *repo.LogIterator, 
+										logChan chan protocol.LogEntryMsg,
+										errChan chan error) {
+					
+	// Close the iterator upon termination									
+	defer iter.Close()
+
+	// TODO : Need to lock the commitLog so there is no new commit while streaming										
+	// TODO : Should I skip the first one
+	for txnid, op, key, body, err := iter.Next(); err != nil; txnid, op, key, body, err = iter.Next() {
+		msg := a.factory.CreateLogEntry(uint64(txnid), uint32(op), key, body) 
+		logChan <- msg
+	}
+	
+	// stream the last entry with txid again
+	msg := a.factory.CreateLogEntry(startTxid, uint32(common.OPCODE_INVALID), "", nil) 
+	logChan <- msg
+		
+	// TODO : The item is supposed to be with even if the channel is closed. Double check.
+	close(logChan)
+	close(errChan)
+}
+
+func (a *ServerAction) CommitEntry(txid uint64, op uint32, key string, content []byte) error {
+
+	return a.log.Log(common.Txnid(txid), common.OpCode(op), key, content)
+}
+
+
 ////////////////////////////////////////////////////////////////////////////
 // Private Function
 /////////////////////////////////////////////////////////////////////////////
