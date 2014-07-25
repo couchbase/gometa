@@ -50,9 +50,8 @@ func (f *Follower) GetId() string {
 //
 // Forward the request to the leader
 //
-func (f *Follower) ForwardRequest(request RequestMsg) {
-	// TODO : If the request cannot be sent
-	f.pipe.Send(request)
+func (f *Follower) ForwardRequest(request RequestMsg) bool {
+	return f.pipe.Send(request)
 }
 
 /////////////////////////////////////////////////
@@ -73,7 +72,7 @@ func (f* Follower) startListener(donech chan bool) {
 
 loop:
     for {
-         msg, ok := <-reqch:
+         msg, ok := <-reqch
          if ok {
            	err := f.handleMessage(msg.(common.Packet)) 
             if err != nil {

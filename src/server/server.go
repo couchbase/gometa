@@ -105,7 +105,7 @@ func (s *Server) runServer(leader string) (err error) {
 	// Otherwise, start the followerServer.
 	if leader == host {
 		s.state.setStatus(protocol.LEADING)
-	    err = runLeaderServer(host, s.state, s.handler, s.factory, s.killch2)
+	    _, err = runLeaderServer(host, s.state, s.handler, s.factory, s.killch2)
 	} else {
 		s.state.setStatus(protocol.FOLLOWING)
 		err = runFollowerServer(host, leader, s.state, s.handler, s.factory, s.killch2)

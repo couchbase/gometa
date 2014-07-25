@@ -36,11 +36,11 @@ func runFollowerServer(naddr string,
 	// create connection to leader
 	conn, err := net.Dial("tcp", leader)
 	if err != nil {
-		return nil, err	
+		return err	
 	}
 	pipe, err := common.NewPeerPipe(conn)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// close the connection to the leader. If connection is closed,
@@ -67,7 +67,7 @@ func runFollowerServer(naddr string,
 func syncWithLeader(pipe      *common.PeerPipe,
 					handler   protocol.ActionHandler, 
 	                factory   protocol.MsgFactory,
-	                killch    chan bool) bool
+	                killch    chan bool) bool {
 	
 	proxy := protocol.NewFollowerSyncProxy(pipe, handler, factory)                    	 
 	
@@ -92,7 +92,7 @@ func syncWithLeader(pipe      *common.PeerPipe,
 // Run Follower Protocol 
 //
 func runFollower(pipe      *common.PeerPipe,
-			   ss        *ServerState
+			   ss        *ServerState,
 			   handler   protocol.ActionHandler, 
 	           factory   protocol.MsgFactory,
 	           killch    chan bool) {
@@ -146,13 +146,13 @@ func (s *FollowerServer) processRequest(handler   	protocol.ActionHandler,
 			} else {
 				return 
 			}
-		}
 		case <- killch:
 			// server is being explicitly terminated, simply return.
 			// The pipe will eventually be closed and cause Follower to err out.
 			return
-		case <- done:
+		case <- donech:
 			// follower is done.  Just return.
 		 	return	
+		}
 	}
 }
