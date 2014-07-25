@@ -35,7 +35,6 @@ func runLeaderServer(naddr string,
 					 ss *ServerState,
                      handler protocol.ActionHandler, 
                      factory protocol.MsgFactory,
-                     donech chan bool,
                      killch chan bool) (*LeaderServer, error) {
 
 	// create a leader

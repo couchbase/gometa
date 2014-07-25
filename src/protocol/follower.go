@@ -23,11 +23,12 @@ type Follower struct {
 //
 // Create a new Follower.
 //
-func NewFollower(kind PeerRole, 
+func StartFollower(kind PeerRole, 
                  pipe *common.PeerPipe, 
                  handler ActionHandler, 
                  factory MsgFactory,
                  donech chan bool) *Follower {
+                 
 	follower := &Follower{kind : kind,
 	                      pipe: pipe, 
 	                      pendings : make([]ProposalMsg, common.MAX_PROPOSALS),
@@ -72,21 +73,18 @@ func (f* Follower) startListener(donech chan bool) {
 
 loop:
     for {
-        select {
-        case msg, ok := <-reqch:
-            if ok {
-               	err := f.handleMessage(msg.(common.Packet)) 
-               	if err != nil {
-               		// If there is an error, terminate	
-               		break loop
-               	}
-            } else {
-                break loop
-            }
-        }
+         msg, ok := <-reqch:
+         if ok {
+           	err := f.handleMessage(msg.(common.Packet)) 
+            if err != nil {
+              	// If there is an error, terminate	
+               	break loop
+            } 
+         } else {
+            break loop
+         }
+    	donech <- true
     }
-    
-    donech <- true
 }
 
 //

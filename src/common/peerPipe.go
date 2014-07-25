@@ -144,7 +144,8 @@ func (p *PeerPipe) doSend() {
 		// write the packet
 		n, err := p.conn.Write(msg)
 		if n < size || err != nil {
-			// Network error. Close the loop.
+			// Network error. Close the loop.  The pipe will
+			// close and cause subsequent Send() to fail. 
 			return
 		}
 	}

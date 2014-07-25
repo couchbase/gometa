@@ -101,26 +101,17 @@ func (s *Server) runServer(leader string) (err error) {
 
 	host := GetHostName()
 	
-	donech := make(chan bool)
-	
 	// If this host is the leader, then start the leader server.
 	// Otherwise, start the followerServer.
 	if leader == host {
 		s.state.setStatus(protocol.LEADING)
-	    _, err = runLeaderServer(host, s.state, s.handler, s.factory, donech, s.killch2)
+	    err = runLeaderServer(host, s.state, s.handler, s.factory, s.killch2)
 	} else {
 		s.state.setStatus(protocol.FOLLOWING)
-		_, err = runFollowerServer(host, leader, s.state, s.handler, s.factory, donech, s.killch2)
+		err = runFollowerServer(host, leader, s.state, s.handler, s.factory, s.killch2)
 	}
 	
-	if err != nil {
-		return err
-	}
-
-	// wait for the server to be done. 	
-	<- donech	
-	
-	return nil 
+	return err 
 }
 
 //
@@ -299,6 +290,10 @@ func (s *ServerState) setStatus(status protocol.PeerStatus) {
 // Handle a new incoming request
 //
 func (s *Server) HandleNewRequest(req protocol.RequestMsg) error {
+
+	if s.IsDone() {
+		return common.NewError(common.SERVER_ERROR, "Server is terminated. Cannot process new request.")
+	}
 
 	// TODO : Assign an unique id to the request msg			
 	id := uint64(1)
