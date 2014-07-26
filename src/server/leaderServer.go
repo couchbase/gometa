@@ -18,10 +18,12 @@ type LeaderServer struct {
 }
 
 type LeaderState struct {
-	ready			    bool
+	serverState		    *ServerState	
+
+	// mutex protected variable	
 	mutex				sync.Mutex
 	condVar			    *sync.Cond
-	serverState		    *ServerState	
+	ready			    bool
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -29,13 +31,14 @@ type LeaderState struct {
 /////////////////////////////////////////////////////////////////////////////
 
 //
-// Create a new LeaderServer
+// Create a new LeaderServer.  This is a blocking call until the LeaderServer
+// termintates.
 //
-func runLeaderServer(naddr string, 
+func RunLeaderServer(naddr string, 
 					 ss *ServerState,
                      handler protocol.ActionHandler, 
                      factory protocol.MsgFactory,
-                     killch chan bool) (*LeaderServer, error) {
+                     killch chan bool) error {
 
 	// create a leader
 	leader := protocol.NewLeader(naddr, handler, factory)
@@ -43,7 +46,7 @@ func runLeaderServer(naddr string,
 	// create a ConsentState 
 	epoch, err := handler.GetAcceptedEpoch()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	ensembleSize := uint64(len(GetPeers()))
 	consentState := protocol.NewConsentState(naddr, epoch, ensembleSize) 
@@ -54,7 +57,7 @@ func runLeaderServer(naddr string,
 	// create a listener to listen to connection from the peer/follower				           
 	listener, err := common.StartPeerListener(naddr) 
 	if err != nil {
-		return nil, common.NewError(common.SERVER_ERROR, "Fail to start PeerListener.")	
+		return common.NewError(common.SERVER_ERROR, "Fail to start PeerListener.")	
 	}
 	
 	// create the server					 
@@ -63,13 +66,14 @@ func runLeaderServer(naddr string,
 	                        consentState: consentState,
 	                        state : state}
 
-	// start a go-routine for processing incoming request	
-	go server.processRequest(handler, factory)
-
 	// start the listener	
-	go server.listenFollower(listener, consentState, handler, factory)
+	killch2 := make(chan bool)
+	go server.listenFollower(listener, consentState, handler, factory, killch2)
 	
-	return server, nil
+	// start the main loop for processing incoming request	
+	server.processRequest(handler, factory, killch, killch2)
+
+	return nil
 }
 	
 //
@@ -80,28 +84,26 @@ func runLeaderServer(naddr string,
 func (l *LeaderServer) listenFollower(listener *common.PeerListener,
 						              state *protocol.ConsentState,
 						              handler protocol.ActionHandler,
-						              factory protocol.MsgFactory) {
+						              factory protocol.MsgFactory,
+						              killch  chan bool) {
 	
 	connCh := listener.ConnChannel()
 	if connCh == nil {
 		// It should not happen unless the listener is closed
 		return
 	}
-
+	
 	for {
 		select {
 			case conn := <- connCh : {
 				// There is a new peer connection request
 				// TODO: Check if it is not a duplicate
-				pipe, err := common.NewPeerPipe(conn)
-				if err != nil {
-					// TODO : return error
-				}
-				
+				pipe := common.NewPeerPipe(conn)
 				go l.startProxy(pipe, state, handler, factory)	
 			}
-			// TODO: handle shutdown	
-			default : {}
+			case <- killch :
+				l.leader.Terminate()
+				return
 		}
 	}
 }
@@ -123,18 +125,17 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe,
 	// this go-routine will be blocked until handshake is completed between the
 	// leader and the follower.  By then, the leader will also get majority 
 	// confirmation that it is a leader.
-	<- donech
+	success := <- donech
 	
-	l.state.mutex.Lock()
-	defer l.state.mutex.Unlock()
+	if success {
 	
-	// tell the leader to add this follower for processing request
-	l.leader.AddFollower(peer)
+		// tell the leader to add this follower for processing request
+		l.leader.AddFollower(peer)
 
-	// At this point, the follower has voted this server as the leader.
-	// Notify the request processor to start processing new request for this host 
-	l.state.ready = true
-	l.state.condVar.Signal()
+		// At this point, the follower has voted this server as the leader.
+		// Notify the request processor to start processing new request for this host 
+		l.notifyReady()
+	}
 }
 
 //
@@ -156,37 +157,74 @@ func newLeaderState(ss *ServerState) *LeaderState {
 // Goroutine for processing each request one-by-one
 //
 func (s *LeaderServer) processRequest(handler   protocol.ActionHandler, 
-					                    factory   protocol.MsgFactory) {
-					                    
+					                  factory   protocol.MsgFactory,
+					                  killch    chan bool,
+					                  lisKillch chan bool) {
+
+	// start processing loop after I am being confirmed as a leader (there
+	// is a quorum of followers that have sync'ed with me)	
+	s.waitTillReady()					                    
+	
+	// notify the request processor to start processing new request
+	for {
+		select {
+			case handle, ok := <- s.state.serverState.incomings :
+				if ok {
+					// de-queue the request
+					s.addPendingRequest(handle)
+		
+					// create the proposal and forward to the leader 
+					// TODO: This will send to every follower asynchronously
+					s.leader.CreateProposal(GetHostName(), handle.request)
+				} else {
+					// server shutdown.  
+					lisKillch <- true
+					return
+				}
+				
+			case <- killch : 
+				// server shutdown.  
+				lisKillch <- true
+				return
+		}
+	}
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// Private Function for protecting shared state 
+/////////////////////////////////////////////////////////////////////////////
+
+//
+// Notify when server is ready
+//
+func (s *LeaderServer) notifyReady() {
+	s.state.mutex.Lock()
+	defer s.state.mutex.Unlock()
+	
+	s.state.ready = true
+	s.state.condVar.Signal()
+}
+
+//
+// Wait for the ready flag to be set.  This is when the leader has gotten
+// the quorum of followers to join/sync.
+//
+func (s *LeaderServer) waitTillReady() {
 	s.state.mutex.Lock()
 	defer s.state.mutex.Unlock()
 	
 	if !s.state.ready {
 		s.state.condVar.Wait()
 	}
-	
-	// notify the request processor to start processing new request
-	for {
-		// TODO : handle shutdownd
-		
-		// de-queue the request
-		handle := <- s.state.serverState.incomings
-		
-		s.state.serverState.mutex.Lock()
-		defer s.state.serverState.mutex.Unlock()
-		
-		// remember the request 		
-		s.state.serverState.pendings[handle.request.GetReqId()] = handle
-		
-		// create the proposal and forward to the leader 
-		s.leader.CreateProposal(GetHostName(), handle.request)
-	}
 }
 
-/////////////////////////////////////////////////////////////////////////////
-// LeaderServer - StateProvider Interface 
-/////////////////////////////////////////////////////////////////////////////
-
-func (s *LeaderServer) GetState() *ServerState {
-	return s.state.serverState
+//
+// Add Pending Request
+//
+func (s *LeaderServer) addPendingRequest(handle *RequestHandle) {
+	s.state.serverState.mutex.Lock()
+	defer s.state.serverState.mutex.Unlock()
+		
+	// remember the request 		
+	s.state.serverState.pendings[handle.request.GetReqId()] = handle
 }

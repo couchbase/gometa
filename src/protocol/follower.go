@@ -70,20 +70,19 @@ func (f *Follower) ForwardRequest(request RequestMsg) bool {
 func (f* Follower) startListener(donech chan bool) {
     reqch := f.pipe.ReceiveChannel()
 
-loop:
     for {
          msg, ok := <-reqch
          if ok {
            	err := f.handleMessage(msg.(common.Packet)) 
             if err != nil {
               	// If there is an error, terminate	
-               	break loop
+               	break 
             } 
          } else {
-            break loop
+            break 
          }
-    	donech <- true
     }
+   	donech <- true
 }
 
 //

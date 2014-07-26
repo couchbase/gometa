@@ -17,13 +17,13 @@ import (
 //    Therefore, the ack is returned in the same order as the proposal.
 // 4) In the follower, proposal and commit can be processed out-of-order.
 //    These 2 messages go through different queues on the follower side.
-// 5) The leader calls the LearnerHandler to send/recieve proposal/commit 
-//    for a specific follower.  If that fails,  it will close the socket.  
-//    This, in turn, will terminate both the sending and recieving threads 
-//    of the LearnerHandler and force the LearnerHandler to shutdown.  In 
-//    doing so, the leader will also remove the follower.  The leader will
-//    listen to any new socket connection to re-estabilish communication with
-//    the follower.
+// 5) The leader calls the LearnerHandler (a separate go-routine) to 
+//    send/recieve proposal/commit for a specific follower.  If that 
+//    fails,  it will close the socket.  This, in turn, will terminate 
+//    both the sending and recieving threads of the LearnerHandler and 
+//    force the LearnerHandler to shutdown.  In  doing so, the leader will 
+//    also remove the follower.  The leader will listen to any new socket 
+//    connection to re-estabilish communication with the follower.
 // 6) When the follower fails to send a Ack to the leader, it will close the socket.
 //    This, in turn, will shutdown the follower.  The thread (QuorumPeer) will 
 //    continue to run in "looking" state.  While at "looking" state, it will execute 
@@ -46,13 +46,15 @@ import (
 
 type Leader struct {
 	naddr          string
-	followers      map[string]*common.PeerPipe
-	pendings       []ProposalMsg
     lastCommitted  common.Txnid	
-    quorums        map[common.Txnid][]string
     handler        ActionHandler
     factory		   MsgFactory 
+    quorums        map[common.Txnid][]string
+    
+    // mutex protected variable
     mutex          sync.Mutex
+	followers      map[string]*common.PeerPipe
+	pendings       []ProposalMsg
 }
 
 /////////////////////////////////////////////////
@@ -62,7 +64,9 @@ type Leader struct {
 //
 // Create a new leader
 //
-func NewLeader(naddr string, handler ActionHandler, factory MsgFactory) (*Leader) {
+func NewLeader(naddr string, 
+				handler ActionHandler, 
+				factory MsgFactory) (*Leader) {
 	leader := &Leader{naddr : naddr, 
 					  followers : make(map[string]*common.PeerPipe),
 					  pendings : make([]ProposalMsg, 0, common.MAX_PROPOSALS),
@@ -72,6 +76,101 @@ func NewLeader(naddr string, handler ActionHandler, factory MsgFactory) (*Leader
 					  factory : factory}
 	return leader
 }
+
+//
+// Terminate the leader
+//
+func (l *Leader) Terminate() {
+
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	for _, pipe := range l.followers {
+		pipe.Close()
+	}
+}
+
+/////////////////////////////////////////////////
+// Follower Listener 
+/////////////////////////////////////////////////
+
+//
+// Add a follower and starts a listener for the follower
+//
+func (l *Leader) AddFollower(peer *common.PeerPipe) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	l.followers[peer.GetAddr()] = peer
+	
+	// TODO: kill the goroutine when the leader is down 
+	go l.startListener(peer)
+}
+
+//
+// Gorountine.  Start listener to listen to message from follower.
+// Note that each follower has their own receive queue.  This
+// is to ensure if the queue is filled up for a single follower,
+// only that the connection of that follower may get affected. 
+//
+func (l* Leader) startListener(follower *common.PeerPipe) {
+
+	reqch := follower.ReceiveChannel()
+	
+    for {
+        req, ok := <-reqch
+        if ok {
+            // TODO : handle error
+           	l.handleMessage(req, follower.GetAddr()) 
+        } else {
+    		// The channel is closed.  Need to shutdown the listener.
+      		l.removeFollower(follower)
+      		return
+        }
+    }
+}
+
+//
+// Remove the follower from being tracked
+//
+func (l *Leader) removeFollower(peer *common.PeerPipe) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	delete(l.followers, peer.GetAddr())	
+}
+
+/////////////////////////////////////////////////
+// Message Processing 
+/////////////////////////////////////////////////
+
+//
+// Main entry point for processing messages from followers 
+//
+func (l *Leader) handleMessage(msg common.Packet, follower string) (err error) {
+
+	// TODO: Parallelize RequesMsg independently from AcceptMsg
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+
+    switch request := msg.(type) {
+    case RequestMsg:
+		// TODO: handle error 
+       	l.CreateProposal(follower, request)
+    case AcceptMsg:
+        err = l.handleAccept(request)
+        if err != nil {
+         	return err	
+        }
+    default:
+    	// TODO : if we don't recoginize the message.  Just log it and ignore.
+    }
+    return nil 
+}
+
+/////////////////////////////////////////////////
+// Handle Request Message  (New Proposal)
+/////////////////////////////////////////////////
 
 //
 // Create a new proposal from request
@@ -103,9 +202,6 @@ func (l *Leader) CreateProposal(host string, req RequestMsg) error {
 //
 func (l *Leader) NewProposal(proposal ProposalMsg) {
 
-	l.mutex.Lock()
-	defer l.mutex.Unlock()
-	
 	// Keep track of the pending proposal	                           
 	l.pendings = append(l.pendings, proposal)	
 	
@@ -118,21 +214,6 @@ func (l *Leader) NewProposal(proposal ProposalMsg) {
 	// Send the proposal to follower 
 	l.sendProposal(proposal)
 }
-
-//
-// Add a follower and starts a listener for the follower
-//
-func (l *Leader) AddFollower(peer *common.PeerPipe) {
-	l.followers[peer.GetAddr()] = peer
-	
-	// TODO: kill the goroutine when the leader is down 
-	go l.startListener(peer)
-}
-
-/////////////////////////////////////////////////
-// Private Function
-/////////////////////////////////////////////////
-
 
 //
 // send the proposal to the followers
@@ -151,52 +232,15 @@ func (l *Leader) sendProposal(proposal ProposalMsg) {
 	}
 }
 
-//
-// Start listener to listen to message from follower.
-// Note that each follower has their own receive queue.  This
-// is to ensure if the queue is filled up for a single follower,
-// only that the connection of that follower may get affected. 
-//
-func (l* Leader) startListener(follower *common.PeerPipe) {
-
-	reqch := follower.ReceiveChannel()
-	
-loop:
-    for {
-        select {
-        case req, ok := <-reqch:
-            if ok {
-                // TODO : handle error
-               	l.handleMessage(req, follower.GetAddr()) 
-            } else {
-        		// TODO : the channel is closed.  Need to shutdown the server itself.
-                break loop
-            }
-        }
-    }
-}
-
-//
-// handle message from follower.
-//
-func (l *Leader) handleMessage(msg common.Packet, follower string) (err error) {
-    switch request := msg.(type) {
-    case RequestMsg:
-        l.CreateProposal(follower, request)
-    case AcceptMsg:
-        err = l.handleAccept(request)
-    default:
-    	// TODO : if we don't recoginize the message.  Just log it and ignore.
-    }
-    return err
-}
+/////////////////////////////////////////////////
+// Handle Accept Message 
+/////////////////////////////////////////////////
 
 //
 // handle accept message from follower
 //
 func (l *Leader) handleAccept(msg AcceptMsg) error {
 
-	// There is no pending proposal.  Ignore this one.
 	// This can happen if the follower is slow when
 	// the proposal has reached quorum before the follower
 	// can accept.
@@ -275,8 +319,13 @@ func (l *Leader) hasQuorum(txid common.Txnid) bool {
 //
 func (l *Leader) commit(txid common.Txnid, p ProposalMsg) {
 
-	// We are skipping proposal.
-	// TODO: How can this happen?
+	// We are skipping proposal.  The protocol expects that each follower must
+	// send Accept Msg in the order of Proposal being received.   Since the
+	// message is sent out a reliable TCP connection, it is not possible to reach
+	// quorum out of order.  Particularly, if a new follower leaves and rejoins, 
+	// the leader is responsible for resending all the pending proposals to the
+	// followers.   So if we see the txid is out-of-order there, then it is 
+	// a fatal condition due to protocol error. 
 	if txid != l.lastCommitted + 1 {
 		// TODO: log warning
 	}
@@ -328,3 +377,4 @@ func (l *Leader) sendCommit(txnid common.Txnid) error {
 	
 	return nil
 }
+

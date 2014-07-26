@@ -33,7 +33,7 @@ type PeerPipe struct {
 // ReceiveChannel() to get the channel for receving
 // message packets.  
 //
-func NewPeerPipe(pconn net.Conn) (*PeerPipe, error) {
+func NewPeerPipe(pconn net.Conn) (*PeerPipe) {
 
 	pipe := &PeerPipe{conn : pconn,
 					  sendch : make(chan Packet, MAX_PROPOSALS*2),
@@ -42,7 +42,7 @@ func NewPeerPipe(pconn net.Conn) (*PeerPipe, error) {
 
 	go pipe.doSend() 					  
 	go pipe.doReceive() 					  
-	return pipe, nil
+	return pipe
 }
 
 //
@@ -132,12 +132,12 @@ func (p *PeerPipe) doSend() {
 		packet, ok := <- p.sendch 
 		if !ok {
 			// channel close.  Terminate the loop.
-			break	
+			return
 		} 
 		
 		msg, err := Marshall(packet) 
 		if err != nil {
-			break
+			return
 		}
 		size := len(msg)
 		
@@ -187,7 +187,7 @@ func (p *PeerPipe) doReceive() {
 		// unmarshall the content and put it in the channel
 		packet, err := UnMarshall(buf)
 		if err != nil {
-			break
+			return	
 		}
 		p.queue(packet)
 	}

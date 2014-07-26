@@ -24,9 +24,10 @@ type FollowerState struct {
 /////////////////////////////////////////////////////////////////////////////
 
 //
-// Create a new FollowerServer
+// Create a new FollowerServer. This is a blocking call until
+// the FollowerServer terminates.  
 //
-func runFollowerServer(naddr string, 
+func RunFollowerServer(naddr string, 
 					   leader string,
 					   ss *ServerState,
                        handler protocol.ActionHandler, 
@@ -38,10 +39,7 @@ func runFollowerServer(naddr string,
 	if err != nil {
 		return err	
 	}
-	pipe, err := common.NewPeerPipe(conn)
-	if err != nil {
-		return err
-	}
+	pipe := common.NewPeerPipe(conn)
 
 	// close the connection to the leader. If connection is closed,
 	// sync proxy and follower will terminate by err-ing out.
@@ -91,7 +89,7 @@ func syncWithLeader(pipe      *common.PeerPipe,
 //
 // Run Follower Protocol 
 //
-func runFollower(pipe      *common.PeerPipe,
+func runFollower(pipe    *common.PeerPipe,
 			   ss        *ServerState,
 			   handler   protocol.ActionHandler, 
 	           factory   protocol.MsgFactory,
@@ -112,15 +110,6 @@ func runFollower(pipe      *common.PeerPipe,
 }
 
 //
-// Create a new FollowerState
-//
-func newFollowerState(ss *ServerState) *FollowerState {
-	
-	state := &FollowerState{serverState : ss}
-	return state                       
-}
-
-//
 // main processing loop 
 //
 func (s *FollowerServer) processRequest(handler   	protocol.ActionHandler, 
@@ -130,17 +119,13 @@ func (s *FollowerServer) processRequest(handler   	protocol.ActionHandler,
 	for {
 		select {
 		case handle, ok := <- s.state.serverState.incomings :
-			// de-queue the request
 			if ok {
-				s.state.serverState.mutex.Lock()
-				defer s.state.serverState.mutex.Unlock()
-		
-				// remember the request 		
-				s.state.serverState.pendings[handle.request.GetReqId()] = handle
+			    // move request to pending queue (waiting for proposal)
+				s.addPendingRequest(handle)
 		
 				// forward the request to the leader
 				if !s.follower.ForwardRequest(handle.request) {
-					// return if fail to connect to leader
+					// TODO : return if fail to connect to leader
 					return	
 				}
 			} else {
@@ -155,4 +140,28 @@ func (s *FollowerServer) processRequest(handler   	protocol.ActionHandler,
 		 	return	
 		}
 	}
+}
+
+//
+// Create a new FollowerState
+//
+func newFollowerState(ss *ServerState) *FollowerState {
+	
+	state := &FollowerState{serverState : ss}
+	return state                       
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// Private Function for protecting shared state 
+///////////////////////////////////////////////////////////////////////////// 
+
+//
+// Add Pending Request
+//
+func (s *FollowerServer) addPendingRequest(handle *RequestHandle) {
+	s.state.serverState.mutex.Lock()
+	defer s.state.serverState.mutex.Unlock()
+		
+	// remember the request 		
+	s.state.serverState.pendings[handle.request.GetReqId()] = handle
 }

@@ -25,12 +25,14 @@ type Server struct {
 }
 
 type ServerState struct {
+	incomings           chan *RequestHandle
+	
+	// mutex protected variables	
+	mutex               sync.Mutex
 	done 				bool
 	status              protocol.PeerStatus 
-	incomings           chan *RequestHandle
 	pendings			map[uint64]*RequestHandle    // key : request id
 	proposals           map[uint64]*RequestHandle    // key : txnid
-	mutex               sync.Mutex
 }
 
 type RequestHandle struct {
@@ -105,10 +107,10 @@ func (s *Server) runServer(leader string) (err error) {
 	// Otherwise, start the followerServer.
 	if leader == host {
 		s.state.setStatus(protocol.LEADING)
-	    _, err = runLeaderServer(host, s.state, s.handler, s.factory, s.killch2)
+	    err = RunLeaderServer(host, s.state, s.handler, s.factory, s.killch2)
 	} else {
 		s.state.setStatus(protocol.FOLLOWING)
-		err = runFollowerServer(host, leader, s.state, s.handler, s.factory, s.killch2)
+		err = RunFollowerServer(host, leader, s.state, s.handler, s.factory, s.killch2)
 	}
 	
 	return err 
