@@ -232,6 +232,8 @@ func (p *PeerMessenger) doSend() {
 
 		// write the packet
 		log.Printf("PeerMessenger.doSend() : Sending message %s (len %d) to Peer %s", msg.Content.Name(), size, msg.Peer.String())
+		msg.Content.Print()
+		
 		n, err := p.conn.WriteTo(serialized, msg.Peer)
 		if n < size || err != nil {
 			log.Printf("PeerMessenger.doSend() : ecounter error when sending mesasage to Peer %s.  Error = %s", 
@@ -275,6 +277,8 @@ func (p *PeerMessenger) doReceive() {
 			break
 		}
 		log.Printf("PeerMessenger.doRecieve() : Message decoded.  Packet = %s", packet.Name())
+		packet.Print()
+		
 		p.queue(&Message{Content: packet, Peer: peer})
 	}
 }

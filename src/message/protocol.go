@@ -2,6 +2,7 @@ package message
 
 import (
 	"code.google.com/p/goprotobuf/proto"
+	"log"
 )
 
 //
@@ -19,6 +20,15 @@ func (req *Proposal) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
+func (req *Proposal) Print() {
+	log.Printf("Proposal Message:")
+	log.Printf("	Txnid  : %d", req.GetTxnid())
+	log.Printf("	Fid    : %s", req.GetFid())
+	log.Printf("	ReqId  : %d", req.GetReqId())
+	log.Printf("	OpCode : %d", req.GetOpCode())
+	log.Printf("	Key    : %s", req.GetKey())
+}
+
 //
 // Accept - implement Packet interface
 //
@@ -32,6 +42,12 @@ func (req *Accept) Encode() (data []byte, err error) {
 
 func (req *Accept) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
+}
+
+func (req *Accept) Print() {
+	log.Printf("Accept Message:")
+	log.Printf("	Txnid : %d", req.GetTxnid())
+	log.Printf("	Fid   : %s", req.GetFid())
 }
 
 //
@@ -49,6 +65,11 @@ func (req *Commit) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
+func (req *Commit) Print() {
+	log.Printf("Commit Message:")
+	log.Printf("	Txnid : %d", req.GetTxnid())
+}
+
 //
 // Vote - implement Packet interface
 //
@@ -62,6 +83,15 @@ func (req *Vote) Encode() (data []byte, err error) {
 
 func (req *Vote) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
+}
+
+func (req *Vote) Print() {
+	log.Printf("Vote Message:")
+	log.Printf("	Round           : %d", req.GetRound())
+	log.Printf("	Status          : %d", req.GetStatus())
+	log.Printf("	Epoch           : %d", req.GetEpoch())
+	log.Printf("	Candidate Id    : %s", req.GetCndId())
+	log.Printf("	Candidate TxnId : %d", req.GetCndTxnId())
 }
 
 //
@@ -79,6 +109,10 @@ func (req *Ballot) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
+func (req *Ballot) Print() {
+	log.Printf("Ballot Message: Not Supported")
+}
+
 //
 // LogEntry - implement Packet interface
 //
@@ -92,6 +126,13 @@ func (req *LogEntry) Encode() (data []byte, err error) {
 
 func (req *LogEntry) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
+}
+
+func (req *LogEntry) Print() {
+	log.Printf("LogEntry Message:")
+	log.Printf("	Txnid  : %d", req.GetTxnid())
+	log.Printf("	Key    : %s", req.GetKey())
+	log.Printf("	OpCode : %d", req.GetOpCode())
 }
 
 //
@@ -109,6 +150,11 @@ func (req *FollowerInfo) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
+func (req *FollowerInfo) Print() {
+	log.Printf("FollowerInfo Message:")
+	log.Printf("	AcceptedEpoch : %d", req.GetAcceptedEpoch())
+}
+   	
 //
 // EpochAck - implement Packet interface
 //
@@ -122,6 +168,12 @@ func (req *EpochAck) Encode() (data []byte, err error) {
 
 func (req *EpochAck) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
+}
+
+func (req *EpochAck) Print() {
+	log.Printf("EpochAck Message:")
+	log.Printf("	LastLoggedTxid : %d", req.GetLastLoggedTxid())
+	log.Printf("	CurrentEpoch : %d", req.GetCurrentEpoch())
 }
 
 //
@@ -139,6 +191,11 @@ func (req *LeaderInfo) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
+func (req *LeaderInfo) Print() {
+	log.Printf("LeaderInfo Message:")
+	log.Printf("	AcceptedEpoch : %d", req.GetAcceptedEpoch())
+}
+
 //
 // NewLeader - implement Packet interface
 //
@@ -152,6 +209,11 @@ func (req *NewLeader) Encode() (data []byte, err error) {
 
 func (req *NewLeader) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
+}
+
+func (req *NewLeader) Print() {
+	log.Printf("NewLeader Message:")
+	log.Printf("	Epoch : %d", req.GetEpoch())
 }
 
 //
@@ -169,6 +231,10 @@ func (req *NewLeaderAck) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
+func (req *NewLeaderAck) Print() {
+	log.Printf("NewLeaderAck Message: No field to print")
+}
+
 //
 // Request - implement Packet interface
 //
@@ -182,4 +248,11 @@ func (req *Request) Encode() (data []byte, err error) {
 
 func (req *Request) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
+}
+
+func (req *Request) Print() {
+	log.Printf("Request Message:")
+	log.Printf("	ReqId  : %d", req.GetReqId())
+	log.Printf("	OpCode : %d", req.GetOpCode())
+	log.Printf("	Key    : %s", req.GetKey())
 }
