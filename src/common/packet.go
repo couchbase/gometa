@@ -1,13 +1,13 @@
-package common 
+package common
 
 import (
 	"reflect"
 )
 
-var gRegistry = NewPacketRegistry() 
+var gRegistry = NewPacketRegistry()
 
 /////////////////////////////////////////////////////////////////////////////
-// Type Declaration 
+// Type Declaration
 /////////////////////////////////////////////////////////////////////////////
 
 type Packet interface {
@@ -22,28 +22,28 @@ type Packet interface {
 }
 
 type PacketRegistry struct {
-	mapping        map[string]Packet		
+	mapping map[string]Packet
 }
 
 /////////////////////////////////////////////////////////////////////////////
-// Public Function 
+// Public Function
 /////////////////////////////////////////////////////////////////////////////
 
 func NewPacketRegistry() *PacketRegistry {
-	return &PacketRegistry{mapping : make(map[string]Packet)}
+	return &PacketRegistry{mapping: make(map[string]Packet)}
 }
 
 func RegisterPacketByName(name string, instance Packet) {
 	gRegistry.mapping[name] = instance
 }
 
-func CreatePacketByName(name string) (Packet,error) {
+func CreatePacketByName(name string) (Packet, error) {
 	sample := gRegistry.mapping[name]
 	if sample == nil {
-		// TODO: return actual error 
+		// TODO: return actual error
 		return nil, nil
 	}
-	
+
 	return reflect.New(FindPacketConcreteType(sample)).Interface().(Packet), nil
 }
 

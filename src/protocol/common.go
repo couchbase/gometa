@@ -1,30 +1,32 @@
-package protocol 
+package protocol
 
 import (
 	"common"
 )
 
 /////////////////////////////////////////////////////////////////////////////
-// PeerKind 
+// PeerKind
 /////////////////////////////////////////////////////////////////////////////
 
 type PeerRole byte
+
 const (
 	LEADER PeerRole = iota
-	FOLLOWER	
- 	OBSERVER
+	FOLLOWER
+	OBSERVER
 )
 
 /////////////////////////////////////////////////////////////////////////////
-// PeerStatus 
+// PeerStatus
 /////////////////////////////////////////////////////////////////////////////
 
 type PeerStatus byte
+
 const (
 	ELECTING PeerStatus = iota
- 	LEADING	
- 	FOLLOWING
- 	OBSERVING	
+	LEADING
+	FOLLOWING
+	OBSERVING
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -35,71 +37,70 @@ type ActionHandler interface {
 
 	//
 	// The following API are used during election
-	//	
+	//
 	GetLastLoggedTxid() common.Txnid
-	
+
 	GetStatus() PeerStatus
-	
+
 	// Current Epoch is set during leader/followr discovery phase.
 	// It is the current epoch (term) of the leader.
 	GetCurrentEpoch() (uint32, error)
 
-	// This is the Epoch that leader/follower agrees during discovery/sync phase. 
+	// This is the Epoch that leader/follower agrees during discovery/sync phase.
 	GetAcceptedEpoch() (uint32, error)
-	
+
 	//
-	// The following API are used during discovery/sync 
-	//	
-	
+	// The following API are used during discovery/sync
+	//
+
 	GetCommitedEntries(txid uint64) (chan LogEntryMsg, chan error, error)
-	
+
 	CommitEntry(txid uint64, op uint32, key string, content []byte) error
-	
+
 	// Set new accepted epoch as well as creating new txnid
-	NotifyNewAcceptedEpoch(uint32) 
-	
-	NotifyNewCurrentEpoch(uint32) 
-	
+	NotifyNewAcceptedEpoch(uint32)
+
+	NotifyNewCurrentEpoch(uint32)
+
 	//
-	// The following API are used during normal execution 
-	//	
-	GetNextTxnId() common.Txnid 
+	// The following API are used during normal execution
+	//
+	GetNextTxnId() common.Txnid
 
 	LogProposal(proposal ProposalMsg) error
-	
+
 	Commit(proposal ProposalMsg) error
 }
 
 /////////////////////////////////////////////////////////////////////////////
-// MsgFactory 
+// MsgFactory
 /////////////////////////////////////////////////////////////////////////////
 
 type MsgFactory interface {
+	CreateProposal(txnid uint64, fid string, reqId uint64, op uint32, key string, content []byte) ProposalMsg
 
-	CreateProposal(txnid uint64, fid string, reqId uint64, op uint32, key string, content []byte) ProposalMsg 
-	
-	CreateAccept(txnid uint64, fid string) AcceptMsg 
-										
-	CreateCommit(txnid uint64) CommitMsg 
-										
+	CreateAccept(txnid uint64, fid string) AcceptMsg
+
+	CreateCommit(txnid uint64) CommitMsg
+
 	// TODO : Cleanup
-	CreateBallot(id uint64) BallotMsg 
-	
-	CreateVote(round uint64, status uint32, epoch uint32, cndId string, cndTxnId uint64) VoteMsg 
-	
-	CreateFollowerInfo(epoch uint32) FollowerInfoMsg 
-	
-	CreateEpochAck(lastLoggedTxid uint64, epoch uint32) EpochAckMsg 
-	
-	CreateLeaderInfo(epoch uint32) LeaderInfoMsg 
-	
-	CreateNewLeader(epoch uint32) NewLeaderMsg 
-	
-	CreateNewLeaderAck() NewLeaderAckMsg 
-	
+	CreateBallot(id uint64) BallotMsg
+
+	CreateVote(round uint64, status uint32, epoch uint32, cndId string, cndTxnId uint64) VoteMsg
+
+	CreateFollowerInfo(epoch uint32) FollowerInfoMsg
+
+	CreateEpochAck(lastLoggedTxid uint64, epoch uint32) EpochAckMsg
+
+	CreateLeaderInfo(epoch uint32) LeaderInfoMsg
+
+	CreateNewLeader(epoch uint32) NewLeaderMsg
+
+	CreateNewLeaderAck() NewLeaderAckMsg
+
 	CreateLogEntry(txnid uint64, opCode uint32, key string, content []byte) LogEntryMsg
-	
-	CreateRequest(id uint64, opCode uint32, key string, content []byte) RequestMsg 
+
+	CreateRequest(id uint64, opCode uint32, key string, content []byte) RequestMsg
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -108,54 +109,54 @@ type MsgFactory interface {
 
 type ProposalMsg interface {
 	common.Packet
-    GetTxnid() uint64
-    GetFid() string
-    GetReqId() uint64 
+	GetTxnid() uint64
+	GetFid() string
+	GetReqId() uint64
 	GetOpCode() uint32
-	GetKey() string 
+	GetKey() string
 	GetContent() []byte
 }
 
 type AcceptMsg interface {
 	common.Packet
 	GetTxnid() uint64
-	GetFid() string 
+	GetFid() string
 }
 
 type CommitMsg interface {
 	common.Packet
-	GetTxnid() uint64 
+	GetTxnid() uint64
 }
 
 type RequestMsg interface {
 	common.Packet
-	GetReqId() uint64 
-	GetOpCode() uint32 
-    GetKey() string 
-    GetContent() []byte 
+	GetReqId() uint64
+	GetOpCode() uint32
+	GetKey() string
+	GetContent() []byte
 }
 
 /////////////////////////////////////////////////////////////////////////////
-// Message for master election 
+// Message for master election
 /////////////////////////////////////////////////////////////////////////////
 
 type VoteMsg interface {
 	common.Packet
-	GetRound() uint64 
+	GetRound() uint64
 	GetStatus() uint32
 	GetEpoch() uint32
-	GetCndId() string 
-	GetCndTxnId() uint64 
+	GetCndId() string
+	GetCndTxnId() uint64
 }
 
 // TODO : Cleanup
 type BallotMsg interface {
 	common.Packet
- 	GetId() uint64 
+	GetId() uint64
 }
 
 /////////////////////////////////////////////////////////////////////////////
-// Message for discovery 
+// Message for discovery
 /////////////////////////////////////////////////////////////////////////////
 
 type FollowerInfoMsg interface {
@@ -185,8 +186,8 @@ type NewLeaderAckMsg interface {
 
 type LogEntryMsg interface {
 	common.Packet
-	GetTxnid() uint64 
-	GetOpCode() uint32 
-    GetKey() string 
-    GetContent() []byte 
+	GetTxnid() uint64
+	GetOpCode() uint32
+	GetKey() string
+	GetContent() []byte
 }

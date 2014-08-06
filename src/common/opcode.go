@@ -1,27 +1,30 @@
 package common
 
-import (
-
-)
+import ()
 
 /////////////////////////////////////////////////////////////////////////////
-// OpCode 
+// OpCode
 /////////////////////////////////////////////////////////////////////////////
 
 type OpCode byte
+
 const (
-	OPCODE_INVALID OpCode = iota 
-	OPCODE_ADD 
+	OPCODE_INVALID OpCode = iota
+	OPCODE_ADD
 	OPCODE_SET
 	OPCODE_DELETE
 )
 
 func GetOpCodeStr(r OpCode) string {
 	switch r {
-		case OPCODE_ADD: return "Add" 
-		case OPCODE_SET: return "Set" 
-		case OPCODE_DELETE: return "Delete" 
-		default : return "Invalid"
+	case OPCODE_ADD:
+		return "Add"
+	case OPCODE_SET:
+		return "Set"
+	case OPCODE_DELETE:
+		return "Delete"
+	default:
+		return "Invalid"
 	}
 }
 
@@ -35,7 +38,7 @@ func GetOpCode(s string) OpCode {
 	if s == "Delete" {
 		return OPCODE_DELETE
 	}
-	return OPCODE_INVALID 
+	return OPCODE_INVALID
 }
 
 func GetOpCodeFromInt(i uint32) OpCode {

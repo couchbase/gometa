@@ -1,14 +1,14 @@
-package common 
+package common
 
 import (
 	"log"
 )
 
 /////////////////////////////////////////////////////////////////////////////
-// Utility 
+// Utility
 /////////////////////////////////////////////////////////////////////////////
 
-type FuncToRun func()()
+type FuncToRun func()
 
 func SafeRun(funcName string, f FuncToRun) {
 	defer func() {
@@ -16,6 +16,6 @@ func SafeRun(funcName string, f FuncToRun) {
 			log.Printf("panic in %s() : %s\n", funcName, r)
 		}
 	}()
-	
-	f()	
+
+	f()
 }

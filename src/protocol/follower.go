@@ -1,42 +1,42 @@
-package protocol 
+package protocol
 
 import (
 	"common"
 )
 
 /////////////////////////////////////////////////
-// Type Declaration 
+// Type Declaration
 /////////////////////////////////////////////////
 
 type Follower struct {
-	kind		 PeerRole	
-	pipe         *common.PeerPipe
-	pendings     []ProposalMsg
-	handler      ActionHandler
-	factory      MsgFactory
+	kind     PeerRole
+	pipe     *common.PeerPipe
+	pendings []ProposalMsg
+	handler  ActionHandler
+	factory  MsgFactory
 }
 
 /////////////////////////////////////////////////
-// Public Function 
+// Public Function
 /////////////////////////////////////////////////
 
 //
 // Create a new Follower.
 //
-func StartFollower(kind PeerRole, 
-                 pipe *common.PeerPipe, 
-                 handler ActionHandler, 
-                 factory MsgFactory,
-                 donech chan bool) *Follower {
-                 
-	follower := &Follower{kind : kind,
-	                      pipe: pipe, 
-	                      pendings : make([]ProposalMsg, common.MAX_PROPOSALS),
-	                      handler : handler,
-	                      factory : factory}
-	                      
+func StartFollower(kind PeerRole,
+	pipe *common.PeerPipe,
+	handler ActionHandler,
+	factory MsgFactory,
+	donech chan bool) *Follower {
+
+	follower := &Follower{kind: kind,
+		pipe:     pipe,
+		pendings: make([]ProposalMsg, 0, common.MAX_PROPOSALS),
+		handler:  handler,
+		factory:  factory}
+
 	go follower.startListener(donech)
-	
+
 	return follower
 }
 
@@ -55,7 +55,7 @@ func (f *Follower) ForwardRequest(request RequestMsg) bool {
 }
 
 /////////////////////////////////////////////////
-// Private Function 
+// Private Function
 /////////////////////////////////////////////////
 
 //
@@ -67,51 +67,51 @@ func (f *Follower) ForwardRequest(request RequestMsg) bool {
 // this loop will terminate.   The server (that contains
 // the follower) will need to run leader election again.
 //
-func (f* Follower) startListener(donech chan bool) {
-    reqch := f.pipe.ReceiveChannel()
+func (f *Follower) startListener(donech chan bool) {
+	reqch := f.pipe.ReceiveChannel()
 
-    for {
-         msg, ok := <-reqch
-         if ok {
-           	err := f.handleMessage(msg.(common.Packet)) 
-            if err != nil {
-              	// If there is an error, terminate	
-               	break 
-            } 
-         } else {
-            break 
-         }
-    }
-   	donech <- true
+	for {
+		msg, ok := <-reqch
+		if ok {
+			err := f.handleMessage(msg.(common.Packet))
+			if err != nil {
+				// If there is an error, terminate
+				break
+			}
+		} else {
+			break
+		}
+	}
+	donech <- true
 }
 
 //
-// Handle message from the leader. 
+// Handle message from the leader.
 //
 func (f *Follower) handleMessage(msg common.Packet) (err error) {
-    switch request := msg.(type) {
-    case ProposalMsg:
-        err = f.handleProposal(request)
-    case CommitMsg:
-        err = f.handleCommit(request)
-    default:
-    	// TODO : if we don't recoginize the message.  Just log it and ignore.
-    }
-    return err
+	switch request := msg.(type) {
+	case ProposalMsg:
+		err = f.handleProposal(request)
+	case CommitMsg:
+		err = f.handleCommit(request)
+	default:
+		// TODO : if we don't recoginize the message.  Just log it and ignore.
+	}
+	return err
 }
 
 //
-// Handle proposal message from the leader.  
+// Handle proposal message from the leader.
 //
 func (f *Follower) handleProposal(msg ProposalMsg) error {
-    // TODO : Check if the txnid is the next one (last txnid + 1)
-    // ZK will only warn
-    
-	// TODO: call service to log the proposal 
-	
+	// TODO : Check if the txnid is the next one (last txnid + 1)
+	// ZK will only warn
+
+	// TODO: call service to log the proposal
+
 	// Add to pending list
 	f.pendings = append(f.pendings, msg)
-	
+
 	// Send Accept Message
 	// TODO: Should only accept if the txnid exceeeds the last one.
 	//       ZK does not do that.  Need to double check Paxos Protocol.
@@ -119,7 +119,7 @@ func (f *Follower) handleProposal(msg ProposalMsg) error {
 }
 
 //
-// Handle commit message from the leader.  
+// Handle commit message from the leader.
 //
 func (f *Follower) handleCommit(msg CommitMsg) error {
 
@@ -127,43 +127,43 @@ func (f *Follower) handleCommit(msg CommitMsg) error {
 	if len(f.pendings) == 0 {
 		return nil
 	}
-	
-	// check if the commit is the first one in the pending list.  
+
+	// check if the commit is the first one in the pending list.
 	// If not, ZK will crash the follower.    All commits are
 	// processed sequentially.
 	next := f.pendings[0]
 	if next == nil || next.GetTxnid() != msg.GetTxnid() {
 		// TODO : Log an error and panic
 	}
-	
+
 	// remove proposal from pendings
 	p := f.pendings[0]
-	f.pendings = f.pendings[1:]	
-	
+	f.pendings = f.pendings[1:]
+
 	// commit
 	err := f.handler.Commit(p)
 	if err != nil {
 		// TODO : throw error
 	}
-	
-	// TODO: send response to client 	
+
+	// TODO: send response to client
 	// TODO: update election site
 	return nil
 }
 
 //
-// Send accept message to the leader.  
+// Send accept message to the leader.
 //
-func (f *Follower) sendAccept(txnid common.Txnid, fid string ) error {
+func (f *Follower) sendAccept(txnid common.Txnid, fid string) error {
 	accept := f.factory.CreateAccept(uint64(txnid), fid)
 
-	// Send the message to the leader through a reliable protocol (TCP).	
+	// Send the message to the leader through a reliable protocol (TCP).
 	success := f.pipe.Send(accept)
 	if !success {
 		// It is a fatal error if not able to send to the leader.  It will require the server to
 		// do leader election again.
-		return common.NewError(common.FATAL_ERROR, "Fail to send accept message for to leader from " + fid)  
+		return common.NewError(common.FATAL_ERROR, "Fail to send accept message for to leader from "+fid)
 	}
-	
+
 	return nil
 }

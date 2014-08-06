@@ -1,27 +1,27 @@
-package common 
+package common
 
 import (
+	"log"
 	"net"
 	"sync"
-	"log"
 )
 
 /////////////////////////////////////////////////
-// Type Declaration 
+// Type Declaration
 /////////////////////////////////////////////////
 
 //
 // PeerListener - Listener for TCP connection
 // If there is a new connection request, send
-// the new connection through connch.  If 
+// the new connection through connch.  If
 // the listener is closed, connch will be closed.
 //
 type PeerListener struct {
-	naddr		 string
-	listener     net.Listener
-	connch       chan net.Conn
-	mutex        sync.Mutex
-	isClosed     bool
+	naddr    string
+	listener net.Listener
+	connch   chan net.Conn
+	mutex    sync.Mutex
+	isClosed bool
 }
 
 /////////////////////////////////////////////////
@@ -29,43 +29,27 @@ type PeerListener struct {
 /////////////////////////////////////////////////
 
 //
-// Start a new PeerListener for listening to new connection request for 
-// processing messages.   
+// Start a new PeerListener for listening to new connection request for
+// processing messages.
 // laddr - local network address (host:port)
 //
 func StartPeerListener(laddr string) (*PeerListener, error) {
-	
-	listener := &PeerListener{naddr : laddr,
-							  connch : make(chan net.Conn, MAX_PEERS),
-							  isClosed : false}
-	
+
+	listener := &PeerListener{naddr: laddr,
+		connch:   make(chan net.Conn, MAX_PEERS),
+		isClosed: false}
+
 	li, err := net.Listen(MESSAGE_TRANSPORT_TYPE, laddr)
 	if err != nil {
 		return nil, err
 	}
 	listener.listener = li
 
-	go listener.listen()	
+	go listener.listen()
 	return listener, nil
 }
 
-//
-// Get a connection for election votes.  
-//
-func GetElectionConn(laddr string) (net.PacketConn, error) {
 
-	addrObj, err := net.ResolveUDPAddr(ELECTION_TRANSPORT_TYPE, laddr)
-	if err != nil {
-		return nil, err
-	}
-	
-	conn, err := net.ListenUDP(ELECTION_TRANSPORT_TYPE, addrObj)
-	if err != nil {
-		return nil, err
-	}
-	
-	return conn, nil
-}
 
 //
 // Get the channel for new peer connection request.
@@ -73,10 +57,10 @@ func GetElectionConn(laddr string) (net.PacketConn, error) {
 // should also check if the channel is closed when
 // dequeueing from the channel.
 //
-func (l *PeerListener) ConnChannel() (<-chan net.Conn) {
+func (l *PeerListener) ConnChannel() <-chan net.Conn {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-	
+
 	if !l.isClosed {
 		return (<-chan net.Conn)(l.connch)
 	}
@@ -87,30 +71,30 @@ func (l *PeerListener) ConnChannel() (<-chan net.Conn) {
 // Close the PeerListener.  The connection channel will be closed
 // as well.  This function is syncronized and will not close the
 // channel twice.
-//	
+//
 func (l *PeerListener) Close() bool {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-	
-	if !l.isClosed { 
+
+	if !l.isClosed {
 		l.isClosed = true
-		
-		SafeRun("PeerListener.Close()", 
-					func() {
-						close(l.connch)
-					})
-		SafeRun("PeerListener.Close()", 
-					func() {
-						l.listener.Close()
-					})
+
+		SafeRun("PeerListener.Close()",
+			func() {
+				close(l.connch)
+			})
+		SafeRun("PeerListener.Close()",
+			func() {
+				l.listener.Close()
+			})
 		return true
 	}
-	
-	return false 
+
+	return false
 }
 
 /////////////////////////////////////////////////
-// Private Function 
+// Private Function
 /////////////////////////////////////////////////
 
 //
@@ -125,18 +109,18 @@ func (l *PeerListener) listen() {
 		if r := recover(); r != nil {
 			log.Printf("panic in PeerListener.listen() : %s\n", r)
 		}
-		
-		// This will close the connection channel 
+
+		// This will close the connection channel
 		l.Close()
 	}()
-	
+
 	for {
 		conn, err := l.listener.Accept()
 		if err != nil {
 			// if there is error, just terminate the listener loop.
-			break	
+			break
 		}
-		
+
 		// We get a new connection.  Pass it to the channel and let
 		// the consumer handle the connection.
 		l.queue(conn)
@@ -145,7 +129,7 @@ func (l *PeerListener) listen() {
 
 //
 // Put the connection onto the channel for consumption.
-// This function acquires the mutex to ensure that the 
+// This function acquires the mutex to ensure that the
 // there is no goroutine concurrently try to close
 // the listener.
 //
