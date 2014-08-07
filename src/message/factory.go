@@ -144,6 +144,5 @@ func registerMessages() {
 	common.RegisterPacketByName("EpochAck", &EpochAck{})
 	common.RegisterPacketByName("NewLeader", &NewLeader{})
 	common.RegisterPacketByName("NewLeaderAck", &NewLeaderAck{})
-	common.RegisterPacketByName("LogEntry", &LogEntry{})
 	common.RegisterPacketByName("Request", &Request{})
 }

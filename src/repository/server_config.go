@@ -113,7 +113,7 @@ func (r *ServerConfig) Delete(key string) error {
 /////////////////////////////////////////////////////////////////////////////
 
 func createConfigKey(key string) string {
-	return common.PREFIX_SERVER_CONFIG_PATH + common.PATH_DELIMITER + key
+	return common.PREFIX_SERVER_CONFIG_PATH + key
 }
 
 func (r *ServerConfig) bootstrap() {

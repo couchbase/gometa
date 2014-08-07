@@ -165,7 +165,7 @@ func createLogKey(txid common.Txnid) string {
 
 func unmarshall(data []byte) (*message.LogEntry, error) {
 
-	// TODO : why offset by 8?
+	// skip the first 8 bytes (total len)
 	packet, err := common.UnMarshall(data[8:])
 	if err != nil {
 		return nil, err

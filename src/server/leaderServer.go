@@ -42,6 +42,8 @@ func RunLeaderServer(naddr string,
 	factory protocol.MsgFactory,
 	killch chan bool) error {
 
+	log.Printf("LeaderServer.RunLeaderServer(): start leader server %s", naddr)
+	
 	// create a leader
 	leader := protocol.NewLeader(naddr, handler, factory)
 
@@ -69,6 +71,8 @@ func RunLeaderServer(naddr string,
 	// start the main loop for processing incoming request
 	server.processRequest(handler, factory, killch, killch2)
 
+	log.Printf("LeaderServer.RunLeaderServer(): leader server %s terminate", naddr)
+	
 	return nil
 }
 
@@ -165,6 +169,8 @@ func (s *LeaderServer) processRequest(handler protocol.ActionHandler,
 	// is a quorum of followers that have sync'ed with me)
 	s.waitTillReady()
 
+	log.Printf("LeaderServer.processRequest(): Leader Server is ready to proces request")
+	
 	// notify the request processor to start processing new request
 	for {
 		select {

@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"common"
+	"log"
 )
 
 /////////////////////////////////////////////////
@@ -79,6 +80,7 @@ func (f *Follower) startListener(donech chan bool) {
 				break
 			}
 		} else {
+			log.Printf("Follower.startListener(): message channel closed.  Terminate.")
 			break
 		}
 	}

@@ -3,6 +3,7 @@ package protocol
 import (
 	"common"
 	"sync"
+	"log"
 )
 
 /////////////////////////////////////////////////
@@ -116,6 +117,7 @@ func (l *Leader) AddFollower(peer *common.PeerPipe) {
 //
 func (l *Leader) startListener(follower *common.PeerPipe) {
 
+	log.Printf("Leader.startListener(): start listening to message from peer %s", follower.GetAddr())
 	reqch := follower.ReceiveChannel()
 
 	for {
@@ -125,6 +127,7 @@ func (l *Leader) startListener(follower *common.PeerPipe) {
 			l.handleMessage(req, follower.GetAddr())
 		} else {
 			// The channel is closed.  Need to shutdown the listener.
+			log.Printf("Leader.startListener(): message channel closed. Remove peer %s as follower.", follower.GetAddr()) 
 			l.removeFollower(follower)
 			return
 		}

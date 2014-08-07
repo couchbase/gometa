@@ -121,6 +121,12 @@ func (s *Server) runElection() (string, error) {
 	peers := GetPeerUDPAddr()
 	
 	// Create an election site to start leader election.
+	log.Printf("Local Server %s start election", host)
+	log.Printf("Peer in election")
+	for peer := range peers {
+		log.Printf("	peer : %s", peer)
+	}
+	
 	site, err := protocol.CreateElectionSite(host, peers, s.factory, s.handler, s.killch1)
 	if err != nil {
 		return "", err

@@ -73,8 +73,10 @@ func (p *PeerPipe) ReceiveChannel() <-chan Packet {
 func (p *PeerPipe) Close() bool {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-
+	
 	if !p.isClosed {
+		log.Printf("PeerPipe.Close(): Remote Address %s", p.GetAddr())
+
 		p.isClosed = true
 
 		SafeRun("PeerPipe.Close()",
@@ -132,26 +134,27 @@ func (p *PeerPipe) doSend() {
 		packet, ok := <-p.sendch
 		if !ok {
 			// channel close.  Terminate the loop.
-			log.Printf("PeerPipe.doSend() : Send channel closed.  Terminate send loop.")
+			log.Printf("PeerPipe.doSend() : Send channel closed.  Terminate.")
 			return
 		}
+		
+		log.Printf("PeerPipe.doSend() : Prepare to send message %s to Peer %s", packet.Name(), p.GetAddr())
+		packet.Print()
 
 		msg, err := Marshall(packet)
 		if err != nil {
-		    log.Printf("PeerPipe.doSend() : Fail to marshall message to Peer %s", p.GetAddr()) 
+		    log.Printf("PeerPipe.doSend() : Fail to marshall message %s to Peer %s. Terminate.", packet.Name(), p.GetAddr()) 
 			return
 		}
 		size := len(msg)
 
 		// write the packet
 		log.Printf("PeerPipe.doSend() : Sending message %s (len %d) to Peer %s", packet.Name(), size, p.GetAddr())
-		packet.Print()
-		
 		n, err := p.conn.Write(msg)
 		if n < size || err != nil {
 			// Network error. Close the loop.  The pipe will
 			// close and cause subsequent Send() to fail.
-			log.Printf("PeerPipe.doSend() : ecounter error when sending mesasage to Peer %s.  Error = %s.  Kill pipe.", 
+			log.Printf("PeerPipe.doSend() : ecounter error when sending mesasage to Peer %s.  Error = %s.  Terminate.", 
 					p.GetAddr(), err.Error())
 			return
 		}
@@ -199,18 +202,18 @@ func (p *PeerPipe) doReceive() {
 		
 		buf := make([]byte, MAX_DATAGRAM_SIZE)
 		n, err := p.conn.Read(buf)
-		log.Printf("PeerPipe.doRecieve() : Receiving message from Peer %s, bytes read %d", p.GetAddr(), n)
 		if err != nil {
-			log.Printf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s", 
+			log.Printf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Terminate", 
 						err.Error())
 			return
 		}
+		log.Printf("PeerPipe.doRecieve() : Receiving message from Peer %s, bytes read %d", p.GetAddr(), n)
 
 		// unmarshall the content and put it in the channel
 		//packet, err := UnMarshall(buf)
 		packet, err := UnMarshall(buf[8:n])
 		if err != nil {
-			log.Printf("PeerPipe.doRecieve() : ecounter error when unmarshalling mesasage from Peer.  Error = %s", 
+			log.Printf("PeerPipe.doRecieve() : ecounter error when unmarshalling mesasage from Peer.  Error = %s. Terminate.", 
 					err.Error())	
 			return
 		}

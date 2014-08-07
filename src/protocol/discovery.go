@@ -191,7 +191,9 @@ func (l *LeaderSyncProxy) execute(donech chan bool) {
 		switch stage {
 		case UPDATE_ACCEPTED_EPOCH_AFTER_QUORUM:
 			{
-				if l.updateAcceptedEpochAfterQuorum() != nil {
+				err := l.updateAcceptedEpochAfterQuorum()
+				if err != nil {
+					log.Printf("LeaderSyncProxy.updateAcceptEpochAfterQuorum(): Error encountered = %s", err.Error())
 					donech <- false
 					return
 				}
@@ -199,7 +201,9 @@ func (l *LeaderSyncProxy) execute(donech chan bool) {
 			}
 		case NOTIFY_NEW_EPOCH:
 			{
-				if l.notifyNewEpoch() != nil {
+				err := l.notifyNewEpoch() 
+				if err != nil {
+					log.Printf("LeaderSyncProxy.notifyNewEpoch(): Error encountered = %s", err.Error())
 					donech <- false
 					return
 				}
@@ -207,7 +211,9 @@ func (l *LeaderSyncProxy) execute(donech chan bool) {
 			}
 		case UPDATE_CURRENT_EPOCH_AFTER_QUORUM:
 			{
-				if l.updateCurrentEpochAfterQuorum() != nil {
+				err := l.updateCurrentEpochAfterQuorum() 
+				if err != nil {
+					log.Printf("LeaderSyncProxy.updateCurrentEpochAfterQuorum(): Error encountered = %s", err.Error())
 					donech <- false
 					return
 				}
@@ -215,7 +221,9 @@ func (l *LeaderSyncProxy) execute(donech chan bool) {
 			}
 		case SYNC_SEND:
 			{
-				if l.syncWithLeader() != nil {
+				err := l.syncWithLeader() 
+				if err != nil {
+					log.Printf("LeaderSyncProxy.syncWithLeader(): Error encountered = %s", err.Error())
 					donech <- false
 					return
 				}
@@ -223,7 +231,9 @@ func (l *LeaderSyncProxy) execute(donech chan bool) {
 			}
 		case DECLARE_NEW_LEADER_AFTER_QUORUM:
 			{
-				if l.declareNewLeaderAfterQuorum() != nil {
+				err := l.declareNewLeaderAfterQuorum() 
+				if err != nil {
+					log.Printf("LeaderSyncProxy.declareNewLeaderAfterQuorum(): Error encountered = %s", err.Error())
 					donech <- false
 					return
 				}
@@ -385,7 +395,9 @@ func (l *FollowerSyncProxy) execute(donech chan bool) {
 		switch stage {
 		case SEND_FOLLOWERINFO:
 			{
-				if l.sendFollowerInfo() != nil {
+				err := l.sendFollowerInfo() 
+				if err != nil {
+					log.Printf("FollowerSyncProxy.sendFollowerInfo(): Error encountered = %s", err.Error())
 					donech <- false
 					return
 				}
@@ -393,7 +405,9 @@ func (l *FollowerSyncProxy) execute(donech chan bool) {
 			}
 		case RECEIVE_UPDATE_ACCEPTED_EPOCH:
 			{
-				if l.receiveAndUpdateAcceptedEpoch() != nil {
+				err := l.receiveAndUpdateAcceptedEpoch() 
+				if err != nil {
+					log.Printf("FollowerSyncProxy.receiveAndUpdateAcceptedEpoch(): Error encountered = %s", err.Error())
 					donech <- false
 					return
 				}
@@ -401,7 +415,9 @@ func (l *FollowerSyncProxy) execute(donech chan bool) {
 			}
 		case SYNC_RECEIVE:
 			{
-				if l.syncReceive() != nil {
+				err := l.syncReceive() 
+				if err != nil {
+					log.Printf("FollowerSyncProxy.syncReceive(): Error encountered = %s", err.Error())
 					donech <- false
 					return
 				}
@@ -409,7 +425,9 @@ func (l *FollowerSyncProxy) execute(donech chan bool) {
 			}
 		case RECEIVE_UPDATE_CURRENT_EPOCH:
 			{
-				if l.receiveAndUpdateCurrentEpoch() != nil {
+				err := l.receiveAndUpdateCurrentEpoch() 
+				if err != nil {
+					log.Printf("FollowerSyncProxy.receiveAndUpdateCurrentEpoch(): Error encountered = %s", err.Error())
 					donech <- false
 					return
 				}
@@ -498,10 +516,10 @@ func (l *FollowerSyncProxy) receiveAndUpdateCurrentEpoch() error {
 
 func (l *FollowerSyncProxy) syncReceive() error {
 
-	receiveFirst := false
+	hasReceiveFirst := false
 
 	for {
-		packet, err := listen("LogEntryMsg", l.leader)
+		packet, err := listen("LogEntry", l.leader)
 		if err != nil {
 			return err
 		}
@@ -510,21 +528,20 @@ func (l *FollowerSyncProxy) syncReceive() error {
 		lastLoggedTxnid := entry.GetTxnid()
 
 		// If it is the first entry, we expect the entry txid to be the same as my last logged txid
-		if !receiveFirst && lastLoggedTxnid != l.state.lastLoggedTxid {
-			return common.WrapError(common.PROTOCOL_ERROR, "",
-				fmt.Errorf("Expect to receive first LogEntryMsg with txnid = %d", lastLoggedTxnid))
+		if !hasReceiveFirst && lastLoggedTxnid != l.state.lastLoggedTxid {
+			return common.NewError(common.PROTOCOL_ERROR, 
+					fmt.Sprintf("Expect to receive first LogEntryMsg with txnid = %d", lastLoggedTxnid))
 		}
 
-		if !receiveFirst {
+		// If this is the last one, then return.
+		if entry.GetOpCode() == uint32(common.OPCODE_STREAM_END_MARKER) {
+			return nil
+		}
+			 
+		if !hasReceiveFirst {
 			// always skip the first entry since I have this entry in my commit log already
-			receiveFirst = true
+			hasReceiveFirst = true
 		} else {
-			// if this is not the first entry but the entry's txid is the same as my last logged txid.  It signals the
-			// end of the stream.
-			if lastLoggedTxnid == entry.GetTxnid() {
-				return nil
-			}
-
 			// write the new commit entry
 			err = l.handler.CommitEntry(entry.GetTxnid(), entry.GetOpCode(), entry.GetKey(), entry.GetContent())
 			if err != nil {

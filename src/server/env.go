@@ -76,12 +76,12 @@ func (e *Env) init() error {
 
 func (e *Env) resolveHostAddr() (err error) {
 
-	e.hostUDPAddr, err = resolveAddr("udp", os.Args[1])
+	e.hostUDPAddr, err = resolveAddr(common.ELECTION_TRANSPORT_TYPE, os.Args[1])
 	if err != nil {
 		return err	
 	}
 		
-	e.hostTCPAddr, err = resolveAddr("tcp", os.Args[2])
+	e.hostTCPAddr, err = resolveAddr(common.MESSAGE_TRANSPORT_TYPE, os.Args[2])
 	if err != nil {
 		return err	
 	}
@@ -95,14 +95,14 @@ func (e *Env) resolvePeerAddr() error {
 	e.peerTCPAddr = make([]string, 0, len(args))
 	
 	for i:=0; i < len(args); {
-		peer, err := resolveAddr("udp", args[i])
+		peer, err := resolveAddr(common.ELECTION_TRANSPORT_TYPE, args[i])
 		if err != nil {
 			return err	
 		}
 		e.peerUDPAddr = append(e.peerUDPAddr, peer.String())
 		i++
 		
-		peer, err = resolveAddr("tcp", args[i])
+		peer, err = resolveAddr(common.MESSAGE_TRANSPORT_TYPE, args[i])
 		if err != nil {
 			return err	
 		}
@@ -115,7 +115,7 @@ func (e *Env) resolvePeerAddr() error {
 
 func resolveAddr(network string, addr string) (addrObj net.Addr, err error) {
 
-	if strings.Contains(network, "tcp") {
+	if strings.Contains(network, common.MESSAGE_TRANSPORT_TYPE) {
 		addrObj, err = net.ResolveTCPAddr(network, addr)
 	} else {
 		addrObj, err = net.ResolveUDPAddr(network, addr)

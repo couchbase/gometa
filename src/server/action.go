@@ -133,14 +133,15 @@ func (a *ServerAction) startLogStreamer(startTxid uint64,
 	defer iter.Close()
 
 	// TODO : Need to lock the commitLog so there is no new commit while streaming
-	// TODO : Should I skip the first one
-	for txnid, op, key, body, err := iter.Next(); err != nil; txnid, op, key, body, err = iter.Next() {
+	txnid, op, key, body, err := iter.Next() 
+	for err == nil  {
 		msg := a.factory.CreateLogEntry(uint64(txnid), uint32(op), key, body)
 		logChan <- msg
+		txnid, op, key, body, err = iter.Next()
 	}
 
 	// stream the last entry with txid again
-	msg := a.factory.CreateLogEntry(startTxid, uint32(common.OPCODE_INVALID), "", nil)
+	msg := a.factory.CreateLogEntry(startTxid, uint32(common.OPCODE_STREAM_END_MARKER), "StreamEnd", []byte("StreamEnd"))
 	logChan <- msg
 
 	// TODO : The item is supposed to be with even if the channel is closed. Double check.

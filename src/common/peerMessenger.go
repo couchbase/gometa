@@ -116,6 +116,8 @@ func (p *PeerMessenger) Close() bool {
 	defer p.mutex.Unlock()
 
 	if !p.isClosed {
+		log.Printf("PeerMessenger.Close() : Local Addr %s", p.GetLocalAddr())	
+		
 		p.isClosed = true
 
 		SafeRun("PeerMessenger.Close()",
@@ -219,10 +221,13 @@ func (p *PeerMessenger) doSend() {
 		msg, ok := <-p.sendch
 		if !ok {
 			// channel close.  Terminate the loop.
-			log.Printf("PeerMessenger.doSend() : Send channel closed.  Terminate send loop.")
+			log.Printf("PeerMessenger.doSend() : Send channel closed.  Terminate.")
 			break
 		}
 
+		log.Printf("PeerMessenger.doSend() : Preparing message %s to Peer %s", msg.Content.Name(), msg.Peer.String())
+		msg.Content.Print()
+		
 		serialized, err := Marshall(msg.Content)
 		if err != nil {
 			log.Printf("PeerMessenger.doSend() : Fail to marshall message to Peer %s", msg.Peer.String())
@@ -232,8 +237,6 @@ func (p *PeerMessenger) doSend() {
 
 		// write the packet
 		log.Printf("PeerMessenger.doSend() : Sending message %s (len %d) to Peer %s", msg.Content.Name(), size, msg.Peer.String())
-		msg.Content.Print()
-		
 		n, err := p.conn.WriteTo(serialized, msg.Peer)
 		if n < size || err != nil {
 			log.Printf("PeerMessenger.doSend() : ecounter error when sending mesasage to Peer %s.  Error = %s", 
@@ -261,18 +264,18 @@ func (p *PeerMessenger) doReceive() {
 		//var lenBuf []byte = make([]byte, 8)
 		buf := make([]byte, MAX_DATAGRAM_SIZE)
 		n, peer, err := p.conn.ReadFrom(buf)
-		log.Printf("PeerMessenger.doRecieve() : Receiving message from Peer %s, bytes read %d", peer.String(), n)
 		if err != nil {
-			log.Printf("PeerMessenger.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s", 
+			log.Printf("PeerMessenger.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Terminate.", 
 						err.Error())
 			return
 		}
+		log.Printf("PeerMessenger.doRecieve() : Receiving message from Peer %s, bytes read %d", peer.String(), n)
 
 		// unmarshall the content and put it in the channel
 		// skip the first 8 bytes (total len)
 		packet, err := UnMarshall(buf[8:n])
 		if err != nil {
-			log.Printf("PeerMessenger.doRecieve() : ecounter error when unmarshalling mesasage from Peer.  Error = %s", 
+			log.Printf("PeerMessenger.doRecieve() : ecounter error when unmarshalling mesasage from Peer.  Error = %s. Terminate.", 
 						err.Error())
 			break
 		}

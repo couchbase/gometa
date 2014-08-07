@@ -78,6 +78,8 @@ func (l *PeerListener) Close() bool {
 
 	if !l.isClosed {
 		l.isClosed = true
+		
+		log.Printf("PeerListener.Close(): local address %s", l.naddr)
 
 		SafeRun("PeerListener.Close()",
 			func() {
@@ -118,6 +120,7 @@ func (l *PeerListener) listen() {
 		conn, err := l.listener.Accept()
 		if err != nil {
 			// if there is error, just terminate the listener loop.
+			log.Printf("PeerListener.listen(): Error in accepting new connection.  Error = %s. Terminate.", err.Error())
 			break
 		}
 

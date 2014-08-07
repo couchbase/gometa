@@ -41,7 +41,7 @@ func RunFollowerServer(naddr string,
 		return err
 	}
 	pipe := common.NewPeerPipe(conn)
-	log.Printf("Follower %s successfully created TCP connection to leader %s", naddr, leader)
+	log.Printf("FollowerServer.RunFollowerServer() : Follower %s successfully created TCP connection to leader %s", naddr, leader)
 
 	// close the connection to the leader. If connection is closed,
 	// sync proxy and follower will terminate by err-ing out.
@@ -58,6 +58,8 @@ func RunFollowerServer(naddr string,
 		runFollower(pipe, ss, handler, factory, killch)
 	}
 
+	log.Printf("FollowerServer.RunFollowerServer() : Follower Server %s terminate", naddr)
+	
 	return nil
 }
 
@@ -70,7 +72,7 @@ func syncWithLeader(naddr string,
 	factory protocol.MsgFactory,
 	killch chan bool) bool {
 
-	log.Printf("Follower %s start synchronization with leader %s", naddr, pipe.GetAddr())
+	log.Printf("FollowerServer.syncWithLeader(): Follower %s start synchronization with leader %s", naddr, pipe.GetAddr())
 	proxy := protocol.NewFollowerSyncProxy(pipe, handler, factory)
 
 	donech := make(chan bool)
@@ -80,10 +82,14 @@ func syncWithLeader(naddr string,
 	// the leader (a bool is pushed to donech)
 	select {
 	case success := <-donech:
+		if success {
+			log.Printf("FollowerServer.syncWithLeader(): Follower %s done synchronization with leader %s", naddr, pipe.GetAddr())
+		}
 		return success
 	case <-killch:
 		// simply return. The pipe will eventually be closed and
 		// cause FollowerSyncProxy to err out.
+		log.Printf("FollowerServer.syncWithLeader(): Recieve kill singal.  Synchronization with peer %s terminated.", pipe.GetAddr())
 		return false
 	}
 
@@ -106,6 +112,7 @@ func runFollower(pipe *common.PeerPipe,
 	server.state = newFollowerState(ss)
 
 	// Create a follower.  The follower will start a go-rountine, listening to messages coming from leader.
+	log.Printf("FollowerServer.runFollower(): Start Follower Protocol")
 	donech := make(chan bool)
 	server.follower = protocol.StartFollower(protocol.FOLLOWER, pipe, handler, factory, donech)
 
@@ -120,6 +127,9 @@ func (s *FollowerServer) processRequest(handler protocol.ActionHandler,
 	factory protocol.MsgFactory,
 	killch chan bool,
 	donech chan bool) {
+	
+	log.Printf("FollowerServer.processRequest(): Ready to process request")
+	
 	for {
 		select {
 		case handle, ok := <-s.state.serverState.incomings:
