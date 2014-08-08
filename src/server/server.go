@@ -136,7 +136,10 @@ func (s *Server) runElection() (leader string, err error) {
 
 	resultCh := make(chan string)
 	s.site.StartElection(resultCh)
-	leader = <-resultCh // blocked until leader is elected
+	leader, ok := <-resultCh // blocked until leader is elected
+	if !ok {
+		return "", common.NewError(common.SERVER_ERROR, "Election Fails") 
+	}
 
 	return leader, nil
 }

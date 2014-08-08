@@ -71,7 +71,14 @@ type PollWorker struct {
 
 //
 // The election round is incremented for every new election being run in
-// this process.   
+// this process.    If there is an ensemble of peers are running election,
+// these peers will need to be in the same round in order to achieve quorum.
+// Essentially, if a peer joins an electing ensemble, it can either join 
+// the current round of voting or start a new round.  If it start a new round,
+// then it must have enough peers to join his round before a quorum can be reached. 
+// If a peer leaves an ensemble, its vote still count (ZK does not take away vote).  
+// The sycnhronization (recovery) phase will double check if a quorum of followers 
+// agree to the leader before the algorithm is fully converged.
 //
 var gElectionRound uint64 = 0
 
@@ -170,8 +177,10 @@ func (s *ElectionSite) createVoteFromCurState() VoteMsg {
 	if err != nil {
 		// if epoch is missing, set the epoch to the smallest possible
 		// number.  This is to allow the voting peers to tell me what
-		// the right epoch would be during balloting.
-		// TODO: look at the error to see if there is more genuine issue
+		// the right epoch would be during balloting.  This allows me
+		// to proceed leader election.  After leader election, this 
+		// node will either be a leader or follower, and it will need
+		// to synchornize with the peer's state (acceptedEpoch, currentEpoch).
 		epoch = 0
 	}
 
@@ -482,13 +491,14 @@ func (b *Ballot) updateProposed(proposed VoteMsg, site *ElectionSite) {
 //
 func (b *Ballot) resetAndUpdateProposed(proposed VoteMsg, site *ElectionSite) {
 	b.result.receivedVotes = make(map[string]VoteMsg)
-	
+	// To be safe, clean up the active peers as well.  This is just to ensure
+	// when an active peers becomes an electing peer, we don't keep old votes
+	// around.  This deviates from ZK (which does not clear the active votes
+	// -- possibly for faster convergence to quorum).
+	b.result.activePeers = make(map[string]VoteMsg)
+
+	// update the proposed	
 	b.updateProposed(proposed, site)
-	
-	// Do not reset activePeers.  This should not affect
-	// correctness if reset activePeers, but since
-	// activePeers are already either leader/follower,
-	// they won't change their vote.
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -509,6 +519,16 @@ func startPollWorker(site *ElectionSite) *PollWorker {
 	go worker.listen()
 
 	return worker
+}
+
+//
+// Notify the PollWorker that there is a new ballot.
+//
+func (w *PollWorker) observe(ballot *Ballot) {
+	// This synchronous.  This is to ensure that listen() receives the ballot
+	// before this function return to the BallotMaster.
+	w.ballot = ballot
+	w.listench <- ballot
 }
 
 //
@@ -556,7 +576,13 @@ func (w *PollWorker) listen() {
 		case msg, ok := <-reqch:
 			{
 				if !ok {
-					// TODO: Channel closed.
+					common.SafeRun("PollWorker.gatherVote()",
+						func() {
+							if w.ballot != nil {
+								close(w.ballot.resultch)
+								w.ballot = nil
+							}
+						})
 					return
 				}
 
@@ -589,13 +615,15 @@ func (w *PollWorker) listen() {
 			}
 		case <-timeout:
 			{
-				// If there is a timeout but no response,
-				// send vote again
+				// If there is a timeout but no response, send vote again.
 				if w.ballot != nil {
 					w.site.messenger.Multicast(w.cloneProposedVote(), w.site.ensemble)
 				}
 
-				duration = duration * 2
+				newDuration := duration * 2
+				if newDuration < common.BALLOT_MAX_TIMEOUT {
+					duration = newDuration
+				}
 				timeout = time.After(duration * time.Millisecond)
 			}
 		case <-w.killch:
@@ -603,8 +631,8 @@ func (w *PollWorker) listen() {
 				// It is done.  Close the ballot.
 				common.SafeRun("PollWorker.gatherVote()",
 					func() {
-						close(w.ballot.resultch)
 						if w.ballot != nil {
+							close(w.ballot.resultch)
 							w.ballot = nil
 						}
 					})
@@ -769,16 +797,6 @@ func (w *PollWorker) handleVoteForActivePeer(voter net.Addr, vote VoteMsg) bool 
 }
 
 //
-// Notify the PollWorker that there is a new ballot.
-//
-func (w *PollWorker) observe(ballot *Ballot) {
-	// This synchronous.  This is to ensure that listen() receives the ballot
-	// before this function return to the BallotMaster.
-	w.ballot = ballot
-	w.listench <- ballot
-}
-
-//
 // Compare the current round with the given vote
 //
 func (w *PollWorker) compareRound(vote VoteMsg) CompareResult {
@@ -849,6 +867,10 @@ func (w *PollWorker) compareVoteWithProposed(vote VoteMsg) CompareResult {
 //
 func (w *PollWorker) acceptAndCheckQuorum(voter net.Addr, vote VoteMsg) bool {
 
+	// Remember this peer's vote.  Note that ZK never takes away a voter's votes
+	// even if the voter has gone down (ZK would not know).  But ZK will ensure
+	// that the new leader will have a quorum of followers (in synchronization/recovery 
+	// phase) before the ensemble become stable.
 	w.ballot.result.receivedVotes[voter.String()] = vote
 	return w.checkQuorum(w.ballot.result.receivedVotes, w.ballot.result.proposed)
 
@@ -884,21 +906,13 @@ func (w *PollWorker) checkQuorum(votes map[string]VoteMsg, candidate VoteMsg) bo
 // Copy a proposed vote
 //
 func (w *PollWorker) cloneProposedVote() VoteMsg {
-	epoch, err := w.site.handler.GetCurrentEpoch()
-	if err != nil {
-		// if epoch is missing, set the epoch to the smallest possible
-		// number.  This is to allow the voting peers to tell me what
-		// the right epoch would be during balloting.
-		// TODO: look at the error to see if there is more genuine issue
-		epoch = 0
-	}
 
 	// w.site.master.round should be in sycn with
 	// w.ballot.result.proposed.round. Use w.site.master.round
 	// to be consistent.
 	return w.site.factory.CreateVote(w.site.master.round,
 		uint32(w.site.handler.GetStatus()),
-		uint32(epoch),
+		uint32(w.ballot.result.proposed.GetEpoch()),
 		w.ballot.result.proposed.GetCndId(),
 		w.ballot.result.proposed.GetCndTxnId())
 }
