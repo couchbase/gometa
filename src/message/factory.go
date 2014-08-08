@@ -62,7 +62,7 @@ func (f *ConcreteMsgFactory) CreateVote(round uint64,
 	return &Vote{Version: proto.Uint32(ProtoVersion()),
 		Round:    proto.Uint64(round),
 		Status:   proto.Uint32(status),
-		Epoch:    proto.Uint32(status),
+		Epoch:    proto.Uint32(epoch),
 		CndId:    proto.String(cndId),
 		CndTxnId: proto.Uint64(cndTxnId)}
 }

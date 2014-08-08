@@ -101,6 +101,7 @@ func (a *ServerAction) NotifyNewAcceptedEpoch(epoch uint32) {
 
 func (a *ServerAction) NotifyNewCurrentEpoch(epoch uint32) {
 	a.config.SetCurrentEpoch(epoch)
+	a.server.UpdateWinningEpoch(epoch)
 }
 
 ////////////////////////////////////////////////////////////////////////////

@@ -54,7 +54,12 @@ func (r *Repository) Set(key string, content []byte) error {
 	}
 
 	// set value
-	return r.db.SetKV(k, content)
+	err = r.db.SetKV(k, content)
+	if err != nil {
+		return err
+	}
+
+	return r.db.Commit(fdb.COMMIT_NORMAL)
 }
 
 //
@@ -85,7 +90,12 @@ func (r *Repository) Delete(key string) error {
 		return err
 	}
 
-	return r.db.DeleteKV(k)
+	err = r.db.DeleteKV(k)
+	if err != nil {
+		return err
+	}
+	
+	return r.db.Commit(fdb.COMMIT_NORMAL)
 }
 
 //

@@ -19,6 +19,7 @@ type Server struct {
 	log       *r.CommitLog
 	srvConfig *r.ServerConfig
 	state     *ServerState
+	site      *protocol.ElectionSite
 	factory   protocol.MsgFactory
 	handler   protocol.ActionHandler
 	killch1   chan bool
@@ -48,6 +49,7 @@ type ServerCallback interface {
 	GetState() *ServerState
 	UpdateStateOnNewProposal(proposal protocol.ProposalMsg)
 	UpdateStateOnCommit(proposal protocol.ProposalMsg)
+	UpdateWinningEpoch(epoch uint32)
 }
 
 var gServer *Server = nil
@@ -115,7 +117,7 @@ func (s *Server) bootstrap() (err error) {
 //
 // run election
 //
-func (s *Server) runElection() (string, error) {
+func (s *Server) runElection() (leader string, err error) {
 
 	host := GetHostUDPAddr()
 	peers := GetPeerUDPAddr()
@@ -127,14 +129,14 @@ func (s *Server) runElection() (string, error) {
 		log.Printf("	peer : %s", peer)
 	}
 	
-	site, err := protocol.CreateElectionSite(host, peers, s.factory, s.handler, s.killch1)
+	s.site, err = protocol.CreateElectionSite(host, peers, s.factory, s.handler, s.killch1)
 	if err != nil {
 		return "", err
 	}
 
 	resultCh := make(chan string)
-	site.StartElection(resultCh)
-	leader := <-resultCh // blocked until leader is elected
+	s.site.StartElection(resultCh)
+	leader = <-resultCh // blocked until leader is elected
 
 	return leader, nil
 }
@@ -212,6 +214,11 @@ func (s *Server) cleanupState() {
 	common.SafeRun("Server.cleanupState()",
 		func() {
 			s.listener.Close()
+		})
+		
+	common.SafeRun("Server.cleanupState()",
+		func() {
+			s.site.Close()
 		})
 		
 	for {
@@ -421,4 +428,8 @@ func (s *Server) UpdateStateOnCommit(proposal protocol.ProposalMsg) {
 
 func (s *Server) GetState() *ServerState {
 	return s.state
+}
+
+func (s *Server) UpdateWinningEpoch(epoch uint32) {
+	s.site.UpdateWinningEpoch(epoch)
 }

@@ -41,6 +41,7 @@ type ElectionSite struct {
 
 type BallotResult struct {
 	proposed      VoteMsg
+	winningEpoch  uint32		// winning epoch : can be updated after follower has sync with leader
 	receivedVotes map[string]VoteMsg
 	activePeers   map[string]VoteMsg
 }
@@ -187,6 +188,23 @@ func (s *ElectionSite) inEnsemble(voter net.Addr) bool {
 }
 
 //
+// Update the winning epoch. The epoch can change after 
+// the synchronization phase (when leader tells the
+// follower what is the actual epoch value -- after the
+// leader gets a quorum of followers).  There are other
+// possible implementations (e.g. keeping the winning
+// vote with the server -- not the BallotMaster), but
+// for now, let's just have this API to update the
+// epoch.
+//
+func (s *ElectionSite) UpdateWinningEpoch(epoch uint32) {
+	s.master.mutex.Lock()
+	defer s.master.mutex.Unlock()
+	
+	s.master.winner.winningEpoch = epoch
+}
+
+//
 // Create an ensemble for voting 
 //
 func cloneEnsemble(peers []string, laddr string) ([]net.Addr, []string, error) {
@@ -254,10 +272,20 @@ func (b *BallotMaster) castBallot(winnerch chan string) {
 
 	// Announce the winner
 	if success {
-		common.SafeRun("BallotMaster.castBallot()",
-			func() {
-				winnerch <- b.winner.proposed.GetCndId()
+		winner, ok := b.GetWinner()
+		if ok {
+			common.SafeRun("BallotMaster.castBallot()",
+				func() {
+					winnerch <- winner 
+				})
+		} else {
+			// close the winnerch if we cannot finish the ballot.
+			// We don't really expect this to happen.
+			common.SafeRun("BallotMaster.castBallot()",
+				func() {
+					close(winnerch)
 			})
+		}
 	} else {
 		// close the winnerch if we cannot finish the ballot.
 		common.SafeRun("BallotMaster.castBallot()",
@@ -335,24 +363,52 @@ func (b *BallotMaster) createInitialBallot(resultch chan bool) *Ballot {
 }
 
 //
-// Copy a winning vote
+// Copy a winning vote.  This function is called when
+// there is no active ballot going on.  
 //
-func (b *BallotMaster) cloneWinningVote() (VoteMsg, error) {
+func (b *BallotMaster) cloneWinningVote() VoteMsg {
 
-	epoch, err := b.site.handler.GetCurrentEpoch()
-	if err != nil {
-		return nil, err
-	}
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
 
+	// If b.winner is not nil, then it indicates that I have concluded my leader
+	// election.
 	if b.winner != nil {
-		return b.site.factory.CreateVote(b.round,
+		return b.site.factory.CreateVote(
+			b.winner.proposed.GetRound(),	
 			uint32(b.site.handler.GetStatus()),
-			epoch,
+			b.winner.winningEpoch,
 			b.winner.proposed.GetCndId(),
-			b.winner.proposed.GetCndTxnId()), nil
+			b.winner.proposed.GetCndTxnId())
 	}
 
-	return nil, nil
+	return nil
+}
+
+//
+// Return the winner
+//
+func (b *BallotMaster) GetWinner() (string, bool) {
+
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+	
+	if b.winner != nil {
+		return b.winner.proposed.GetCndId(), true
+	} 
+	
+	return "", false
+}
+
+//
+// Set the winner
+//
+func (b *BallotMaster) setWinner(result *BallotResult) {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+	
+	b.winner = result
+	b.winner.winningEpoch = result.proposed.GetEpoch() 
 }
 
 //
@@ -439,7 +495,7 @@ func (w *PollWorker) listen() {
 				// This should only happen if there is only one server in the 
 				// ensemble.
 				if w.checkQuorum(w.ballot.result.receivedVotes, w.ballot.result.proposed) {
-					w.site.master.winner = w.ballot.result
+					w.site.master.setWinner(w.ballot.result)
 					w.ballot.resultch <- true
 					w.ballot = nil
 				} else {
@@ -473,7 +529,9 @@ func (w *PollWorker) listen() {
 					// we achieve quorum, set the winner.
 					// setting the winner and usetting the ballot
 					// should be done together.
-					w.site.master.winner = w.ballot.result
+		            // NOTE: TK does not notify other peers when this node has
+		            // select a leader 
+					w.site.master.setWinner(w.ballot.result)
 					w.ballot.resultch <- true
 					w.ballot = nil
 				}
@@ -515,12 +573,10 @@ func (w *PollWorker) listen() {
 func (w *PollWorker) respondInquiry(voter net.Addr, vote VoteMsg) {
 
 	if PeerStatus(vote.GetStatus()) == ELECTING {
-		if w.site.master.winner != nil {
-			msg, err := w.site.master.cloneWinningVote()
-			if err == nil {
-				// send the winning vote if there is no error
-				w.site.messenger.Send(msg, voter)
-			}
+		msg := w.site.master.cloneWinningVote()
+		if msg != nil {
+			// send the winning vote if there is no error
+			w.site.messenger.Send(msg, voter)
 		}
 		// If there is no winner at the moment and this node is not
 		// in election, could have send a vote based on the current state
@@ -558,12 +614,12 @@ func (w *PollWorker) handleVoteForElectingPeer(voter net.Addr, vote VoteMsg) boo
 		// ballot.result.proposed.round
 		w.site.master.setCurrentRound(vote.GetRound())
 
-		if w.compareVoteWithLastLogged(vote) == GREATER {
+		if w.compareVoteWithCurState(vote) == GREATER {
 			// Update my vote if the incoming vote is larger.
-			w.ballot.reset(vote, w.site)
+			w.ballot.reset(vote /* new proposed vote */, w.site)
 		} else {
 			// otherwise udpate my vote using lastLoggedTxid
-			w.ballot.reset(w.site.createVoteFromCurState(), w.site)
+			w.ballot.reset(w.site.createVoteFromCurState() /* new proposed vote */, w.site)
 		}
 
 		// notify that our new vote
@@ -574,12 +630,11 @@ func (w *PollWorker) handleVoteForElectingPeer(voter net.Addr, vote VoteMsg) boo
 		return w.acceptAndCheckQuorum(voter, vote)
 
 	} else if compareRound == EQUAL {
-		// if it is the same round and the incoming vote has higher txid,
+		// if it is the same round and the incoming vote has higher epoch or txid,
 		// update myself to the incoming vote and broadcast my new vote
 		if w.compareVoteWithProposed(vote) == GREATER {
-			w.ballot.result.proposed = vote
-
 			// update and notify that our new vote
+			w.ballot.result.proposed = vote
 		    w.ballot.result.receivedVotes[w.site.messenger.GetLocalAddr()] = vote
 			w.site.messenger.Multicast(w.cloneProposedVote(), w.site.ensemble)
 
@@ -622,7 +677,9 @@ func (w *PollWorker) handleVoteForActivePeer(voter net.Addr, vote VoteMsg) bool 
 		// getting a message from the leader (unless leader is me).
 		w.ballot.result.receivedVotes[voter.String()] = vote
 
-		if w.checkQuorum(w.ballot.result.receivedVotes, vote); w.certifyLeader(vote) {
+		if w.checkQuorum(w.ballot.result.receivedVotes, vote) && w.certifyLeader(vote) {
+			// accept this vote from the peer 
+			w.ballot.result.proposed = vote
 			return true
 		}
 	}
@@ -635,6 +692,7 @@ func (w *PollWorker) handleVoteForActivePeer(voter net.Addr, vote VoteMsg) bool 
 	// us as a leader.
 	w.ballot.result.activePeers[voter.String()] = vote
 
+	// Check the quorum only for the active peers.  
 	if w.checkQuorum(w.ballot.result.activePeers, vote) &&
 		w.certifyLeader(vote) {
 		// my master.round may be ahead of the leader since
@@ -642,9 +700,12 @@ func (w *PollWorker) handleVoteForActivePeer(voter net.Addr, vote VoteMsg) bool 
 		// not change when it is not in election.  So change
 		// mine to match the leader's ballot round.
 		w.site.master.setCurrentRound(vote.GetRound())
+		
+		// update and notify that our new vote
+		w.ballot.result.proposed = vote
 		return true
 	}
-
+	
 	return false
 }
 
@@ -708,9 +769,9 @@ func (w *PollWorker) compareVote(vote1, vote2 VoteMsg) CompareResult {
 }
 
 //
-// Compare the given vote with last logged Txid
+// Compare the given vote with currennt state (epoch, lastLoggedTxnid)
 //
-func (w *PollWorker) compareVoteWithLastLogged(vote VoteMsg) CompareResult {
+func (w *PollWorker) compareVoteWithCurState(vote VoteMsg) CompareResult {
 
 	vote2 := w.site.createVoteFromCurState()
 	return w.compareVote(vote, vote2)

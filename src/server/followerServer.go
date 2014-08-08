@@ -78,8 +78,7 @@ func syncWithLeader(naddr string,
 	donech := make(chan bool)
 	proxy.Start(donech)
 
-	// This goroutine will block until NewFollowerSyncProxy has sychronized with
-	// the leader (a bool is pushed to donech)
+	// This will block until NewFollowerSyncProxy has sychronized with the leader (a bool is pushed to donech)
 	select {
 	case success := <-donech:
 		if success {

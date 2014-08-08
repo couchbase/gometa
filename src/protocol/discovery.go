@@ -475,6 +475,9 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 		// update the accepted epoch based on the quorum result
 		l.handler.NotifyNewAcceptedEpoch(epoch)
 	} else {
+		// TODO: In TK, if the epoch == acceptedEpoch, it will replly an EpochAck with epoch = -1.  This is to
+		// tell the leader that it should not count this EpockAck when computing quorum on EpochAck. But this
+		// will require the leader to timeout since it is possible that it will never reach quorum. 
 		return common.NewError(common.PROTOCOL_ERROR, "Accepted Epoch from leader is smaller or equal to my epoch.")
 	}
 
