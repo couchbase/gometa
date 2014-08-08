@@ -125,7 +125,7 @@ func (s *Server) runElection() (leader string, err error) {
 	// Create an election site to start leader election.
 	log.Printf("Local Server %s start election", host)
 	log.Printf("Peer in election")
-	for peer := range peers {
+	for _, peer := range peers {
 		log.Printf("	peer : %s", peer)
 	}
 	
