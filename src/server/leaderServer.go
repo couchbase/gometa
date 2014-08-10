@@ -64,16 +64,19 @@ func RunLeaderServer(naddr string,
 		consentState: consentState,
 		state:        state}
 
-	// start the listener
+	// start the listener.  This goroutine would continue to new follower even while
+	// it is processing request.
 	killch2 := make(chan bool)
 	go server.listenFollower(listener, consentState, handler, factory, killch2)
 
-	// start the main loop for processing incoming request
-	server.processRequest(handler, factory, killch, killch2)
+	// start the main loop for processing incoming request.  The leader will 
+	// process request only after it has received quorum of followers to 
+	// synchronized with it.
+	err = server.processRequest(handler, factory, killch, killch2)
 
 	log.Printf("LeaderServer.RunLeaderServer(): leader server %s terminate", naddr)
 	
-	return nil
+	return err
 }
 
 //
@@ -86,12 +89,15 @@ func (l *LeaderServer) listenFollower(listener *common.PeerListener,
 	handler protocol.ActionHandler,
 	factory protocol.MsgFactory,
 	killch chan bool) {
-
+	
 	connCh := listener.ConnChannel()
 	if connCh == nil {
 		// It should not happen unless the listener is closed
 		return
 	}
+	
+	ensembleSize := uint64(len(GetPeerUDPAddr())) + 1 // include the leader itself in the ensemble size 
+	killchs := make([] chan bool, 0, ensembleSize)
 
 	for {
 		select {
@@ -101,10 +107,15 @@ func (l *LeaderServer) listenFollower(listener *common.PeerListener,
 				// TODO: Check if it is not a duplicate
 				log.Printf("LeaderServer.listenFollower(): Receive connection request from follower %s", conn.RemoteAddr())
 				pipe := common.NewPeerPipe(conn)
-				go l.startProxy(pipe, state, handler, factory)
+				killch2 := make(chan bool)
+				killchs = append(killchs, killch2)
+				go l.startProxy(pipe, state, handler, factory, killch2)
 			}
 		case <-killch:
-			l.leader.Terminate()
+			log.Printf("LeaderServer.listenFollower(): Receive kill signal. Terminate.")
+			for _, killch2 := range killchs {
+				killch2 <- true
+			}
 			return
 		}
 	}
@@ -117,29 +128,35 @@ func (l *LeaderServer) listenFollower(listener *common.PeerListener,
 func (l *LeaderServer) startProxy(peer *common.PeerPipe,
 	state *protocol.ConsentState,
 	handler protocol.ActionHandler,
-	factory protocol.MsgFactory) {
+	factory protocol.MsgFactory,
+	killch chan bool) {
 
 	// create a proxy that will sycnhronize with the peer
-	log.Printf("LeaderServer.listenFollower(): Start synchronization with follower %s", peer.GetAddr())
+	log.Printf("LeaderServer.startProxy(): Start synchronization with follower %s", peer.GetAddr())
 	proxy := protocol.NewLeaderSyncProxy(state, peer, handler, factory)
-	donech := make(chan bool)
-	proxy.Start(donech)
+	donech := proxy.GetDoneChannel()
+	go proxy.Start()
 
 	// this go-routine will be blocked until handshake is completed between the
 	// leader and the follower.  By then, the leader will also get majority
 	// confirmation that it is a leader.
-	success := <-donech
+	select {
+		case success := <-donech: 
+			if success {
+				// tell the leader to add this follower for processing request
+	    		log.Printf("LeaderServer.startProxy(): Synchronization with follower %s done.  Add follower.", peer.GetAddr())
+				l.leader.AddFollower(peer)
 
-	if success {
-
-		// tell the leader to add this follower for processing request
-	    log.Printf("LeaderServer.listenFollower(): Synchronization with follower %s done.  Add follower.", peer.GetAddr())
-		l.leader.AddFollower(peer)
-
-		// At this point, the follower has voted this server as the leader.
-		// Notify the request processor to start processing new request for this host
-		l.notifyReady()
-	}
+				// At this point, the follower has voted this server as the leader.
+				// Notify the request processor to start processing new request for this host
+				l.notifyReady()
+			} else {
+				log.Printf("LeaderServer:startProxy(): Leader Fail to synchronization with follower %s", peer.GetAddr())
+			}
+		case <- killch:
+			log.Printf("LeaderServer:startProxy(): Sync proxy is killed while synchronizing with follower %s", peer.GetAddr())
+			proxy.Terminate()
+	} 	
 }
 
 //
@@ -163,12 +180,19 @@ func newLeaderState(ss *ServerState) *LeaderState {
 func (s *LeaderServer) processRequest(handler protocol.ActionHandler,
 	factory protocol.MsgFactory,
 	killch chan bool,
-	lisKillch chan bool) {
+	lisKillch chan bool) error {
 
 	// start processing loop after I am being confirmed as a leader (there
 	// is a quorum of followers that have sync'ed with me)
 	s.waitTillReady()
+	if !s.isReady() {
+		return common.NewError(common.ELECTION_ERROR, 
+			"LeaderServer.processRequest(): Server still not ready. Terminate")
+	}
 
+	// At this point, the leader has gotten a majority of followers to follow, so it
+	// can proceed.  It is possible that it may loose quorum of followers. But in that
+	// case, the leader will not be able to process any request.
 	log.Printf("LeaderServer.processRequest(): Leader Server is ready to proces request")
 	
 	// notify the request processor to start processing new request
@@ -185,15 +209,19 @@ func (s *LeaderServer) processRequest(handler protocol.ActionHandler,
 			} else {
 				// server shutdown.
 				lisKillch <- true
-				return
+				s.leader.Terminate()
+				return nil
 			}
 
 		case <-killch:
-			// server shutdown.
+			// server shutdown 
 			lisKillch <- true
-			return
+			s.leader.Terminate()
+			return nil
 		}
 	}
+	
+	return nil
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -222,6 +250,16 @@ func (s *LeaderServer) waitTillReady() {
 	if !s.state.ready {
 		s.state.condVar.Wait()
 	}
+}
+
+//
+// Tell if the server is ready
+//
+func (s *LeaderServer) isReady() bool {
+	s.state.mutex.Lock()
+	defer s.state.mutex.Unlock()
+	
+	return s.state.ready
 }
 
 //

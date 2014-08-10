@@ -15,6 +15,7 @@ type Follower struct {
 	pendings []ProposalMsg
 	handler  ActionHandler
 	factory  MsgFactory
+	donech   chan bool
 }
 
 /////////////////////////////////////////////////
@@ -27,16 +28,16 @@ type Follower struct {
 func StartFollower(kind PeerRole,
 	pipe *common.PeerPipe,
 	handler ActionHandler,
-	factory MsgFactory,
-	donech chan bool) *Follower {
+	factory MsgFactory) *Follower {
 
 	follower := &Follower{kind: kind,
 		pipe:     pipe,
 		pendings: make([]ProposalMsg, 0, common.MAX_PROPOSALS),
 		handler:  handler,
-		factory:  factory}
+		factory:  factory,
+		donech : make(chan bool, 1)} // make buffered channel so sender won't block	
 
-	go follower.startListener(donech)
+	go follower.startListener()
 
 	return follower
 }
@@ -55,6 +56,13 @@ func (f *Follower) ForwardRequest(request RequestMsg) bool {
 	return f.pipe.Send(request)
 }
 
+//
+// Get Done Channel
+//
+func (f *Follower) GetDoneChannel() (<-chan bool) {
+	return f.donech
+}
+
 /////////////////////////////////////////////////
 // Private Function
 /////////////////////////////////////////////////
@@ -68,7 +76,7 @@ func (f *Follower) ForwardRequest(request RequestMsg) bool {
 // this loop will terminate.   The server (that contains
 // the follower) will need to run leader election again.
 //
-func (f *Follower) startListener(donech chan bool) {
+func (f *Follower) startListener() {
 	reqch := f.pipe.ReceiveChannel()
 
 	for {
@@ -84,7 +92,7 @@ func (f *Follower) startListener(donech chan bool) {
 			break
 		}
 	}
-	donech <- true
+	f.donech <- true
 }
 
 //

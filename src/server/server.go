@@ -22,7 +22,6 @@ type Server struct {
 	site      *protocol.ElectionSite
 	factory   protocol.MsgFactory
 	handler   protocol.ActionHandler
-	killch1   chan bool
 	killch2   chan bool
 	listener  *common.PeerListener
 }
@@ -102,7 +101,6 @@ func (s *Server) bootstrap() (err error) {
 	s.srvConfig = r.NewServerConfig(s.repo)
 	s.factory = message.NewConcreteMsgFactory()
 	s.handler = NewServerAction(s)
-	s.killch1 = make(chan bool)
 	s.killch2 = make(chan bool)
 
 	// create a listener to listen to connection from the peer/follower
@@ -129,13 +127,12 @@ func (s *Server) runElection() (leader string, err error) {
 		log.Printf("	peer : %s", peer)
 	}
 	
-	s.site, err = protocol.CreateElectionSite(host, peers, s.factory, s.handler, s.killch1)
+	s.site, err = protocol.CreateElectionSite(host, peers, s.factory, s.handler)
 	if err != nil {
 		return "", err
 	}
 
-	resultCh := make(chan string)
-	s.site.StartElection(resultCh)
+	resultCh := s.site.StartElection()
 	leader, ok := <-resultCh // blocked until leader is elected
 	if !ok {
 		return "", common.NewError(common.SERVER_ERROR, "Election Fails") 
@@ -183,8 +180,9 @@ func (s *Server) Terminate() {
 	}
 
 	s.state.done = true
+	
+	s.site.Close()
 
-	s.killch1 <- true // kill election site
 	s.killch2 <- true // kill leader/follower server
 }
 
@@ -289,7 +287,9 @@ func RunOnce() (int) {
 
 				// runServer() is done if there is an error	or being terminated explicitly (killch)
 				err := gServer.runServer(leader)
-				println("Error Encountered From Server : ", err.Error())
+				if err != nil {
+					println("Error Encountered From Server : ", err.Error())
+				}
 			}
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"net"
 	"sync"
 	"time"
+	"log"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -30,11 +31,11 @@ type ElectionSite struct {
 	messenger    *common.PeerMessenger
 	master       *BallotMaster
 	worker       *PollWorker
+	
 	ensemble     []net.Addr
 	fullEnsemble []string
 	factory      MsgFactory
 	handler      ActionHandler
-	killch       chan bool
 	
 	mutex        sync.Mutex
 	isClosed     bool
@@ -83,7 +84,7 @@ type PollWorker struct {
 var gElectionRound uint64 = 0
 
 /////////////////////////////////////////////////////////////////////////////
-// ElectionSite
+// ElectionSite (Public API)
 /////////////////////////////////////////////////////////////////////////////
 
 //
@@ -92,8 +93,7 @@ var gElectionRound uint64 = 0
 func CreateElectionSite(laddr string,
 	peers []string,
 	factory MsgFactory,
-	handler ActionHandler,
-	killch  chan bool) (election *ElectionSite, err error) {
+	handler ActionHandler) (election *ElectionSite, err error) {
 
 	// create a full ensemble (including the local host)	
     en, fullEn, err := cloneEnsemble(peers, laddr)
@@ -105,8 +105,7 @@ func CreateElectionSite(laddr string,
 		factory:  factory,
 		handler:  handler,
 		ensemble: en,
-		fullEnsemble: fullEn,
-		killch:   killch}
+		fullEnsemble: fullEn}
 
 	// Create a new messenger
 	election.messenger, err = newMessenger(laddr)
@@ -126,24 +125,28 @@ func CreateElectionSite(laddr string,
 
 //
 // Start a new Election.  If there is a ballot in progress, this function
-// will return false.  The ballot will happen indefinitely until a winner
-// merge.   The winner will be returned through winnerch.
+// will return a nil channel.  The ballot will happen indefinitely until a winner
+// emerge or there is an error.   The winner will be returned through winnerch.  
+// If there is an error, the channel will be closed without sending a value.  
 //
-func (e *ElectionSite) StartElection(winnerch chan string) bool {
+func (e *ElectionSite) StartElection() (<- chan string) {
 
 	// ballot in progress
 	if !e.master.setBallotInProg(false) || e.IsClosed() {
-		return false
+		return nil 
 	}
+
+	// create a buffered channel so sender won't block.	
+	winnerch := make(chan string, 1)
 
 	go e.master.castBallot(winnerch)
 
-	return true
+	return (<-chan string)(winnerch)
 }
 
 //
 // Close ElectionSite.  Any pending ballot will be closed immediately.
-// This will also terminate the ability as a voter.
+// 
 //
 func (e *ElectionSite) Close() {
 	e.mutex.Lock()
@@ -167,6 +170,26 @@ func (e *ElectionSite) IsClosed() bool {
 
 	return e.isClosed
 }
+
+//
+// Update the winning epoch. The epoch can change after 
+// the synchronization phase (when leader tells the
+// follower what is the actual epoch value -- after the
+// leader gets a quorum of followers).  There are other
+// possible implementations (e.g. keeping the winning
+// vote with the server -- not the BallotMaster), but
+// for now, let's just have this API to update the
+// epoch. Note that this is just a public wrapper
+// method on top of BallotMaster.
+//
+func (s *ElectionSite) UpdateWinningEpoch(epoch uint32) {
+
+	s.master.updateWinningEpoch(epoch)	
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// ElectionSite (Private)
+/////////////////////////////////////////////////////////////////////////////
 
 //
 // Create Vote from State
@@ -227,22 +250,6 @@ func cloneEnsemble(peers []string, laddr string) ([]net.Addr, []string, error) {
 	return en, fullEn, nil
 }
 
-//
-// Update the winning epoch. The epoch can change after 
-// the synchronization phase (when leader tells the
-// follower what is the actual epoch value -- after the
-// leader gets a quorum of followers).  There are other
-// possible implementations (e.g. keeping the winning
-// vote with the server -- not the BallotMaster), but
-// for now, let's just have this API to update the
-// epoch. Note that this is just a public wrapper
-// method on top of BallotMaster.
-//
-func (s *ElectionSite) UpdateWinningEpoch(epoch uint32) {
-
-	s.master.updateWinningEpoch(epoch)	
-}
-
 /////////////////////////////////////////////////////////////////////////////
 // BallotMaster
 /////////////////////////////////////////////////////////////////////////////
@@ -265,9 +272,29 @@ func newBallotMaster(site *ElectionSite) *BallotMaster {
 //
 func (b *BallotMaster) castBallot(winnerch chan string) {
 
+	// close the channel to make sure that the caller won't be
+	// block forever.  If the balltot is successful, a value would
+	// have sent to the channel before being closed. Otherwise,
+	// a closed channel without value means the ballot is not
+	// successful.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in BallotMaster.castBallot() : %s\n", r)
+		}
+		
+		common.SafeRun("BallotMaster.castBallot()",
+			func() {
+				close(winnerch)  // unblock caller
+				
+				// balloting complete
+				b.setBallotInProg(true)
+			})
+	}()
+
 	// create a channel to receive the ballot result
-	// should only be closed by Poll Worker
-	resultch := make(chan bool)
+	// should only be closed by Poll Worker.  Make
+	// if buffered so the sender won't block.
+	resultch := make(chan bool, 1)
 
 	// Create a new ballot
 	ballot := b.createInitialBallot(resultch)
@@ -281,7 +308,6 @@ func (b *BallotMaster) castBallot(winnerch chan string) {
 	b.site.messenger.Multicast(ballot.result.proposed, b.site.ensemble)
 
 	success, ok := <-resultch
-
 	if !ok {
 		// channel close. Ballot done
 		success = false
@@ -298,25 +324,8 @@ func (b *BallotMaster) castBallot(winnerch chan string) {
 					// Announce the result
 					winnerch <- winner 
 				})
-		} else {
-			// close the winnerch if we cannot finish the ballot.
-			// We don't really expect this to happen if we got
-			// success=true.
-			common.SafeRun("BallotMaster.castBallot()",
-				func() {
-					close(winnerch)
-			})
-		}
-	} else {
-		// close the winnerch if we cannot finish the ballot.
-		common.SafeRun("BallotMaster.castBallot()",
-			func() {
-				close(winnerch)
-			})
-	}
-
-	// balloting complete
-	b.setBallotInProg(true)
+		} 
+	} 
 }
 
 //
@@ -513,8 +522,8 @@ func startPollWorker(site *ElectionSite) *PollWorker {
 
 	worker := &PollWorker{site: site,
 		ballot:   nil,
-		killch:   make(chan bool),
-		listench: make(chan *Ballot)}
+		killch:   make(chan bool, 1),     // make sure sender won't block
+		listench: make(chan *Ballot, 1)}  // make sure sender won't block
 
 	go worker.listen()
 
@@ -549,6 +558,34 @@ func (p *PollWorker) close() {
 //
 func (w *PollWorker) listen() {
 
+	// If this loop terminates (e.g. due to panic), then make sure 
+	// there is no outstanding ballot waiting for a result.   Close
+	// any channel for outstanding ballot such that the caller
+	// won't get blocked forever.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in PollWorker.listen() : %s\n", r)
+		}
+	
+		// make sure we close the ElectionSite first such that
+		// there is no new ballot coming while we are shutting
+		// down the PollWorker. If not, then the some go-routine
+		// may be waiting forever for the new ballot to complete. 
+	    common.SafeRun("PollWorker.listen()",
+			func() {
+				w.site.Close()
+			})
+		
+		// unlock anyone waiting for existing ballot to complete.	
+	    common.SafeRun("PollWorker.listen()",
+			func() {
+				if w.ballot != nil {
+					close(w.ballot.resultch)
+					w.ballot = nil
+				}
+			})
+	}()
+
 	// Get the channel for receiving votes from the peer.
 	reqch := w.site.messenger.DefaultReceiveChannel()
 	duration := common.BALLOT_TIMEOUT
@@ -556,9 +593,8 @@ func (w *PollWorker) listen() {
 	
 	for {
 		select {
-		case w.ballot = <-w.listench:
+		case w.ballot = <-w.listench:   // listench should never close
 			{
-			
 				// Before listening to any vote, see if we reach quorum already.
 				// This should only happen if there is only one server in the 
 				// ensemble.
@@ -576,13 +612,6 @@ func (w *PollWorker) listen() {
 		case msg, ok := <-reqch:
 			{
 				if !ok {
-					common.SafeRun("PollWorker.gatherVote()",
-						func() {
-							if w.ballot != nil {
-								close(w.ballot.resultch)
-								w.ballot = nil
-							}
-						})
 					return
 				}
 
@@ -628,14 +657,6 @@ func (w *PollWorker) listen() {
 			}
 		case <-w.killch:
 			{
-				// It is done.  Close the ballot.
-				common.SafeRun("PollWorker.gatherVote()",
-					func() {
-						if w.ballot != nil {
-							close(w.ballot.resultch)
-							w.ballot = nil
-						}
-					})
 				return
 			}
 		}

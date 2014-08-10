@@ -53,17 +53,16 @@ func (p *PeerPipe) GetAddr() string {
 }
 
 //
-// Return the receive channel.  If PeerPipe is closed, then
-// return nil.
+// Return the receive channel.  
 //
 func (p *PeerPipe) ReceiveChannel() <-chan Packet {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
 
-	if !p.isClosed {
-		return (<-chan Packet)(p.receivech)
-	}
-	return nil
+	// Just return receivech even if it is closed.  The caller
+	// can tell if the channel is closed by using multi-value
+	// recieve operator.  Returning a nil channel can cause 
+	// the caller being block forever.
+	// 
+	return (<-chan Packet)(p.receivech)
 }
 
 //
@@ -200,7 +199,7 @@ func (p *PeerPipe) doReceive() {
 		}
 		*/
 		
-		buf := make([]byte, MAX_DATAGRAM_SIZE)
+		buf := make([]byte, MAX_DATAGRAM_SIZE*2)
 		n, err := p.conn.Read(buf)
 		if err != nil {
 			log.Printf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Terminate", 
@@ -219,7 +218,10 @@ func (p *PeerPipe) doReceive() {
 		}
 		log.Printf("PeerPipe.doRecieve() : Message decoded.  Packet = %s", packet.Name())
 		packet.Print()
-		
+	
+		// This can block if the reciever of the channel is slow or terminated premauturely (which cause channel to fill up).   
+		// In this case, this can cause the TCP connection to fail.  The other end of the pipe will close as a result
+		// of this.  This end of the pipe will eventually close since it can no longer send message to the other end.   
 		p.queue(packet)
 	}
 }

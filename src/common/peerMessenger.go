@@ -69,17 +69,16 @@ func NewPeerMessenger(laddr string, splitter map[string]chan *Message) (*PeerMes
 // Return the default receive channel.  If a splitter is specified, then
 // it will first use the channel in the splitter map.  If the splitter is
 // not specified or the splitter map does not map to a channel, then
-// the default receive channel is used.   If the PeerMessenger is closed,
-// this return nil.
+// the default receive channel is used.   
 //
 func (p *PeerMessenger) DefaultReceiveChannel() <-chan *Message {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
 
-	if !p.isClosed {
-		return (<-chan *Message)(p.receivech)
-	}
-	return nil
+	// Just return receivech even if it is closed.  The caller
+	// can tell if the channel is closed by using multi-value
+	// recieve operator.  Returning a nil channel can cause 
+	// the caller being block forever.
+	// 
+	return (<-chan *Message)(p.receivech)
 }
 
 //
@@ -90,14 +89,11 @@ func (p *PeerMessenger) ReceiveChannel(msgName string) <-chan *Message {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
-	if !p.isClosed {
-		ch, ok := p.splitter[msgName]
-		if ok {
-			return (<-chan *Message)(ch)
-		}
-		return (<-chan *Message)(p.receivech)
+	ch, ok := p.splitter[msgName]
+	if ok {
+		return (<-chan *Message)(ch)
 	}
-	return nil
+	return (<-chan *Message)(p.receivech)
 }
 
 //
@@ -281,7 +277,9 @@ func (p *PeerMessenger) doReceive() {
 		}
 		log.Printf("PeerMessenger.doRecieve() : Message decoded.  Packet = %s", packet.Name())
 		packet.Print()
-		
+
+		// This can block if the reciever of the channel is slow or terminated premauturely (which cause channel to filled up). 
+		// In this case, this can cause the UDP connection to fail such that other nodes will no longer send message to this node.
 		p.queue(&Message{Content: packet, Peer: peer})
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"net"
 	"protocol"
 	"log"
+	"fmt"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -56,11 +57,11 @@ func RunFollowerServer(naddr string,
 	// run server after synchronization
 	if success {
 		runFollower(pipe, ss, handler, factory, killch)
+		log.Printf("FollowerServer.RunFollowerServer() : Follower Server %s terminate", naddr)
+		return nil
+	} else {
+		return common.NewError(common.SERVER_ERROR, fmt.Sprintf("Follower %s fail to synchronized with leader %s", naddr, pipe.GetAddr()))
 	}
-
-	log.Printf("FollowerServer.RunFollowerServer() : Follower Server %s terminate", naddr)
-	
-	return nil
 }
 
 //
@@ -75,8 +76,8 @@ func syncWithLeader(naddr string,
 	log.Printf("FollowerServer.syncWithLeader(): Follower %s start synchronization with leader %s", naddr, pipe.GetAddr())
 	proxy := protocol.NewFollowerSyncProxy(pipe, handler, factory)
 
-	donech := make(chan bool)
-	proxy.Start(donech)
+	donech := proxy.GetDoneChannel()
+	go proxy.Start()
 
 	// This will block until NewFollowerSyncProxy has sychronized with the leader (a bool is pushed to donech)
 	select {
@@ -89,7 +90,7 @@ func syncWithLeader(naddr string,
 		// simply return. The pipe will eventually be closed and
 		// cause FollowerSyncProxy to err out.
 		log.Printf("FollowerServer.syncWithLeader(): Recieve kill singal.  Synchronization with peer %s terminated.", pipe.GetAddr())
-		return false
+		proxy.Terminate()
 	}
 
 	return false
@@ -112,8 +113,8 @@ func runFollower(pipe *common.PeerPipe,
 
 	// Create a follower.  The follower will start a go-rountine, listening to messages coming from leader.
 	log.Printf("FollowerServer.runFollower(): Start Follower Protocol")
-	donech := make(chan bool)
-	server.follower = protocol.StartFollower(protocol.FOLLOWER, pipe, handler, factory, donech)
+	server.follower = protocol.StartFollower(protocol.FOLLOWER, pipe, handler, factory)
+	donech := server.follower.GetDoneChannel()
 
 	//start main processing loop
 	server.processRequest(handler, factory, killch, donech)
@@ -125,7 +126,7 @@ func runFollower(pipe *common.PeerPipe,
 func (s *FollowerServer) processRequest(handler protocol.ActionHandler,
 	factory protocol.MsgFactory,
 	killch chan bool,
-	donech chan bool) {
+	donech <-chan bool) {
 	
 	log.Printf("FollowerServer.processRequest(): Ready to process request")
 	

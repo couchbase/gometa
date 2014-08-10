@@ -10,6 +10,7 @@ const (
 	SERVER_CONFIG_ERROR
 	FATAL_ERROR
 	ARG_ERROR
+	ELECTION_ERROR
 )
 
 type Error struct {
