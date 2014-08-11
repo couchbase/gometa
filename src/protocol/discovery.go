@@ -235,13 +235,17 @@ func NewLeaderSyncProxy(state *ConsentState,
 // will also close the PeerPipe to the follower.  This will force
 // the follower to restart election.
 //
+// This function will catch panic.
+//
 func (l *LeaderSyncProxy) Start() bool {
 
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in LeaderSyncProxy.Start() : %s\n", r)
 			l.abort()  // ensure proper cleanup and unblock caller
-		}
+		} 
+		
+		l.close()
 	}()
 
 	timeout := time.After(common.SYNC_TIMEOUT * time.Millisecond)
@@ -275,6 +279,7 @@ func (l *LeaderSyncProxy) Start() bool {
 // Terminate the syncrhonization with this follower.  Upon temrination, the follower
 // will enter into election again.    This function cannot guarantee that the go-routine
 // will terminate until the given ConsentState is terminated as well. 
+// This function is an no-op if the LeaderSyncProxy already completes successfully.
 //
 func (l *LeaderSyncProxy) Terminate() {
 	l.mutex.Lock()
@@ -317,6 +322,16 @@ func (l *LeaderSyncProxy) abort() {
 		func() {
 			l.donech <- false 
 		})
+}
+
+//
+// close the proxy
+//
+func (l *LeaderSyncProxy) close() {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	l.isClosed = true
 }
 
 //
@@ -571,13 +586,17 @@ func NewFollowerSyncProxy(leader *common.PeerPipe,
 // will also close the PeerPipe to the leader.  This will force
 // the leader to skip this follower. 
 //
+// This function will catch panic.
+//
 func (f *FollowerSyncProxy) Start() bool {
 
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in FollowerSyncProxy.Start() : %s\n", r)
 			f.abort()  // ensure proper cleanup and unblock caller
-		}
+		} 
+		
+		f.close()
 	}()
 	
 	timeout := time.After(common.SYNC_TIMEOUT * time.Millisecond)
@@ -608,7 +627,8 @@ func (f *FollowerSyncProxy) Start() bool {
 
 //
 // Terminate the syncrhonization with this leader.  Upon temrination, the leader 
-// will skip this follower.    
+// will skip this follower.  This function is an no-op if the FollowerSyncProxy 
+// already completes successfully.
 //
 func (l *FollowerSyncProxy) Terminate() {
 	l.mutex.Lock()
@@ -650,6 +670,16 @@ func (f *FollowerSyncProxy) abort() {
 		func() {
 			f.donech <- false
 		})
+}
+
+//
+// close the proxy
+//
+func (l *FollowerSyncProxy) close() {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	l.isClosed = true
 }
 
 func (l *FollowerSyncProxy) execute(donech chan bool) {

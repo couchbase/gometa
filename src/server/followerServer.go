@@ -22,19 +22,29 @@ type FollowerState struct {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-// FollowerServer
+// FollowerServer - Public Function
 /////////////////////////////////////////////////////////////////////////////
 
 //
 // Create a new FollowerServer. This is a blocking call until
-// the FollowerServer terminates.
+// the FollowerServer terminates. Make sure the kilch is a buffered
+// channel such that if the goroutine running RunFollowerServer goes
+// away, the sender won't get blocked. 
 //
 func RunFollowerServer(naddr string,
 	leader string,
 	ss *ServerState,
 	handler protocol.ActionHandler,
 	factory protocol.MsgFactory,
-	killch chan bool) error {
+	killch <- chan bool) (err error) {
+
+	// Catch panic at the main entry point for FollowerServer
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in RunFollowerServer() : %s\n", r)
+			err = r.(error)
+		}
+	}()
 
 	// create connection to leader
 	conn, err := net.Dial("tcp", leader)
@@ -45,7 +55,9 @@ func RunFollowerServer(naddr string,
 	log.Printf("FollowerServer.RunFollowerServer() : Follower %s successfully created TCP connection to leader %s", naddr, leader)
 
 	// close the connection to the leader. If connection is closed,
-	// sync proxy and follower will terminate by err-ing out.
+	// sync proxy and follower will also terminate by err-ing out.  
+	// If sync proxy and follower terminates the pipe upon termination, 
+	// it is ok to close it again here.
 	defer common.SafeRun("FollowerServer.runFollowerServer()",
 		func() {
 			pipe.Close()
@@ -58,26 +70,32 @@ func RunFollowerServer(naddr string,
 	if success {
 		runFollower(pipe, ss, handler, factory, killch)
 		log.Printf("FollowerServer.RunFollowerServer() : Follower Server %s terminate", naddr)
-		return nil
+		err = nil
 	} else {
-		return common.NewError(common.SERVER_ERROR, fmt.Sprintf("Follower %s fail to synchronized with leader %s", naddr, pipe.GetAddr()))
+		err = common.NewError(common.SERVER_ERROR, fmt.Sprintf("Follower %s fail to synchronized with leader %s", naddr, pipe.GetAddr()))
 	}
+	
+	return err
 }
 
+/////////////////////////////////////////////////////////////////////////////
+// FollowerServer - Private Function
+/////////////////////////////////////////////////////////////////////////////
+
 //
-// Synchronize with the leader
+// Synchronize with the leader.  
 //
 func syncWithLeader(naddr string,
     pipe *common.PeerPipe,
 	handler protocol.ActionHandler,
 	factory protocol.MsgFactory,
-	killch chan bool) bool {
-
+	killch <- chan bool) bool {
+	
 	log.Printf("FollowerServer.syncWithLeader(): Follower %s start synchronization with leader %s", naddr, pipe.GetAddr())
 	proxy := protocol.NewFollowerSyncProxy(pipe, handler, factory)
-
 	donech := proxy.GetDoneChannel()
 	go proxy.Start()
+	defer proxy.Terminate() 
 
 	// This will block until NewFollowerSyncProxy has sychronized with the leader (a bool is pushed to donech)
 	select {
@@ -90,7 +108,6 @@ func syncWithLeader(naddr string,
 		// simply return. The pipe will eventually be closed and
 		// cause FollowerSyncProxy to err out.
 		log.Printf("FollowerServer.syncWithLeader(): Recieve kill singal.  Synchronization with peer %s terminated.", pipe.GetAddr())
-		proxy.Terminate()
 	}
 
 	return false
@@ -103,7 +120,7 @@ func runFollower(pipe *common.PeerPipe,
 	ss *ServerState,
 	handler protocol.ActionHandler,
 	factory protocol.MsgFactory,
-	killch chan bool) {
+	killch <- chan bool) {
 
 	// create the server
 	server := new(FollowerServer)
@@ -113,9 +130,10 @@ func runFollower(pipe *common.PeerPipe,
 
 	// Create a follower.  The follower will start a go-rountine, listening to messages coming from leader.
 	log.Printf("FollowerServer.runFollower(): Start Follower Protocol")
-	server.follower = protocol.StartFollower(protocol.FOLLOWER, pipe, handler, factory)
-	donech := server.follower.GetDoneChannel()
-
+	server.follower = protocol.NewFollower(protocol.FOLLOWER, pipe, handler, factory)
+	donech := server.follower.Start()
+	defer server.follower.Terminate()
+	
 	//start main processing loop
 	server.processRequest(handler, factory, killch, donech)
 }
@@ -125,7 +143,7 @@ func runFollower(pipe *common.PeerPipe,
 //
 func (s *FollowerServer) processRequest(handler protocol.ActionHandler,
 	factory protocol.MsgFactory,
-	killch chan bool,
+	killch <-chan bool,
 	donech <-chan bool) {
 	
 	log.Printf("FollowerServer.processRequest(): Ready to process request")
@@ -139,18 +157,20 @@ func (s *FollowerServer) processRequest(handler protocol.ActionHandler,
 
 				// forward the request to the leader
 				if !s.follower.ForwardRequest(handle.request) {
-					// TODO : return if fail to connect to leader
+					log.Printf("FollowerServer.processRequest(): fail to send client request to leader. Terminate.")
 					return
 				}
 			} else {
+				log.Printf("FollowerServer.processRequest(): channel for receiving client request is closed. Terminate.")
 				return
 			}
 		case <-killch:
-			// server is being explicitly terminated, simply return.
-			// The pipe will eventually be closed and cause Follower to err out.
+			// server is being explicitly terminated.  Terminate the follower go-rountine as well.
+			log.Printf("FollowerServer.processRequest(): receive kill signal. Terminate.")
 			return
 		case <-donech:
 			// follower is done.  Just return.
+			log.Printf("FollowerServer.processRequest(): Follower go-routine terminates. Terminate.")
 			return
 		}
 	}

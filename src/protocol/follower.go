@@ -3,6 +3,7 @@ package protocol
 import (
 	"common"
 	"log"
+	"sync"
 )
 
 /////////////////////////////////////////////////
@@ -15,17 +16,24 @@ type Follower struct {
 	pendings []ProposalMsg
 	handler  ActionHandler
 	factory  MsgFactory
+	
+	mutex    sync.Mutex
+	isClosed bool
 	donech   chan bool
+	killch   chan bool
 }
 
 /////////////////////////////////////////////////
-// Public Function
+// Follower - Public Function
 /////////////////////////////////////////////////
 
 //
-// Create a new Follower.
+// Create a new Follower.  This will run the
+// follower protocol to communicate with the leader
+// in voting proposal as well as sending new proposal
+// to leader.   
 //
-func StartFollower(kind PeerRole,
+func NewFollower(kind PeerRole,
 	pipe *common.PeerPipe,
 	handler ActionHandler,
 	factory MsgFactory) *Follower {
@@ -35,11 +43,24 @@ func StartFollower(kind PeerRole,
 		pendings: make([]ProposalMsg, 0, common.MAX_PROPOSALS),
 		handler:  handler,
 		factory:  factory,
-		donech : make(chan bool, 1)} // make buffered channel so sender won't block	
+		isClosed: false,
+		donech :  make(chan bool, 1), // make buffered channel so sender won't block	
+		killch :  make(chan bool, 1)} // make buffered channel so sender won't block	
 
-	go follower.startListener()
 
 	return follower
+}
+
+//
+// Start the listener.  This is running in a goroutine.
+// The follower can be shutdown by calling Terminate() 
+// function or by closing the PeerPipe.
+//
+func (f *Follower) Start() (<- chan bool) {
+
+	go f.startListener()
+	
+	return f.donech
 }
 
 //
@@ -57,14 +78,21 @@ func (f *Follower) ForwardRequest(request RequestMsg) bool {
 }
 
 //
-// Get Done Channel
+// Terminate.  This function is an no-op if the
+// follower already complete successfully. 
 //
-func (f *Follower) GetDoneChannel() (<-chan bool) {
-	return f.donech
+func (f *Follower) Terminate() {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+
+	if !f.isClosed {	
+		f.isClosed = true
+		f.killch <- true
+	}
 }
 
 /////////////////////////////////////////////////
-// Private Function
+// Follower - Private Function
 /////////////////////////////////////////////////
 
 //
@@ -77,22 +105,50 @@ func (f *Follower) GetDoneChannel() (<-chan bool) {
 // the follower) will need to run leader election again.
 //
 func (f *Follower) startListener() {
+
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in Follower.startListener() : %s\n", r)
+		}
+		
+	    common.SafeRun("Follower.startListener()",
+			func() {
+				f.close()  
+				f.donech <- true
+			})
+	}()
+	
 	reqch := f.pipe.ReceiveChannel()
 
 	for {
-		msg, ok := <-reqch
-		if ok {
-			err := f.handleMessage(msg.(common.Packet))
-			if err != nil {
-				// If there is an error, terminate
-				break
-			}
-		} else {
-			log.Printf("Follower.startListener(): message channel closed.  Terminate.")
-			break
+		select {
+			case msg, ok := <-reqch :
+				if ok {
+					err := f.handleMessage(msg.(common.Packet))
+					if err != nil {
+						// If there is an error, terminate
+						log.Printf("Follower.startListener(): There is an error in handling leader message.  Error = %s.  Terminate.",
+							err.Error())
+						return
+					}
+				} else {
+					log.Printf("Follower.startListener(): message channel closed.  Terminate.")
+					return
+				}
+			case <- f.killch :
+				return
 		}
 	}
-	f.donech <- true
+}
+
+//
+// Signal that the follower is closed (done)
+//
+func (f *Follower) close() {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+
+	f.isClosed = true	
 }
 
 //
@@ -105,7 +161,7 @@ func (f *Follower) handleMessage(msg common.Packet) (err error) {
 	case CommitMsg:
 		err = f.handleCommit(request)
 	default:
-		// TODO : if we don't recoginize the message.  Just log it and ignore.
+		log.Printf("Follower.handleMessage(): unrecognized message %s.  Ignore.", msg.Name())
 	}
 	return err
 }

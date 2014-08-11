@@ -46,20 +46,27 @@ import (
 /////////////////////////////////////////////////
 
 type Leader struct {
-	naddr         string
-	lastCommitted common.Txnid
-	handler       ActionHandler
-	factory       MsgFactory
-	quorums       map[common.Txnid][]string
+	naddr         	string
+	lastCommitted 	common.Txnid
+	handler       	ActionHandler
+	factory       	MsgFactory
+	quorums       	map[common.Txnid][]string
 
 	// mutex protected variable
-	mutex     sync.Mutex
-	followers map[string]*common.PeerPipe
-	pendings  []ProposalMsg
+	mutex     		sync.Mutex
+	followers 		map[string]*MessageListener
+	pendings  		[]ProposalMsg
+	isClosed  		bool
+}
+
+type MessageListener struct {
+	pipe 	  *common.PeerPipe
+	leader    *Leader
+	killch    chan bool	
 }
 
 /////////////////////////////////////////////////
-// Public Function
+// Leader - Public Function
 /////////////////////////////////////////////////
 
 //
@@ -68,85 +75,146 @@ type Leader struct {
 func NewLeader(naddr string,
 	handler ActionHandler,
 	factory MsgFactory) *Leader {
+	
 	leader := &Leader{naddr: naddr,
-		followers:     make(map[string]*common.PeerPipe),
+		followers:     make(map[string]*MessageListener),
 		pendings:      make([]ProposalMsg, 0, common.MAX_PROPOSALS),
 		lastCommitted: 0,
 		quorums:       make(map[common.Txnid][]string),
 		handler:       handler,
-		factory:       factory}
+		factory:       factory,
+		isClosed:  	   false}
+		
 	return leader
 }
 
 //
-// Terminate the leader
+// Terminate the leader. It is an no-op if the leader is already
+// completed successfully.
 //
 func (l *Leader) Terminate() {
 
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-
-	for _, pipe := range l.followers {
-		pipe.Close()
+	
+	if !l.isClosed {
+		l.isClosed = true
+		for _, listener := range l.followers {
+			listener.terminate()
+		}
 	}
 }
 
-/////////////////////////////////////////////////
-// Follower Listener
-/////////////////////////////////////////////////
-
 //
-// Add a follower and starts a listener for the follower
+// Add a follower and starts a listener for the follower.
+// If the leader is terminated, the pipe between leader
+// and follower will also be closed.
 //
 func (l *Leader) AddFollower(peer *common.PeerPipe) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
-	l.followers[peer.GetAddr()] = peer
-
-	// The listener is terminated when the leader close the pipe
-	// (in Terminate() method).
-	go l.startListener(peer)
+	oldListener, ok := l.followers[peer.GetAddr()] 
+	
+	listener := newListener(peer, l)
+	l.followers[peer.GetAddr()] = listener 
+	go listener.start()
+	
+	if ok && oldListener != nil {
+		log.Printf("Leader.AddFollower() : old Listener found for follower %s.  Terminating old listener", 
+			peer.GetAddr())
+		oldListener.terminate()
+	}
 }
+
+/////////////////////////////////////////////////
+// MessageListener
+/////////////////////////////////////////////////
+
+// Create a new listener
+func newListener(pipe *common.PeerPipe, leader *Leader) *MessageListener {
+
+	return &MessageListener{pipe : pipe,
+							leader : leader,
+							killch : make(chan bool, 1)}
+} 
 
 //
 // Gorountine.  Start listener to listen to message from follower.
 // Note that each follower has their own receive queue.  This
 // is to ensure if the queue is filled up for a single follower,
 // only that the connection of that follower may get affected.
+// The listener can be killed by calling terminate() or closing 
+// the PeerPipe. 
 //
-func (l *Leader) startListener(follower *common.PeerPipe) {
+func (l *MessageListener) start() {
 
-	log.Printf("Leader.startListener(): start listening to message from peer %s", follower.GetAddr())
-	reqch := follower.ReceiveChannel()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in MessageListener.start() : %s\n", r)
+		}
+		
+	    common.SafeRun("MessageListener.start()",
+			func() {
+				l.leader.removeListener(l)
+			})
+			
+	    common.SafeRun("MessageListener.start()",
+			func() {
+				l.pipe.Close()
+			})
+	}()
+
+	log.Printf("MessageListener.start(): start listening to message from peer %s", l.pipe.GetAddr())
+	reqch := l.pipe.ReceiveChannel()
 
 	for {
-		req, ok := <-reqch
-		if ok {
-			// TODO : handle error
-			l.handleMessage(req, follower.GetAddr())
-		} else {
-			// The channel is closed.  Need to shutdown the listener.
-			log.Printf("Leader.startListener(): message channel closed. Remove peer %s as follower.", follower.GetAddr()) 
-			l.removeFollower(follower)
-			return
+		select {
+			case req, ok := <-reqch:
+				if ok {
+					err := l.leader.handleMessage(req, l.pipe.GetAddr())
+					if err != nil {
+						log.Printf("MessageListener.start(): Encounter error when processing message %s. Error %s. Terminate", 
+							l.pipe.GetAddr(), err.Error()) 
+						return
+					}
+				} else {
+					// The channel is closed.  Need to shutdown the listener.
+					log.Printf("MessageListener.start(): message channel closed. Remove peer %s as follower.", l.pipe.GetAddr()) 
+					return
+				}
+			case <- l.killch:
+				log.Printf("MessageListener.start(): Listener for %s receive kill signal. Terminate.", l.pipe.GetAddr()) 
+				return
+				
 		}
 	}
 }
 
 //
+// Terminate the listener.  This should only be called by the leader.
+//
+func (l *MessageListener) terminate() {
+	l.killch <- true
+}
+
+/////////////////////////////////////////////////////
+// Leader - Private Function : Listener Management 
+/////////////////////////////////////////////////////
+
+//
 // Remove the follower from being tracked
 //
-func (l *Leader) removeFollower(peer *common.PeerPipe) {
+func (l *Leader) removeListener(peer *MessageListener) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
-	delete(l.followers, peer.GetAddr())
+	delete(l.followers, peer.pipe.GetAddr())
 }
 
-/////////////////////////////////////////////////
-// Message Processing
-/////////////////////////////////////////////////
+/////////////////////////////////////////////////////////
+// Leader - Private Function : Message Processing 
+/////////////////////////////////////////////////////////
 
 //
 // Main entry point for processing messages from followers
@@ -172,9 +240,9 @@ func (l *Leader) handleMessage(msg common.Packet, follower string) (err error) {
 	return nil
 }
 
-/////////////////////////////////////////////////
-// Handle Request Message  (New Proposal)
-/////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////
+// Leader - Private Function : Handle Request Message  (New Proposal)
+/////////////////////////////////////////////////////////////////////////
 
 //
 // Create a new proposal from request
@@ -224,6 +292,8 @@ func (l *Leader) NewProposal(proposal ProposalMsg) {
 //
 func (l *Leader) sendProposal(proposal ProposalMsg) {
 
+	// TODO: Does this need to be mutex-ed? 
+
 	// Send the request to the followers
 	for _, f := range l.followers {
 		msg := l.factory.CreateProposal(proposal.GetTxnid(),
@@ -232,13 +302,13 @@ func (l *Leader) sendProposal(proposal ProposalMsg) {
 			proposal.GetOpCode(),
 			proposal.GetKey(),
 			proposal.GetContent())
-		f.Send(msg)
+		f.pipe.Send(msg)
 	}
 }
 
-/////////////////////////////////////////////////
-// Handle Accept Message
-/////////////////////////////////////////////////
+/////////////////////////////////////////////////////////
+// Leader - Private Function : Handle Accept Message
+/////////////////////////////////////////////////////////
 
 //
 // handle accept message from follower
@@ -370,13 +440,15 @@ func (l *Leader) commit(txid common.Txnid, p ProposalMsg) {
 //
 func (l *Leader) sendCommit(txnid common.Txnid) error {
 
+	// TODO: Does this need to be mutex-ed?
+
 	msg := l.factory.CreateCommit(uint64(txnid))
 
 	// TODO: check if we need to send to all followers or
 	// just the follower which responds
 	// Send the request to the followers
 	for _, f := range l.followers {
-		f.Send(msg)
+		f.pipe.Send(msg)
 	}
 
 	return nil
