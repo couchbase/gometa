@@ -5,6 +5,7 @@ import (
 	"protocol"
 	"sync"
 	"log"
+	"time"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -25,9 +26,14 @@ type LeaderState struct {
 
 	// mutex protected variable
 	mutex   		sync.Mutex
-	condVar 		*sync.Cond
 	ready   		bool
+	readych         chan bool
 	proxies         map[string](chan bool)
+}
+
+type ListenerState struct {
+	donech			chan bool
+	killch			chan bool
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -83,14 +89,13 @@ func RunLeaderServer(naddr string,
 
 	// start the listener.  This goroutine would continue to new follower even while
 	// it is processing request.
-	killch2 := make(chan bool, 1) // make if buffered so sender won't block
-	donech2 := make(chan bool, 1) // make if buffered so sender won't block
-	go server.listenFollower(killch2, donech2)
+	listenerState := newListenerState()
+	go server.listenFollower(listenerState)
 
 	// start the main loop for processing incoming request.  The leader will 
 	// process request only after it has received quorum of followers to 
 	// synchronized with it.
-	err = server.processRequest(killch, killch2, donech2)
+	err = server.processRequest(killch, listenerState)
 
 	log.Printf("LeaderServer.RunLeaderServer(): leader server %s terminate", naddr)
 	
@@ -106,7 +111,7 @@ func RunLeaderServer(naddr string,
 // Start a new LeaderSyncProxy to synchronize the state
 // between the leader and the peer.
 //
-func (l *LeaderServer) listenFollower(killch <- chan bool, donech chan<- bool) {
+func (l *LeaderServer) listenFollower(listenerState *ListenerState) {
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -115,12 +120,12 @@ func (l *LeaderServer) listenFollower(killch <- chan bool, donech chan<- bool) {
 		
 		common.SafeRun("LeaderServer.listenFollower()",
 			func() {
-				l.terminateAllProxies()
+				l.terminateAllOutstandingProxies()
 			})
 			
 		common.SafeRun("LeaderServer.listenFollower()",
 			func() {
-				donech <- true	
+				listenerState.donech <- true	
 			})
 	}()
 	
@@ -136,7 +141,7 @@ func (l *LeaderServer) listenFollower(killch <- chan bool, donech chan<- bool) {
 			{
 				// There is a new peer connection request
 				log.Printf("LeaderServer.listenFollower(): Receive connection request from follower %s", conn.RemoteAddr())
-				if l.registerProxy(conn.RemoteAddr().String()) {
+				if l.registerOutstandingProxy(conn.RemoteAddr().String()) {
 					pipe := common.NewPeerPipe(conn)
 					go l.startProxy(pipe)
 				} else {
@@ -144,7 +149,7 @@ func (l *LeaderServer) listenFollower(killch <- chan bool, donech chan<- bool) {
 					conn.Close()
 				}
 			}
-		case <-killch:
+		case <- listenerState.killch:
 			log.Printf("LeaderServer.listenFollower(): Receive kill signal. Terminate.")
 			return
 		}
@@ -163,7 +168,7 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 		}
 		
 		// deregister the proxy with the leader Server upon exit
-		l.deregisterProxy(peer.GetAddr())
+		l.deregisterOutstandingProxy(peer.GetAddr())
 	}()
 	
 	// create a proxy that will sycnhronize with the peer
@@ -208,9 +213,9 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 func newLeaderState(ss *ServerState) *LeaderState {
 	state := &LeaderState{serverState: ss,
 							ready: false,
+							readych : make(chan bool, 1), // buffered so sender won't wait
 							proxies : make(map[string](chan bool))}
 
-	state.condVar = sync.NewCond(&state.mutex)
 	return state
 }
 
@@ -221,10 +226,8 @@ func newLeaderState(ss *ServerState) *LeaderState {
 //
 // Goroutine for processing each request one-by-one
 //
-func (s *LeaderServer) processRequest(
-	killch <-chan bool,
-	lisKillch chan<- bool,
-	lisDonech <-chan bool) (err error) {
+func (s *LeaderServer) processRequest(killch <-chan bool,
+									  listenerState *ListenerState) (err error) {
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -234,22 +237,27 @@ func (s *LeaderServer) processRequest(
 		
 		common.SafeRun("LeaderServer.processRequest()",
 			func() {
-				lisKillch <- true
+				listenerState.killch <- true
 			})
 	}()
 	
 	// start processing loop after I am being confirmed as a leader (there
 	// is a quorum of followers that have sync'ed with me)
-	s.waitTillReady()
-	if !s.isReady() {
+	if !s.waitTillReady() {
 		return common.NewError(common.ELECTION_ERROR, 
-			"LeaderServer.processRequest(): Server still not ready. Terminate")
+			"LeaderServer.processRequest(): Leader times out waiting for quorum of followers. Terminate")
 	}
 
 	// At this point, the leader has gotten a majority of followers to follow, so it
 	// can proceed.  It is possible that it may loose quorum of followers. But in that
 	// case, the leader will not be able to process any request.
 	log.Printf("LeaderServer.processRequest(): Leader Server is ready to proces request")
+
+	// Leader is ready at this time.  This implies that there is a quorum of follower has
+	// followed this leader.  Get the change channel to keep track of  number of followers.
+	// If the leader no longer has quorum, it needs to let go of its leadership.
+	leaderchangech := s.leader.GetEnsembleChangeChannel()
+	ensembleSize := uint64(len(GetPeerUDPAddr())) + 1 // include the leader itself in the ensemble size 
 	
 	// notify the request processor to start processing new request
 	for {
@@ -271,10 +279,17 @@ func (s *LeaderServer) processRequest(
 			// server shutdown 
 			log.Printf("LeaderServer.processRequest(): receive kill signal. Stop Client request processing.")
 			return nil
-		case <-lisDonech:
+		case <-listenerState.donech:
 			// listener is down.  Terminate this request processing loop as well.
 			log.Printf("LeaderServer.processRequest(): follower listener terminates. Stop client request processing.")
 			return nil
+		case <-leaderchangech:
+			numFollowers := s.leader.GetCurrentEnsembleSize()
+			if numFollowers <= int(ensembleSize/2) {
+				// leader looses majority of follower.   
+				log.Printf("LeaderServer.processRequest(): leader looses majority of follower. Stop client request processing.")
+				return nil
+			}
 		}
 	}
 	
@@ -292,20 +307,27 @@ func (s *LeaderServer) notifyReady() {
 	s.state.mutex.Lock()
 	defer s.state.mutex.Unlock()
 
-	s.state.ready = true
-	s.state.condVar.Signal()
+	if !s.state.ready {
+		s.state.ready = true
+		s.state.readych <- true
+	}
 }
 
 //
 // Wait for the ready flag to be set.  This is when the leader has gotten
 // the quorum of followers to join/sync.
 //
-func (s *LeaderServer) waitTillReady() {
-	s.state.mutex.Lock()
-	defer s.state.mutex.Unlock()
+func (s *LeaderServer) waitTillReady() bool {
 
-	if !s.state.ready {
-		s.state.condVar.Wait()
+	timeout := time.After(common.LEADER_TIMEOUT * time.Millisecond)
+	
+	select {
+		case <- s.state.readych :
+			return true
+			
+		case <- timeout:
+			log.Printf("LeaderServer.waitTillReady(): Leader cannot get quorum of followers to follow before timing out. Termiate.")
+			return false
 	}
 }
 
@@ -335,7 +357,7 @@ func (s *LeaderServer) addPendingRequest(handle *RequestHandle) {
 /////////////////////////////////////////////////////////////////////////////
 
 // Add Proxy
-func (s *LeaderServer) registerProxy(key string) bool {
+func (s *LeaderServer) registerOutstandingProxy(key string) bool {
 	s.state.mutex.Lock()
 	defer s.state.mutex.Unlock()
 	
@@ -367,7 +389,7 @@ func (s *LeaderServer) getProxyKillChan(key string) <-chan bool {
 //
 // Get proxy kill channel
 //
-func (s *LeaderServer) deregisterProxy(key string) {
+func (s *LeaderServer) deregisterOutstandingProxy(key string) {
 	s.state.mutex.Lock()
 	defer s.state.mutex.Unlock()
 
@@ -377,11 +399,19 @@ func (s *LeaderServer) deregisterProxy(key string) {
 //
 // Terminate all proxies 
 //
-func (s *LeaderServer) terminateAllProxies() {
+func (s *LeaderServer) terminateAllOutstandingProxies() {
 	s.state.mutex.Lock()
 	defer s.state.mutex.Unlock()
 
 	for _, killch := range s.state.proxies {
 		killch <- true
 	}
+}
+
+//
+// Create the listener state
+//
+func newListenerState() *ListenerState {
+	return &ListenerState{killch : make(chan bool, 1),   // buffered so sender won't block
+					      donech : make(chan bool, 1)}   // buffered so sender won't block
 }

@@ -57,6 +57,7 @@ type Leader struct {
 	followers 		map[string]*MessageListener
 	pendings  		[]ProposalMsg
 	isClosed  		bool
+	changech        chan bool 
 }
 
 type MessageListener struct {
@@ -83,7 +84,8 @@ func NewLeader(naddr string,
 		quorums:       make(map[common.Txnid][]string),
 		handler:       handler,
 		factory:       factory,
-		isClosed:  	   false}
+		isClosed:  	   false,
+		changech:      make(chan bool, common.MAX_PEERS)} // make it buffered so sender won't block
 		
 	return leader
 }
@@ -106,6 +108,29 @@ func (l *Leader) Terminate() {
 }
 
 //
+// Get the channel for notify when the ensemble of followers
+// changes.  The receiver of the channel can then tell 
+// if the leader has a quorum of followers.
+//
+func (l *Leader) GetEnsembleChangeChannel() <-chan bool {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	return l.changech
+}
+
+//
+// Get the current ensmeble size of the leader.
+// It is the number of followers + 1 (including leader)
+//
+func (l *Leader) GetCurrentEnsembleSize() int {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	return len(l.followers) + 1
+}
+
+//
 // Add a follower and starts a listener for the follower.
 // If the leader is terminated, the pipe between leader
 // and follower will also be closed.
@@ -124,6 +149,9 @@ func (l *Leader) AddFollower(peer *common.PeerPipe) {
 		log.Printf("Leader.AddFollower() : old Listener found for follower %s.  Terminating old listener", 
 			peer.GetAddr())
 		oldListener.terminate()
+	} else {
+		// notify a brand new follower (not just replacing an existing one)
+		l.changech <- true 
 	}
 }
 
@@ -209,9 +237,9 @@ func (l *Leader) removeListener(peer *MessageListener) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
-	// TODO : Should the leader goes back to election after
-	// it looses quorum?
 	delete(l.followers, peer.pipe.GetAddr())
+	
+	l.changech <- true 
 }
 
 /////////////////////////////////////////////////////////
