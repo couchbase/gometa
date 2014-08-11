@@ -41,7 +41,7 @@ type LeaderState struct {
 // killch should be unbuffered to ensure the sender won't block 
 //
 func RunLeaderServer(naddr string,
-    listener *common.PeerListener,
+	listener *common.PeerListener,
 	ss *ServerState,
 	handler protocol.ActionHandler,
 	factory protocol.MsgFactory,

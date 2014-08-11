@@ -209,6 +209,8 @@ func (l *Leader) removeListener(peer *MessageListener) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
+	// TODO : Should the leader goes back to election after
+	// it looses quorum?
 	delete(l.followers, peer.pipe.GetAddr())
 }
 

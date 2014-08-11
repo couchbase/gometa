@@ -710,6 +710,10 @@ func (w *PollWorker) handleVoteForElectingPeer(voter net.Addr, vote VoteMsg) boo
 	// if the incoming vote has a greater round, re-ballot.
 	if compareRound == GREATER {
 
+		// update the current round.  This need to be done
+		// before updateProposed() is called.
+		w.site.master.setCurrentRound(vote.GetRound())
+		
 		if w.compareVoteWithCurState(vote) == GREATER {
 			// Update my vote if the incoming vote is larger.
 			w.ballot.resetAndUpdateProposed(vote, w.site)

@@ -22,8 +22,8 @@ type Server struct {
 	site      *protocol.ElectionSite
 	factory   protocol.MsgFactory
 	handler   protocol.ActionHandler
-	killch2   chan bool
 	listener  *common.PeerListener
+	skillch   chan bool
 }
 
 type ServerState struct {
@@ -101,13 +101,20 @@ func (s *Server) bootstrap() (err error) {
 	s.srvConfig = r.NewServerConfig(s.repo)
 	s.factory = message.NewConcreteMsgFactory()
 	s.handler = NewServerAction(s)
-	s.killch2 = make(chan bool)
+	s.skillch = make(chan bool, 1) // make it buffered to unblock sender
 
-	// create a listener to listen to connection from the peer/follower
+	// Need to start the peer listener before election. A follower may
+	// finish its election before a leader finishes its election. Therefore,
+	// a follower node can request a connection to the leader node before that
+	// node knows it is a leader.  By starting the listener now, it allows the 
+	// follower to establish the connection and let the leader handles this 
+	// connection at a later time (when it is ready to be a leader).
 	s.listener, err = common.StartPeerListener(GetHostTCPAddr())
 	if err != nil {
 		return common.WrapError(common.SERVER_ERROR, "Fail to start PeerListener.", err)
 	}
+	
+	s.site = nil
 	
 	return nil
 }
@@ -121,8 +128,8 @@ func (s *Server) runElection() (leader string, err error) {
 	peers := GetPeerUDPAddr()
 	
 	// Create an election site to start leader election.
-	log.Printf("Local Server %s start election", host)
-	log.Printf("Peer in election")
+	log.Printf("Server.runElection(): Local Server %s start election", host)
+	log.Printf("Server.runElection(): Peer in election")
 	for _, peer := range peers {
 		log.Printf("	peer : %s", peer)
 	}
@@ -151,17 +158,17 @@ func (s *Server) runServer(leader string) (err error) {
 	// If this host is the leader, then start the leader server.
 	// Otherwise, start the followerServer.
 	if leader == host {
-		log.Printf("Local Server %s is elected as leader. Leading ...", leader)
+		log.Printf("Server.runServer() : Local Server %s is elected as leader. Leading ...", leader)
 		s.state.setStatus(protocol.LEADING)
-		err = RunLeaderServer(GetHostTCPAddr(), s.listener, s.state, s.handler, s.factory, s.killch2)
+		err = RunLeaderServer(GetHostTCPAddr(), s.listener, s.state, s.handler, s.factory, s.skillch)
 	} else {
-		log.Printf("Remote Server %s is elected as leader. Following ...", leader)
+		log.Printf("Server.runServer() : Remote Server %s is elected as leader. Following ...", leader)
 		s.state.setStatus(protocol.FOLLOWING)
 		leaderAddr := findMatchingPeerTCPAddr(leader)
 		if len(leaderAddr) == 0 {
 			return common.NewError(common.SERVER_ERROR, "Cannot find matching TCP addr for leader " + leader)
 		}
-		err = RunFollowerServer(GetHostTCPAddr(), leaderAddr, s.state, s.handler, s.factory, s.killch2)
+		err = RunFollowerServer(GetHostTCPAddr(), leaderAddr, s.state, s.handler, s.factory, s.skillch)
 	}
 
 	return err
@@ -182,8 +189,9 @@ func (s *Server) Terminate() {
 	s.state.done = true
 	
 	s.site.Close()
+	s.site = nil
 
-	s.killch2 <- true // kill leader/follower server
+	s.skillch <- true // kill leader/follower server
 }
 
 //
@@ -207,6 +215,13 @@ func (s *Server) cleanupState() {
 
 	common.SafeRun("Server.cleanupState()",
 		func() {
+			if s.listener != nil {
+				s.listener.Close()
+			}
+		})
+		
+	common.SafeRun("Server.cleanupState()",
+		func() {
 			if s.repo != nil {
 				s.repo.Close()
 			}
@@ -214,15 +229,12 @@ func (s *Server) cleanupState() {
 
 	common.SafeRun("Server.cleanupState()",
 		func() {
-			s.listener.Close()
+			if s.site != nil {
+				s.site.Close()
+			}
 		})
 		
-	common.SafeRun("Server.cleanupState()",
-		func() {
-			s.site.Close()
-		})
-		
-	for {
+	for len(s.state.incomings) > 0 {
 		request := <-s.state.incomings
 		request.err = common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
 
@@ -262,36 +274,50 @@ func (s *Server) cleanupState() {
 //
 func RunOnce() (int) {
 
+	log.Printf("Server.RunOnce() : Start Running Server")
+	
 	pauseTime := 0
-
 	gServer = new(Server)
 
-	defer gServer.cleanupState()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in Server.runOnce() : %s\n", r)
+		}
+	
+		common.SafeRun("Server.cleanupState()",
+			func() {
+				gServer.cleanupState()
+			})
+	}()
 
 	err := gServer.bootstrap()
 	if err != nil {
 		pauseTime = 200
 	}
 
+	// Check if the server has been terminated explicitly. If so, don't run.
 	if !gServer.IsDone() {
 
 		// runElection() finishes if there is an error, election result is known or
-		// it being terminated (killch). Unless being killed explicitly, a goroutine
+		// it being terminated. Unless being killed explicitly, a goroutine
 		// will continue to run to responds to other peer election request
 		leader, err := gServer.runElection()
 		if err != nil {
-			println("Error Encountered During Election : ", err.Error())
+			log.Printf("Server.RunOnce() : Error Encountered During Election : %s", err.Error())
 			pauseTime = 100
 		} else {
+		
+			// Check if the server has been terminated explicitly. If so, don't run.
 			if !gServer.IsDone() {
-
 				// runServer() is done if there is an error	or being terminated explicitly (killch)
 				err := gServer.runServer(leader)
 				if err != nil {
-					println("Error Encountered From Server : ", err.Error())
+					log.Printf("Server.RunOnce() : Error Encountered From Server : %s", err.Error())
 				}
 			}
 		}
+	} else {
+		log.Printf("Server.RunOnce(): Server has been terminated explicitly. Terminate.")
 	}
 
 	return pauseTime
