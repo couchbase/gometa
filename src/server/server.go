@@ -15,33 +15,34 @@ import (
 /////////////////////////////////////////////////////////////////////////////
 
 type Server struct {
-	repo      *r.Repository
-	log       *r.CommitLog
-	srvConfig *r.ServerConfig
-	state     *ServerState
-	site      *protocol.ElectionSite
-	factory   protocol.MsgFactory
-	handler   protocol.ActionHandler
-	listener  *common.PeerListener
-	skillch   chan bool
+	repo      		*r.Repository
+	log       		*r.CommitLog
+	srvConfig 		*r.ServerConfig
+	state     		*ServerState
+	site      		*protocol.ElectionSite
+	factory   		protocol.MsgFactory
+	handler   		protocol.ActionHandler
+	listener  		*common.PeerListener
+	reqListener 	*RequestListener
+	skillch   		chan bool
 }
 
 type ServerState struct {
-	incomings chan *RequestHandle
+	incomings 		chan *RequestHandle
 
 	// mutex protected variables
-	mutex     sync.Mutex
-	done      bool
-	status    protocol.PeerStatus
-	pendings  map[uint64]*RequestHandle // key : request id
-	proposals map[uint64]*RequestHandle // key : txnid
+	mutex     		sync.Mutex
+	done      		bool
+	status    		protocol.PeerStatus
+	pendings  		map[uint64]*RequestHandle // key : request id
+	proposals 		map[uint64]*RequestHandle // key : txnid
 }
 
 type RequestHandle struct {
-	request protocol.RequestMsg
-	err     error
-	mutex   sync.Mutex
-	condVar *sync.Cond
+	request 		protocol.RequestMsg
+	err     		error
+	mutex   		sync.Mutex
+	condVar 		*sync.Cond
 }
 
 type ServerCallback interface {
@@ -112,6 +113,12 @@ func (s *Server) bootstrap() (err error) {
 	s.listener, err = common.StartPeerListener(GetHostTCPAddr())
 	if err != nil {
 		return common.WrapError(common.SERVER_ERROR, "Fail to start PeerListener.", err)
+	}
+
+	// Start a request listener.
+	s.reqListener, err = StartRequestListener(GetHostRequestAddr(), s)
+	if err != nil {
+		return common.WrapError(common.SERVER_ERROR, "Fail to start RequestListener.", err)
 	}
 	
 	s.site = nil
@@ -217,6 +224,13 @@ func (s *Server) cleanupState() {
 		func() {
 			if s.listener != nil {
 				s.listener.Close()
+			}
+		})
+		
+	common.SafeRun("Server.cleanupState()",
+		func() {
+			if s.reqListener != nil {
+				s.reqListener.Close()
 			}
 		})
 		
@@ -361,38 +375,8 @@ func (s *ServerState) setStatus(status protocol.PeerStatus) {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-// Client API
+// Request Handle 
 /////////////////////////////////////////////////////////////////////////////
-
-//
-// Handle a new incoming request
-//
-func (s *Server) HandleNewRequest(req protocol.RequestMsg) error {
-
-	if s.IsDone() {
-		return common.NewError(common.SERVER_ERROR, "Server is terminated. Cannot process new request.")
-	}
-
-	// TODO : Assign an unique id to the request msg
-	id := uint64(1)
-	request := s.factory.CreateRequest(id,
-		req.GetOpCode(),
-		req.GetKey(),
-		req.GetContent())
-
-	handle := newRequestHandle(request)
-
-	handle.condVar.L.Lock()
-	defer handle.condVar.L.Unlock()
-
-	// push the request to a channel
-	s.state.incomings <- handle
-
-	// This goroutine will wait until the request has been processed.
-	handle.condVar.Wait()
-
-	return handle.err
-}
 
 //
 // Create a new request handle
@@ -436,6 +420,7 @@ func (s *Server) UpdateStateOnNewProposal(proposal protocol.ProposalMsg) {
 //
 func (s *Server) UpdateStateOnCommit(proposal protocol.ProposalMsg) {
 
+	log.Printf("Server.UpdateStateOnCommit(): Committing proposal %d, key = %s.", proposal.GetTxnid(), proposal.GetKey())
 	txnid := proposal.GetTxnid()
 
 	s.state.mutex.Lock()
@@ -445,14 +430,19 @@ func (s *Server) UpdateStateOnCommit(proposal protocol.ProposalMsg) {
 	// that this host originates the request.   Get the request handle and
 	// notify the waiting goroutine that the request is done.
 	handle, ok := s.state.proposals[txnid]
+	
 	if ok {
+		log.Printf("Server.UpdateStateOnCommit(): Notify client for proposal %d", proposal.GetTxnid())
+		
 		delete(s.state.proposals, txnid)
 
 		handle.condVar.L.Lock()
 		defer handle.condVar.L.Unlock()
 
 		handle.condVar.Signal()
-	}
+	} else {
+		log.Printf("Server.UpdateStateOnCommit(): cannot find matching proposal %d to notify client", proposal.GetTxnid())
+	} 
 }
 
 func (s *Server) GetState() *ServerState {

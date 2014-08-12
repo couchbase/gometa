@@ -10,6 +10,7 @@ import (
 type Env struct {
 	hostUDPAddr net.Addr 
 	hostTCPAddr net.Addr 
+	hostRequestAddr net.Addr 
 	peerUDPAddr []string
 	peerTCPAddr []string
 }
@@ -27,6 +28,10 @@ func GetHostUDPAddr() string {
 
 func GetHostTCPAddr() string {
 	return gEnv.hostTCPAddr.String()
+}
+
+func GetHostRequestAddr() string {
+	return gEnv.hostRequestAddr.String()
 }
 
 func GetPeerUDPAddr() []string {
@@ -65,7 +70,7 @@ func (e *Env) init() error {
 		return err 
 	}
 	
-	if len(os.Args) >= 5 {
+	if len(os.Args) >= 6 {
 		e.resolvePeerAddr()
 		if err != nil {
 			return err 
@@ -86,11 +91,16 @@ func (e *Env) resolveHostAddr() (err error) {
 		return err	
 	}
 	
+	e.hostRequestAddr, err = resolveAddr(common.MESSAGE_TRANSPORT_TYPE, os.Args[3])
+	if err != nil {
+		return err	
+	}
+	
 	return nil
 }
 
 func (e *Env) resolvePeerAddr() error {
-	args := os.Args[3:]
+	args := os.Args[4:]
 	e.peerUDPAddr = make([]string, 0, len(args))
 	e.peerTCPAddr = make([]string, 0, len(args))
 	

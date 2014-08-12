@@ -209,6 +209,7 @@ func (f *Follower) handleCommit(msg CommitMsg) error {
 	// commit
 	err := f.handler.Commit(p)
 	if err != nil {
+		log.Println("Follower.Commit(): Error in commit.  Error = %s", err.Error())	
 		// TODO : throw error
 	}
 

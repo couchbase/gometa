@@ -776,10 +776,12 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 	if epoch > acceptedEpoch {
 		// update the accepted epoch based on the quorum result
 		l.handler.NotifyNewAcceptedEpoch(epoch)
+	} else if epoch == acceptedEpoch {
+		// In ZK, if the local epoch (acceptedEpoch) == leader's epoch (epoch), it will replly an EpochAck with epoch = -1.  
+		// This is to tell the leader that it should not count this EpockAck when computing quorum of EpochAck. 
+		// This is to ensure that this follower does not "double ack" to the leader (e.g. when this follower rejoins a
+		// stable ensemble).   In our implementation for ConsentState, it should not be affected by double ack from the same host. 
 	} else {
-		// TODO: In TK, if the epoch == acceptedEpoch, it will replly an EpochAck with epoch = -1.  This is to
-		// tell the leader that it should not count this EpockAck when computing quorum on EpochAck. But this
-		// will require the leader to timeout since it is possible that it will never reach quorum. 
 		return common.NewError(common.PROTOCOL_ERROR, "Accepted Epoch from leader is smaller or equal to my epoch.")
 	}
 
@@ -821,7 +823,9 @@ func (l *FollowerSyncProxy) receiveAndUpdateCurrentEpoch() error {
 
 func (l *FollowerSyncProxy) syncReceive() error {
 
-	hasReceiveFirst := false
+	// skip the first log entry if l.state.lastLoggedTxid is not 0.
+	// lastLoggedTxid == 0  means empty log in local repository, and we don't want to skip
+	skip := (l.state.lastLoggedTxid != 0)
 
 	for {
 		packet, err := listen("LogEntry", l.leader)
@@ -832,20 +836,20 @@ func (l *FollowerSyncProxy) syncReceive() error {
 		entry := packet.(LogEntryMsg)
 		lastLoggedTxnid := entry.GetTxnid()
 
-		// If it is the first entry, we expect the entry txid to be the same as my last logged txid
-		if !hasReceiveFirst && lastLoggedTxnid != l.state.lastLoggedTxid {
-			return common.NewError(common.PROTOCOL_ERROR, 
-					fmt.Sprintf("Expect to receive first LogEntryMsg with txnid = %d", lastLoggedTxnid))
-		}
-
 		// If this is the last one, then return.
 		if entry.GetOpCode() == uint32(common.OPCODE_STREAM_END_MARKER) {
 			return nil
 		}
-			 
-		if !hasReceiveFirst {
+	
+		// If it is the first entry, we expect the entry txid to be the same as my last logged txid
+		if skip && lastLoggedTxnid != l.state.lastLoggedTxid {
+			return common.NewError(common.PROTOCOL_ERROR, 
+					fmt.Sprintf("Expect to receive first LogEntryMsg with txnid = %d. Get %d", l.state.lastLoggedTxid, lastLoggedTxnid))
+		}
+
+		if skip {
 			// always skip the first entry since I have this entry in my commit log already
-			hasReceiveFirst = true
+			skip = false 
 		} else {
 			// write the new commit entry
 			err = l.handler.CommitEntry(entry.GetTxnid(), entry.GetOpCode(), entry.GetKey(), entry.GetContent())

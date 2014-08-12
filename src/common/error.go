@@ -11,6 +11,7 @@ const (
 	FATAL_ERROR
 	ARG_ERROR
 	ELECTION_ERROR
+	CLIENT_ERROR
 )
 
 type Error struct {

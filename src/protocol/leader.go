@@ -458,6 +458,7 @@ func (l *Leader) commit(txid common.Txnid, p ProposalMsg) {
 	// handle the commit action
 	err := l.handler.Commit(p)
 	if err != nil {
+		log.Println("Leader.Commit(): Error in commit.  Error = %s", err.Error())	
 		// TODO throw error
 	}
 
