@@ -44,8 +44,8 @@ type ElectionSite struct {
 type BallotResult struct {
 	proposed      VoteMsg
 	winningEpoch  uint32		// winning epoch : can be updated after follower has sync with leader
-	receivedVotes map[string]VoteMsg
-	activePeers   map[string]VoteMsg
+	receivedVotes map[string]VoteMsg // the map key is voter UDP address
+	activePeers   map[string]VoteMsg // the map key is voter UDP address
 }
 
 type Ballot struct {
@@ -210,7 +210,7 @@ func (s *ElectionSite) createVoteFromCurState() VoteMsg {
 	vote := s.factory.CreateVote(s.master.round,
 		uint32(s.handler.GetStatus()),
 		epoch,
-		s.messenger.GetLocalAddr(),
+		s.messenger.GetLocalAddr(), // this is localhost UDP port
 		uint64(s.handler.GetLastLoggedTxid()))
 
 	return vote
@@ -615,6 +615,8 @@ func (w *PollWorker) listen() {
 					return
 				}
 
+				// Receive a new vote.  The voter is identified by its UDP port,
+				// which must remain the same during the election phase.
 				var obj interface{} = msg.Content
 				vote := obj.(VoteMsg)
 				voter := msg.Peer

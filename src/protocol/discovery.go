@@ -96,7 +96,7 @@ const (
 // The ConsentState is used for keep that state for stages (1), (2) and (4) where
 // quorum is required to proceed to next stage.
 //
-// The ConsentState is using the physical host (actual port) which is different for each connection.  This requires
+// The ConsentState is using the physical host (actual port) which is different for each TCP connection.  This requires
 // the ConsentState to be cleaned up if synchronization with a particular follower aborts.   After synchronization
 // with a follower succeeds, the follower's vote will stay in the ConsentState, since the main purpose of the 
 // ConsentState is for voting on a new epoch, as well as establishing that a majority of followers are going
@@ -159,7 +159,7 @@ func (s *ConsentState) removeAcceptedEpoch(voter string) {
 	s.acceptedEpochCond.L.Lock()
 	defer s.acceptedEpochCond.L.Unlock()
 	
-	remove(s.acceptedEpochSet, voter)
+	delete(s.acceptedEpochSet, voter)
 }
 
 func (s *ConsentState) voteEpochAck(voter string) bool {
@@ -189,7 +189,7 @@ func (s *ConsentState) voteEpochAck(voter string) bool {
 	return len(s.ackEpochSet) > int(s.ensembleSize/2)
 }
 
-func (s *ConsentState) removeEpockAck(voter string) {
+func (s *ConsentState) removeEpochAck(voter string) {
 	s.ackEpochCond.L.Lock()
 	defer s.ackEpochCond.L.Unlock()
 	
@@ -378,9 +378,9 @@ func (l *LeaderSyncProxy) abort() {
 	common.SafeRun("LeaderSyncProxy.abort()",
 		func() {
 			// clean up the ConsentState
-            removeAcceptedEpoch(voter) 
-            removeEpochAck(voter) 
-            removeNewLeaderAck(voter) 
+            l.state.removeAcceptedEpoch(voter) 
+            l.state.removeEpochAck(voter) 
+            l.state.removeNewLeaderAck(voter) 
 		})
 		
 	// donech should never be closed.  But just to be safe ...
