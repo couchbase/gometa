@@ -84,6 +84,26 @@ const (
 // ConsentState
 /////////////////////////////////////////////////////////////////////////////
 
+//
+// Create a new ConsentState for synchronization.   The leader must proceed in 
+// 4 stages:
+// 1) Reach quourm of followers for sending its persisted acceptedEpoch to the leader.
+//    The leader uses followers acceptedEpoch to determine the next epoch.
+// 2) Reach quorum of followers to accept the new epoch.   
+// 3) Synchronizes the commit log between leader and each follower 
+// 4) Reach quorum of followers to accepts this leader (NewLeaderAck)
+//
+// The ConsentState is used for keep that state for stages (1), (2) and (4) where
+// quorum is required to proceed to next stage.
+//
+// The ConsentState is using the physical host (actual port) which is different for each connection.  This requires
+// the ConsentState to be cleaned up if synchronization with a particular follower aborts.   After synchronization
+// with a follower succeeds, the follower's vote will stay in the ConsentState, since the main purpose of the 
+// ConsentState is for voting on a new epoch, as well as establishing that a majority of followers are going
+// to follower the leader.   A node can only establish leadership until stage 4 passes.  Once leadership is
+// established, if the node looses majority of followers, the server should abort and go through re-election again 
+// with a new ConsentState.
+//
 func NewConsentState(sid string, epoch uint32, ensemble uint64) *ConsentState {
 
 	state := &ConsentState{acceptedEpoch: epoch,
@@ -125,9 +145,21 @@ func (s *ConsentState) voteAcceptedEpoch(voter string, newEpoch uint32) (uint32,
 		return s.acceptedEpoch, true
 	}
 
-	// wait for quorum to be reached
+	// wait for quorum to be reached.  It is possible
+	// that the go-routine is woken up before quorum is
+	// reached (if Terminate() is called).   It is
+	// also possible that a concurrent go-routine has
+	// remove the voter after reaching quorum.  In these
+	// cases, return false. 
 	s.acceptedEpochCond.Wait()
 	return s.acceptedEpoch, len(s.acceptedEpochSet) > int(s.ensembleSize/2) 
+}
+
+func (s *ConsentState) removeAcceptedEpoch(voter string) {
+	s.acceptedEpochCond.L.Lock()
+	defer s.acceptedEpochCond.L.Unlock()
+	
+	remove(s.acceptedEpochSet, voter)
 }
 
 func (s *ConsentState) voteEpochAck(voter string) bool {
@@ -147,9 +179,21 @@ func (s *ConsentState) voteEpochAck(voter string) bool {
 		return true
 	}
 
-	// wait for quorum to be reached
+	// wait for quorum to be reached.  It is possible
+	// that the go-routine is woken up before quorum is
+	// reached (if Terminate() is called).   It is
+	// also possible that a concurrent go-routine has
+	// remove the voter after reaching quorum.  In these
+	// cases, return false. 
 	s.ackEpochCond.Wait()
 	return len(s.ackEpochSet) > int(s.ensembleSize/2)
+}
+
+func (s *ConsentState) removeEpockAck(voter string) {
+	s.ackEpochCond.L.Lock()
+	defer s.ackEpochCond.L.Unlock()
+	
+	delete(s.ackEpochSet, voter)
 }
 
 func (s *ConsentState) voteNewLeaderAck(voter string) bool {
@@ -169,9 +213,21 @@ func (s *ConsentState) voteNewLeaderAck(voter string) bool {
 		return true
 	}
 
-	// wait for quorum to be reached
+	// wait for quorum to be reached.  It is possible
+	// that the go-routine is woken up before quorum is
+	// reached (if Terminate() is called).   It is
+	// also possible that a concurrent go-routine has
+	// remove the voter after reaching quorum.  In these
+	// cases, return false. 
 	s.newLeaderAckCond.Wait()
 	return len(s.newLeaderAckSet) > int(s.ensembleSize/2) 
+}
+
+func (s *ConsentState) removeNewLeaderAck(voter string) {
+	s.newLeaderAckCond.L.Lock()
+	defer s.newLeaderAckCond.L.Unlock()
+	
+	delete(s.newLeaderAckSet, voter)
 }
 
 func (s *ConsentState) Terminate() {
@@ -310,6 +366,8 @@ func (l *LeaderSyncProxy) GetDoneChannel() <-chan bool {
 //
 func (l *LeaderSyncProxy) abort() {
 
+	voter := l.follower.GetAddr()
+
 	common.SafeRun("LeaderSyncProxy.abort()",
 		func() {
 			// terminate any on-going messaging with follower.  This will force
@@ -317,6 +375,14 @@ func (l *LeaderSyncProxy) abort() {
 			l.follower.Close()
 		})
 
+	common.SafeRun("LeaderSyncProxy.abort()",
+		func() {
+			// clean up the ConsentState
+            removeAcceptedEpoch(voter) 
+            removeEpochAck(voter) 
+            removeNewLeaderAck(voter) 
+		})
+		
 	// donech should never be closed.  But just to be safe ...
 	common.SafeRun("LeaderSyncProxy.abort()",
 		func() {

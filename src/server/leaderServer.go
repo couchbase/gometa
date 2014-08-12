@@ -284,6 +284,7 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 			log.Printf("LeaderServer.processRequest(): follower listener terminates. Stop client request processing.")
 			return nil
 		case <-leaderchangech:
+			// Listen to any change to the leader's ensemble, and to ensure that the leader maintain majority. 
 			numFollowers := s.leader.GetCurrentEnsembleSize()
 			if numFollowers <= int(ensembleSize/2) {
 				// leader looses majority of follower.   
