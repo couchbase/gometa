@@ -65,6 +65,8 @@ type ActionHandler interface {
 	//
 	// The following API are used during normal execution
 	//
+	GetFollowerId() string
+	
 	GetNextTxnId() common.Txnid
 
 	LogProposal(proposal ProposalMsg) error
@@ -83,12 +85,9 @@ type MsgFactory interface {
 
 	CreateCommit(txnid uint64) CommitMsg
 
-	// TODO : Cleanup
-	CreateBallot(id uint64) BallotMsg
-
 	CreateVote(round uint64, status uint32, epoch uint32, cndId string, cndTxnId uint64) VoteMsg
 
-	CreateFollowerInfo(epoch uint32) FollowerInfoMsg
+	CreateFollowerInfo(epoch uint32, fid string) FollowerInfoMsg
 
 	CreateEpochAck(lastLoggedTxid uint64, epoch uint32) EpochAckMsg
 
@@ -149,12 +148,6 @@ type VoteMsg interface {
 	GetCndTxnId() uint64
 }
 
-// TODO : Cleanup
-type BallotMsg interface {
-	common.Packet
-	GetId() uint64
-}
-
 /////////////////////////////////////////////////////////////////////////////
 // Message for discovery
 /////////////////////////////////////////////////////////////////////////////
@@ -162,6 +155,7 @@ type BallotMsg interface {
 type FollowerInfoMsg interface {
 	common.Packet
 	GetAcceptedEpoch() uint32
+	GetFid() string 
 }
 
 type LeaderInfoMsg interface {

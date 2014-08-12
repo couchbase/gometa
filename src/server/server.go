@@ -401,7 +401,7 @@ func (s *Server) UpdateStateOnNewProposal(proposal protocol.ProposalMsg) {
 	txnid := proposal.GetTxnid()
 
 	// If this host is the one that sends the request to the leader
-	if fid == GetHostTCPAddr() {
+	if fid == s.handler.GetFollowerId() {
 		s.state.mutex.Lock()
 		defer s.state.mutex.Unlock()
 

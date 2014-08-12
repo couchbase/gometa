@@ -67,13 +67,6 @@ func (f *ConcreteMsgFactory) CreateVote(round uint64,
 		CndTxnId: proto.Uint64(cndTxnId)}
 }
 
-// TODO: Cleanup
-func (f *ConcreteMsgFactory) CreateBallot(id uint64) protocol.BallotMsg {
-
-	return &Ballot{Version: proto.Uint32(ProtoVersion()),
-		Id: proto.Uint64(id)}
-}
-
 func (f *ConcreteMsgFactory) CreateLogEntry(txnid uint64,
 	opCode uint32,
 	key string,
@@ -86,10 +79,12 @@ func (f *ConcreteMsgFactory) CreateLogEntry(txnid uint64,
 		Content: content}
 }
 
-func (f *ConcreteMsgFactory) CreateFollowerInfo(epoch uint32) protocol.FollowerInfoMsg {
+func (f *ConcreteMsgFactory) CreateFollowerInfo(epoch uint32,
+											    fid string) protocol.FollowerInfoMsg {
 
 	return &FollowerInfo{Version: proto.Uint32(ProtoVersion()),
-		AcceptedEpoch: proto.Uint32(epoch)}
+		AcceptedEpoch: proto.Uint32(epoch),
+		Fid:     proto.String(fid)}
 }
 
 func (f *ConcreteMsgFactory) CreateLeaderInfo(epoch uint32) protocol.LeaderInfoMsg {
@@ -136,7 +131,6 @@ func registerMessages() {
 	common.RegisterPacketByName("Proposal", &Proposal{})
 	common.RegisterPacketByName("Accept", &Accept{})
 	common.RegisterPacketByName("Commit", &Commit{})
-	common.RegisterPacketByName("Ballot", &Ballot{}) //TODO: Cleanup
 	common.RegisterPacketByName("Vote", &Vote{})
 	common.RegisterPacketByName("LogEntry", &LogEntry{})
 	common.RegisterPacketByName("FollowerInfo", &FollowerInfo{})

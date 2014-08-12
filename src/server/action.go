@@ -47,14 +47,6 @@ func (a *ServerAction) Commit(p protocol.ProposalMsg) error {
 		return err
 	}
 
-	// TODO : Commit
-	/*
-	   err = a.repo.Commit()
-	   if err != nil {
-	   	return err
-	   }
-	*/
-
 	a.server.UpdateStateOnCommit(p)
 
 	return nil
@@ -69,6 +61,10 @@ func (a *ServerAction) LogProposal(p protocol.ProposalMsg) error {
 
 func (a *ServerAction) GetNextTxnId() common.Txnid {
 	return common.GetNextTxnId()
+}
+
+func (a *ServerAction) GetFollowerId() string {
+	return GetHostTCPAddr() 
 }
 
 ////////////////////////////////////////////////////////////////////////////

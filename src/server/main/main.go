@@ -86,7 +86,7 @@ func RunTestClient() {
 		}	
 	
 		// send serialized request object to server	
-		var reply int  
+		var reply []byte 
 		err = client.Call("RequestReceiver.NewRequest", msg, &reply)
 		if err != nil {
 	    	log.Printf("ClientTest() : Fail to call server %s. ", err.Error()) 

@@ -172,7 +172,7 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 	}()
 	
 	// create a proxy that will sycnhronize with the peer
-	log.Printf("LeaderServer.startProxy(): Start synchronization with follower %s", peer.GetAddr())
+	log.Printf("LeaderServer.startProxy(): Start synchronization with follower. Peer TCP connection (%s)", peer.GetAddr())
 	proxy := protocol.NewLeaderSyncProxy(l.consentState, peer, l.handler, l.factory)
 	donech := proxy.GetDoneChannel()
 	go proxy.Start()
@@ -181,7 +181,8 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 	// Get the killch for this proxy
 	killch := l.getProxyKillChan(peer.GetAddr())
 	if killch == nil {
-   		log.Printf("LeaderServer.startProxy(): Cannot find killch for proxy %s. Cannot start follower sync.", peer.GetAddr())
+   		log.Printf("LeaderServer.startProxy(): Cannot find killch for proxy (TCP connection = %s).", peer.GetAddr()) 
+   		log.Printf("LeaderServer.startProxy(): Cannot start follower sync.")
    		return
 	}
 	
@@ -193,17 +194,20 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 			if success {
 				// tell the leader to add this follower for processing request.  If there is a follower running already,
 				// AddFollower() will terminate the existing follower instance, and then create a new one.
-	    		log.Printf("LeaderServer.startProxy(): Synchronization with follower %s done.  Add follower.", peer.GetAddr())
-				l.leader.AddFollower(peer)
+	    		fid := proxy.GetFid()
+				l.leader.AddFollower(fid, peer)
+	    		log.Printf("LeaderServer.startProxy(): Synchronization with follower %s done (TCP conn = %s).  Add follower.", 
+	    				fid, peer.GetAddr())
 
 				// At this point, the follower has voted this server as the leader.
 				// Notify the request processor to start processing new request for this host
 				l.notifyReady()
 			} else {
-				log.Printf("LeaderServer:startProxy(): Leader Fail to synchronization with follower %s", peer.GetAddr())
+				log.Printf("LeaderServer:startProxy(): Leader Fail to synchronization with follower (TCP conn = %s)", peer.GetAddr())
 			}
 		case <- killch:
-			log.Printf("LeaderServer:startProxy(): Sync proxy is killed while synchronizing with follower %s", peer.GetAddr())
+			log.Printf("LeaderServer:startProxy(): Sync proxy is killed while synchronizing with follower (TCP conn == %s)", 
+					peer.GetAddr())
 	} 	
 }
 
@@ -269,7 +273,7 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 
 				// create the proposal and forward to the leader
 				// TODO: This will send to every follower asynchronously
-				s.leader.CreateProposal(GetHostTCPAddr(), handle.request)
+				s.leader.CreateProposal(s.leader.GetFollowerId(), handle.request)
 			} else {
 				// server shutdown.
 				log.Printf("LeaderServer.processRequest(): channel for receiving client request is closed. Terminate.")				

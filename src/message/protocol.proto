@@ -30,15 +30,10 @@ message Vote {
    	required uint64          cndTxnId  = 6; // proposed candidate TxnId
 }
 
-// TODO : Cleanup
-message Ballot {
-    required uint32          version   = 1; // protocol version TBD
-   	required uint64          id        = 2; 
-}
-
 message FollowerInfo {
     required uint32          version   		= 1; // protocol version TBD
    	required uint32          acceptedEpoch  = 2; 
+   	required string          fid       		= 3; 
 }
 
 message EpochAck {

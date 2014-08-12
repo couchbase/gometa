@@ -95,25 +95,6 @@ func (req *Vote) Print() {
 }
 
 //
-// Ballot - implement Packet interface
-//
-func (req *Ballot) Name() string {
-	return "Ballot"
-}
-
-func (req *Ballot) Encode() (data []byte, err error) {
-	return proto.Marshal(req)
-}
-
-func (req *Ballot) Decode(data []byte) (err error) {
-	return proto.Unmarshal(data, req)
-}
-
-func (req *Ballot) Print() {
-	log.Printf("Ballot Message: Not Supported")
-}
-
-//
 // LogEntry - implement Packet interface
 //
 func (req *LogEntry) Name() string {

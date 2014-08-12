@@ -57,6 +57,7 @@ type ConsentState struct {
 type FollowerState struct {
 	currentEpoch   uint32
 	lastLoggedTxid uint64
+	fid 		   string
 }
 
 type LeaderStageCode uint16
@@ -321,10 +322,10 @@ func (l *LeaderSyncProxy) Start() bool {
 			l.donech <- success
 			return success
 		case <- timeout:
-			log.Printf("LeaderSyncProxy.Start(): Synchronization timeout for peer %s. Terminate.", l.follower.GetAddr())
+			log.Printf("LeaderSyncProxy.Start(): Synchronization timeout for peer (TCP %s). Terminate.", l.follower.GetAddr())
 			l.abort()
 		case <- l.killch:
-			log.Printf("LeaderSyncProxy.Start(): Receive kill signal for peer %s.  Terminate.", l.follower.GetAddr())
+			log.Printf("LeaderSyncProxy.Start(): Receive kill signal for peer (TCP %s).  Terminate.", l.follower.GetAddr())
 			l.abort()
 	}
 	
@@ -357,6 +358,13 @@ func (l *LeaderSyncProxy) GetDoneChannel() <-chan bool {
 	return (<-chan bool)(l.donech)
 } 
 
+//
+// Return the fid (follower id) 
+//
+func (l *LeaderSyncProxy) GetFid() string {
+	return l.followerState.fid
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // LeaderSyncProxy - Private Function
 /////////////////////////////////////////////////////////////////////////////
@@ -366,7 +374,7 @@ func (l *LeaderSyncProxy) GetDoneChannel() <-chan bool {
 //
 func (l *LeaderSyncProxy) abort() {
 
-	voter := l.follower.GetAddr()
+	voter := l.GetFid()
 
 	common.SafeRun("LeaderSyncProxy.abort()",
 		func() {
@@ -487,9 +495,13 @@ func (l *LeaderSyncProxy) updateAcceptedEpochAfterQuorum() error {
 	// Get epoch from follower message
 	info := packet.(FollowerInfoMsg)
 	epoch := info.GetAcceptedEpoch()
+	fid := info.GetFid()
 
+	// initialize the follower state
+	l.followerState = &FollowerState{lastLoggedTxid: 0, currentEpoch: 0, fid : fid}
+	
 	// update my vote and wait for epoch to reach quorum
-	newEpoch, ok := l.state.voteAcceptedEpoch(l.follower.GetAddr(), epoch)
+	newEpoch, ok := l.state.voteAcceptedEpoch(l.GetFid(), epoch)
 	if !ok {
 		return common.NewError(common.ELECTION_ERROR, 
 			"LeaderSyncProxy.updateAcceptedEpochAfterQuorum(): Fail to reach quorum on accepted epoch (FollowerInfo)")
@@ -522,19 +534,18 @@ func (l *LeaderSyncProxy) updateCurrentEpochAfterQuorum() error {
 	// Get epoch from follower message
 	// TODO : Validate follower epoch
 	info := packet.(EpochAckMsg)
-	epoch := info.GetCurrentEpoch()
-	txid := info.GetLastLoggedTxid()
-	l.followerState = &FollowerState{lastLoggedTxid: txid, currentEpoch: epoch}
+	l.followerState.currentEpoch = info.GetCurrentEpoch()
+	l.followerState.lastLoggedTxid = info.GetLastLoggedTxid()
 
 	// update my vote and wait for quorum of ack from followers
-	ok := l.state.voteEpochAck(l.follower.GetAddr())
+	ok := l.state.voteEpochAck(l.GetFid())
 	if !ok {
 		return common.NewError(common.ELECTION_ERROR, 
 			"LeaderSyncProxy.updateCurrentEpochAfterQuorum(): Fail to reach quorum on current epoch (EpochAck)")
 	}
 
 	// update the current epock after quorum of followers have ack'ed
-	epoch, err = l.handler.GetAcceptedEpoch()
+	epoch, err := l.handler.GetAcceptedEpoch()
 	if err != nil {
 		return err
 	}
@@ -567,7 +578,7 @@ func (l *LeaderSyncProxy) declareNewLeaderAfterQuorum() error {
 
 	// update my vote and wait for quorum of ack from followers
 	log.Printf("LeaderSyncProxy: before voteNewLeaderAck")
-	ok := l.state.voteNewLeaderAck(l.follower.GetAddr())
+	ok := l.state.voteNewLeaderAck(l.GetFid())
 	log.Printf("LeaderSyncProxy: after voteNewLeaderAck")
 	if !ok {
 		return common.NewError(common.ELECTION_ERROR, 
@@ -814,7 +825,7 @@ func (l *FollowerSyncProxy) sendFollowerInfo() error {
 	if err != nil {
 		return err
 	}
-	packet := l.factory.CreateFollowerInfo(epoch)
+	packet := l.factory.CreateFollowerInfo(epoch, l.handler.GetFollowerId())
 	return send(packet, l.leader)
 }
 
@@ -950,9 +961,9 @@ func listen(name string, pipe *common.PeerPipe) (common.Packet, error) {
 
 func send(packet common.Packet, pipe *common.PeerPipe) error {
 
-	log.Printf("SyncProxy.send(): sending packet %s to peer %s", packet.Name(), pipe.GetAddr())
+	log.Printf("SyncProxy.send(): sending packet %s to peer (TCP %s)", packet.Name(), pipe.GetAddr())
 	if !pipe.Send(packet) {
-		return common.NewError(common.SERVER_ERROR, fmt.Sprintf("SyncProxy.listen(): Fail to send packet %s to peer %s", 
+		return common.NewError(common.SERVER_ERROR, fmt.Sprintf("SyncProxy.listen(): Fail to send packet %s to peer (TCP %s)", 
 			packet.Name(), pipe.GetAddr()))		
 	}
 

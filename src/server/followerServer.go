@@ -72,7 +72,8 @@ func RunFollowerServer(naddr string,
 		log.Printf("FollowerServer.RunFollowerServer() : Follower Server %s terminate", naddr)
 		err = nil
 	} else {
-		err = common.NewError(common.SERVER_ERROR, fmt.Sprintf("Follower %s fail to synchronized with leader %s", naddr, pipe.GetAddr()))
+		err = common.NewError(common.SERVER_ERROR, fmt.Sprintf("Follower %s fail to synchronized with leader %s", 
+				naddr, leader))
 	}
 	
 	return err
@@ -91,7 +92,8 @@ func syncWithLeader(naddr string,
 	factory protocol.MsgFactory,
 	killch <- chan bool) bool {
 	
-	log.Printf("FollowerServer.syncWithLeader(): Follower %s start synchronization with leader %s", naddr, pipe.GetAddr())
+	log.Printf("FollowerServer.syncWithLeader(): Follower %s start synchronization with leader (TCP %s)", 
+			naddr, pipe.GetAddr())
 	proxy := protocol.NewFollowerSyncProxy(pipe, handler, factory)
 	donech := proxy.GetDoneChannel()
 	go proxy.Start()
@@ -101,13 +103,15 @@ func syncWithLeader(naddr string,
 	select {
 	case success := <-donech:
 		if success {
-			log.Printf("FollowerServer.syncWithLeader(): Follower %s done synchronization with leader %s", naddr, pipe.GetAddr())
+			log.Printf("FollowerServer.syncWithLeader(): Follower %s done synchronization with leader (TCP %s)", 
+					naddr, pipe.GetAddr())
 		}
 		return success
 	case <-killch:
 		// simply return. The pipe will eventually be closed and
 		// cause FollowerSyncProxy to err out.
-		log.Printf("FollowerServer.syncWithLeader(): Recieve kill singal.  Synchronization with peer %s terminated.", pipe.GetAddr())
+		log.Printf("FollowerServer.syncWithLeader(): Recieve kill singal.  Synchronization with leader (TCP %s) terminated.", 
+				pipe.GetAddr())
 	}
 
 	return false

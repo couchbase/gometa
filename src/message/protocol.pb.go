@@ -13,7 +13,6 @@ It has these top-level messages:
 	Accept
 	Commit
 	Vote
-	Ballot
 	FollowerInfo
 	EpochAck
 	LeaderInfo
@@ -207,34 +206,10 @@ func (m *Vote) GetCndTxnId() uint64 {
 	return 0
 }
 
-// TODO : Cleanup
-type Ballot struct {
-	Version          *uint32 `protobuf:"varint,1,req,name=version" json:"version,omitempty"`
-	Id               *uint64 `protobuf:"varint,2,req,name=id" json:"id,omitempty"`
-	XXX_unrecognized []byte  `json:"-"`
-}
-
-func (m *Ballot) Reset()         { *m = Ballot{} }
-func (m *Ballot) String() string { return proto.CompactTextString(m) }
-func (*Ballot) ProtoMessage()    {}
-
-func (m *Ballot) GetVersion() uint32 {
-	if m != nil && m.Version != nil {
-		return *m.Version
-	}
-	return 0
-}
-
-func (m *Ballot) GetId() uint64 {
-	if m != nil && m.Id != nil {
-		return *m.Id
-	}
-	return 0
-}
-
 type FollowerInfo struct {
 	Version          *uint32 `protobuf:"varint,1,req,name=version" json:"version,omitempty"`
 	AcceptedEpoch    *uint32 `protobuf:"varint,2,req,name=acceptedEpoch" json:"acceptedEpoch,omitempty"`
+	Fid              *string `protobuf:"bytes,3,req,name=fid" json:"fid,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
@@ -254,6 +229,13 @@ func (m *FollowerInfo) GetAcceptedEpoch() uint32 {
 		return *m.AcceptedEpoch
 	}
 	return 0
+}
+
+func (m *FollowerInfo) GetFid() string {
+	if m != nil && m.Fid != nil {
+		return *m.Fid
+	}
+	return ""
 }
 
 type EpochAck struct {

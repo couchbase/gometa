@@ -73,7 +73,7 @@ func (li *RequestListener) Close() {
 //
 // Handle a new incoming request
 //
-func (s *RequestReceiver) NewRequest(message []byte, reply *bool) error {
+func (s *RequestReceiver) NewRequest(message []byte, reply *[]byte) error {
 
 	if s.server.IsDone() {
 		return common.NewError(common.SERVER_ERROR, "Server is terminated. Cannot process new request.")
@@ -83,7 +83,7 @@ func (s *RequestReceiver) NewRequest(message []byte, reply *bool) error {
 	if err != nil { 
 		log.Printf("RequestReceiver.doMarshall() : ecounter error when unmarshalling mesasage from client.")
 		log.Printf("Error = %s. Ingore client request.", err.Error())	
-		*reply = false
+		*reply = nil 
 		return err 
 	}
 
@@ -107,7 +107,7 @@ func (s *RequestReceiver) NewRequest(message []byte, reply *bool) error {
 	handle.condVar.Wait()
 	log.Printf("Receive Response for request. Key %s", req.GetKey())
 
-	*reply = true
+	*reply = nil 
 	return handle.err
 }
 

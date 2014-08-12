@@ -61,6 +61,7 @@ type Leader struct {
 }
 
 type MessageListener struct {
+	fid 	  string
 	pipe 	  *common.PeerPipe
 	leader    *Leader
 	killch    chan bool	
@@ -135,19 +136,18 @@ func (l *Leader) GetCurrentEnsembleSize() int {
 // If the leader is terminated, the pipe between leader
 // and follower will also be closed.
 //
-func (l *Leader) AddFollower(peer *common.PeerPipe) {
+func (l *Leader) AddFollower(fid string, peer *common.PeerPipe) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
-	oldListener, ok := l.followers[peer.GetAddr()] 
+	oldListener, ok := l.followers[fid]
 	
-	listener := newListener(peer, l)
-	l.followers[peer.GetAddr()] = listener 
+	listener := newListener(fid, peer, l)
+	l.followers[fid] = listener 
 	go listener.start()
 	
 	if ok && oldListener != nil {
-		log.Printf("Leader.AddFollower() : old Listener found for follower %s.  Terminating old listener", 
-			peer.GetAddr())
+		log.Printf("Leader.AddFollower() : old Listener found for follower %s.  Terminating old listener", fid)
 		oldListener.terminate()
 	} else {
 		// notify a brand new follower (not just replacing an existing one)
@@ -155,14 +155,21 @@ func (l *Leader) AddFollower(peer *common.PeerPipe) {
 	}
 }
 
+// Return the follower ID.  The leader is a follower to itself.
+//
+func (l *Leader) GetFollowerId() string {
+	return l.handler.GetFollowerId()
+}
+
 /////////////////////////////////////////////////
 // MessageListener
 /////////////////////////////////////////////////
 
 // Create a new listener
-func newListener(pipe *common.PeerPipe, leader *Leader) *MessageListener {
+func newListener(fid string, pipe *common.PeerPipe, leader *Leader) *MessageListener {
 
-	return &MessageListener{pipe : pipe,
+	return &MessageListener{fid : fid,
+							pipe : pipe,
 							leader : leader,
 							killch : make(chan bool, 1)}
 } 
@@ -193,26 +200,26 @@ func (l *MessageListener) start() {
 			})
 	}()
 
-	log.Printf("MessageListener.start(): start listening to message from peer %s", l.pipe.GetAddr())
+	log.Printf("MessageListener.start(): start listening to message from peer %s", l.fid)
 	reqch := l.pipe.ReceiveChannel()
 
 	for {
 		select {
 			case req, ok := <-reqch:
 				if ok {
-					err := l.leader.handleMessage(req, l.pipe.GetAddr())
+					err := l.leader.handleMessage(req, l.fid)
 					if err != nil {
 						log.Printf("MessageListener.start(): Encounter error when processing message %s. Error %s. Terminate", 
-							l.pipe.GetAddr(), err.Error()) 
+							l.fid, err.Error()) 
 						return
 					}
 				} else {
 					// The channel is closed.  Need to shutdown the listener.
-					log.Printf("MessageListener.start(): message channel closed. Remove peer %s as follower.", l.pipe.GetAddr()) 
+					log.Printf("MessageListener.start(): message channel closed. Remove peer %s as follower.", l.fid) 
 					return
 				}
 			case <- l.killch:
-				log.Printf("MessageListener.start(): Listener for %s receive kill signal. Terminate.", l.pipe.GetAddr()) 
+				log.Printf("MessageListener.start(): Listener for %s receive kill signal. Terminate.", l.fid) 
 				return
 				
 		}
@@ -237,7 +244,7 @@ func (l *Leader) removeListener(peer *MessageListener) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
-	delete(l.followers, peer.pipe.GetAddr())
+	delete(l.followers, peer.fid)
 	
 	l.changech <- true 
 }
@@ -288,7 +295,7 @@ func (l *Leader) CreateProposal(host string, req RequestMsg) error {
 	//        if this implementation is safe for leader election.
 	txnid := l.handler.GetNextTxnId()
 	proposal := l.factory.CreateProposal(uint64(txnid),
-		host,
+		host,		// this is the host the originates the request
 		req.GetReqId(),
 		req.GetOpCode(),
 		req.GetKey(),
@@ -307,9 +314,10 @@ func (l *Leader) NewProposal(proposal ProposalMsg) {
 	// Keep track of the pending proposal
 	l.pendings = append(l.pendings, proposal)
 
-	// TODO : Call out to log the proposal
+	// Call out to log the proposal
 	// This deviates from ZK where the proposal is sent to followers before
 	// logging.  By logging first, this approach is more aligned with RAFT.
+	l.handler.LogProposal(proposal)
 
 	// TODO: Send an Ack to the leader itself.  In ZK, leader can vote.
 

@@ -66,8 +66,8 @@ func (f *Follower) Start() (<- chan bool) {
 //
 // Return the follower ID
 //
-func (f *Follower) GetId() string {
-	return f.pipe.GetAddr()
+func (f *Follower) GetFollowerId() string {
+	return f.handler.GetFollowerId()
 }
 
 //
@@ -173,7 +173,8 @@ func (f *Follower) handleProposal(msg ProposalMsg) error {
 	// TODO : Check if the txnid is the next one (last txnid + 1)
 	// ZK will only warn
 
-	// TODO: call service to log the proposal
+	// Call service to log the proposal
+	f.handler.LogProposal(msg)	
 
 	// Add to pending list
 	f.pendings = append(f.pendings, msg)
@@ -181,7 +182,7 @@ func (f *Follower) handleProposal(msg ProposalMsg) error {
 	// Send Accept Message
 	// TODO: Should only accept if the txnid exceeeds the last one.
 	//       ZK does not do that.  Need to double check Paxos Protocol.
-	return f.sendAccept(common.Txnid(msg.GetTxnid()), f.GetId())
+	return f.sendAccept(common.Txnid(msg.GetTxnid()), f.GetFollowerId())
 }
 
 //
