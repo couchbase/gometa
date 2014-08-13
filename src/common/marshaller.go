@@ -25,9 +25,9 @@ func Marshall(packet Packet) ([]byte, error) {
 
 	tyLen := len(typeOfMsg)
 	msgLen := len(msg)
-	totalLen := tyLen + msgLen
+	totalLen := tyLen + msgLen + 8
 
-	payload := make([]byte, 16+totalLen)
+	payload := make([]byte, totalLen+8)
 	binary.BigEndian.PutUint64(payload, uint64(totalLen))
 	binary.BigEndian.PutUint64(payload[8:], uint64(tyLen))
 	copy(payload[16:], typeOfMsg)

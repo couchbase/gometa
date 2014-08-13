@@ -1,7 +1,7 @@
 package common
 
 import (
-	//"encoding/binary"
+	"encoding/binary"
 	"log"
 	"net"
 	"sync"
@@ -176,11 +176,10 @@ func (p *PeerPipe) doReceive() {
 
 	for {
 		// read the size of the packet (uint64)
-		/*
 		var lenBuf []byte = make([]byte, 8)
 		n, err := p.conn.Read(lenBuf)
 		log.Printf("PeerPipe.doRecieve() : Receiving message from Peer %s, bytes read %d", p.GetAddr(), n)
-		if n < len(lenBuf) || err != nil {
+		if n < 8 || err != nil {
 			// if encountering an error, kill the pipe.
 			log.Printf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Kill Pipe.", 
 						err.Error())
@@ -197,20 +196,10 @@ func (p *PeerPipe) doReceive() {
 						err.Error())
 			return
 		}
-		*/
-		
-		buf := make([]byte, MAX_DATAGRAM_SIZE*2)
-		n, err := p.conn.Read(buf)
-		if err != nil {
-			log.Printf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Terminate", 
-						err.Error())
-			return
-		}
 		log.Printf("PeerPipe.doRecieve() : Receiving message from Peer %s, bytes read %d", p.GetAddr(), n)
-
+		
 		// unmarshall the content and put it in the channel
-		//packet, err := UnMarshall(buf)
-		packet, err := UnMarshall(buf[8:n])
+		packet, err := UnMarshall(buf)
 		if err != nil {
 			log.Printf("PeerPipe.doRecieve() : ecounter error when unmarshalling mesasage from Peer.  Error = %s. Terminate.", 
 					err.Error())	

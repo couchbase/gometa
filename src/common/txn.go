@@ -11,8 +11,6 @@ var gEpoch uint64 = 0
 var gCounter uint64 = 0
 var gMutex sync.Mutex
 
-var mask uint64 = 0x0000000000000000FFFFFFFFFFFFFFFF
-
 func GetNextTxnId() Txnid {
 	gMutex.Lock()
 	defer gMutex.Unlock()
@@ -31,6 +29,7 @@ func SetEpoch(newEpoch uint32) {
 	gMutex.Lock()
 	defer gMutex.Unlock()
 	
+	// TODO : if epoch is smaller than the old value 
 	gEpoch = uint64(newEpoch)
 	gCounter = 0
 }
@@ -43,5 +42,4 @@ func (id Txnid) GetEpoch() uint64 {
 func (id Txnid) GetCounter() uint64 {
 	v := uint32(id)
 	return uint64(v)
-	//return uint64(v | mask)
 }

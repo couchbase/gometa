@@ -80,9 +80,9 @@ func (s *RequestReceiver) NewRequest(message []byte, reply *[]byte) error {
 		return common.NewError(common.SERVER_ERROR, "Server is terminated. Cannot process new request.")
 	}
 	
-	req, err := s.doMarshall(message) 	
+	req, err := s.doUnMarshall(message) 	
 	if err != nil { 
-		log.Printf("RequestReceiver.doMarshall() : ecounter error when unmarshalling mesasage from client.")
+		log.Printf("RequestReceiver.doUnMarshall() : ecounter error when unmarshalling mesasage from client.")
 		log.Printf("Error = %s. Ingore client request.", err.Error())	
 		*reply = nil 
 		return err 
@@ -115,7 +115,7 @@ func (s *RequestReceiver) NewRequest(message []byte, reply *[]byte) error {
 //
 // Marshall client request
 //
-func (s *RequestReceiver) doMarshall(msg []byte) (protocol.RequestMsg, error) {
+func (s *RequestReceiver) doUnMarshall(msg []byte) (protocol.RequestMsg, error) {
 
 	// skip the total length (first 8 bytes)
 	packet, err := common.UnMarshall(msg[8:])
@@ -125,7 +125,7 @@ func (s *RequestReceiver) doMarshall(msg []byte) (protocol.RequestMsg, error) {
 	
 	switch request := packet.(type) {
 	case protocol.RequestMsg:
-		log.Printf("RequestReceiver.doMarshall() : Message decoded.  Packet = %s", request.Name())
+		log.Printf("RequestReceiver.doUnMarshall() : Message decoded.  Packet = %s", request.Name())
 		request.Print()
 		return request, nil
 	default:

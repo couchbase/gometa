@@ -169,11 +169,7 @@ func (a *ServerAction) startLogStreamer(startTxid uint64,
 	}
 
 	// stream the last entry with txid again
-	body, err = repo.CollateString("StreamEnd")
-	if err != nil {
-		body = []byte("StreamEnd")
-	}
-	msg := a.factory.CreateLogEntry(startTxid, uint32(common.OPCODE_STREAM_END_MARKER), "StreamEnd", body)
+	msg := a.factory.CreateLogEntry(startTxid, uint32(common.OPCODE_STREAM_END_MARKER), "StreamEnd", ([]byte)("StreamEnd"))
 	logChan <- msg
 
 	// TODO : The item is supposed to be with even if the channel is closed. Double check.
