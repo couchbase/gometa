@@ -201,5 +201,6 @@ func (s *FollowerServer) addPendingRequest(handle *RequestHandle) {
 	defer s.state.serverState.mutex.Unlock()
 
 	// remember the request
+	//log.Printf("FollowerServer.addPendingRequest(): Request Id %d.", handle.request.GetReqId())
 	s.state.serverState.pendings[handle.request.GetReqId()] = handle
 }

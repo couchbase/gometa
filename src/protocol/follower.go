@@ -74,6 +74,8 @@ func (f *Follower) GetFollowerId() string {
 // Forward the request to the leader
 //
 func (f *Follower) ForwardRequest(request RequestMsg) bool {
+	log.Printf("Follower.ForwardRequest(): Follower %s forward request to leader (TCP %s)",
+		f.GetFollowerId(), f.pipe.GetAddr())
 	return f.pipe.Send(request)
 }
 

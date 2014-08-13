@@ -204,14 +204,22 @@ func (s *ElectionSite) createVoteFromCurState() VoteMsg {
 		// to proceed leader election.  After leader election, this 
 		// node will either be a leader or follower, and it will need
 		// to synchornize with the peer's state (acceptedEpoch, currentEpoch).
-		epoch = 0
+		epoch = s.handler.GetBootstrapCurrentEpoch() 
 	}
 
+	// TODO : handle error	
+	txid, err := s.handler.GetLastLoggedTxid()
+	if err != nil {
+		// if txid is missing, set the txid to the smallest possible
+		// number.  This likely will cause the peer to ignore my vote. 
+		txid = s.handler.GetBootstrapTxid()
+	}
+	
 	vote := s.factory.CreateVote(s.master.round,
 		uint32(s.handler.GetStatus()),
 		epoch,
 		s.messenger.GetLocalAddr(), // this is localhost UDP port
-		uint64(s.handler.GetLastLoggedTxid()))
+		uint64(txid))
 
 	return vote
 }
@@ -849,20 +857,20 @@ func (w *PollWorker) compareVote(vote1, vote2 VoteMsg) CompareResult {
 		return GREATER
 	}
 
-	if vote1.GetCndTxnId() > vote2.GetCndTxnId() {
-		return GREATER
-	}
-
-	if vote1.GetCndId() > vote2.GetCndId() {
-		return GREATER
-	}
-
 	if vote1.GetEpoch() < vote2.GetEpoch() {
 		return LESSER
 	}
 
+	if vote1.GetCndTxnId() > vote2.GetCndTxnId() {
+		return GREATER
+	}
+
 	if vote1.GetCndTxnId() < vote2.GetCndTxnId() {
 		return LESSER
+	}
+
+	if vote1.GetCndId() > vote2.GetCndId() {
+		return GREATER
 	}
 
 	if vote1.GetCndId() < vote2.GetCndId() {

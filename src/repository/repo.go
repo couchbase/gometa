@@ -48,7 +48,7 @@ func (r *Repository) Set(key string, content []byte) error {
 	defer r.mutex.Unlock()
 
 	//convert key to its collatejson encoded byte representation
-	k, err := collateString(key)
+	k, err := CollateString(key)
 	if err != nil {
 		return err
 	}
@@ -68,7 +68,7 @@ func (r *Repository) Set(key string, content []byte) error {
 func (r *Repository) Get(key string) ([]byte, error) {
 
 	//convert key to its collatejson encoded byte representation
-	k, err := collateString(key)
+	k, err := CollateString(key)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func (r *Repository) Delete(key string) error {
 	defer r.mutex.Unlock()
 
 	//convert key to its collatejson encoded byte representation
-	k, err := collateString(key)
+	k, err := CollateString(key)
 	if err != nil {
 		return err
 	}
@@ -133,12 +133,12 @@ func (r *Repository) Close() {
 func (r *Repository) NewIterator(startKey, endKey string) (*RepoIterator, error) {
 	// TODO: Check if fdb is closed.
 
-	k1, err := collateString(startKey)
+	k1, err := CollateString(startKey)
 	if err != nil {
 		return nil, err
 	}
 
-	k2, err := collateString(endKey)
+	k2, err := CollateString(endKey)
 	if err != nil {
 		return nil, err
 	}
@@ -160,6 +160,7 @@ func (i *RepoIterator) Next() (key string, content []byte, err error) {
 		return "", nil, err
 	}
 
+	//TODO: Use collatejson?
 	key = string(doc.Key())
 	body := doc.Body()
 
@@ -172,11 +173,7 @@ func (i *RepoIterator) Close() {
 	i.iter.Close()
 }
 
-/////////////////////////////////////////////////////////////////////////////
-// Private Function
-/////////////////////////////////////////////////////////////////////////////
-
-func collateString(key string) ([]byte, error) {
+func CollateString(key string) ([]byte, error) {
 	if key == "" {
 		return nil, nil
 	}

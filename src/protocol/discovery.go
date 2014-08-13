@@ -153,7 +153,7 @@ func (s *ConsentState) voteAcceptedEpoch(voter string, newEpoch uint32) (uint32,
 	// remove the voter after reaching quorum.  In these
 	// cases, return false. 
 	s.acceptedEpochCond.Wait()
-	return s.acceptedEpoch, len(s.acceptedEpochSet) > int(s.ensembleSize/2) 
+	return s.acceptedEpoch, len(s.acceptedEpochSet) > int(s.ensembleSize/2)
 }
 
 func (s *ConsentState) removeAcceptedEpoch(voter string) {
@@ -163,7 +163,7 @@ func (s *ConsentState) removeAcceptedEpoch(voter string) {
 	delete(s.acceptedEpochSet, voter)
 }
 
-func (s *ConsentState) voteEpochAck(voter string) bool {
+func (s *ConsentState) voteEpochAck(voter string) (bool) {
 	s.ackEpochCond.L.Lock()
 	defer s.ackEpochCond.L.Unlock()
 
@@ -197,7 +197,7 @@ func (s *ConsentState) removeEpochAck(voter string) {
 	delete(s.ackEpochSet, voter)
 }
 
-func (s *ConsentState) voteNewLeaderAck(voter string) bool {
+func (s *ConsentState) voteNewLeaderAck(voter string) (bool) {
 	s.newLeaderAckCond.L.Lock()
 	defer s.newLeaderAckCond.L.Unlock()
 
@@ -221,7 +221,7 @@ func (s *ConsentState) voteNewLeaderAck(voter string) bool {
 	// remove the voter after reaching quorum.  In these
 	// cases, return false. 
 	s.newLeaderAckCond.Wait()
-	return len(s.newLeaderAckSet) > int(s.ensembleSize/2) 
+	return len(s.newLeaderAckSet) > int(s.ensembleSize/2)
 }
 
 func (s *ConsentState) removeNewLeaderAck(voter string) {
@@ -507,7 +507,8 @@ func (l *LeaderSyncProxy) updateAcceptedEpochAfterQuorum() error {
 			"LeaderSyncProxy.updateAcceptedEpochAfterQuorum(): Fail to reach quorum on accepted epoch (FollowerInfo)")
 	}
 
-	// update the accepted epoch based on the quorum result
+	// update the accepted epoch based on the quorum result.   This function
+	// will perform update only if the new epoch is larger than existing value.
 	l.handler.NotifyNewAcceptedEpoch(newEpoch)
 
 	return nil
@@ -549,6 +550,9 @@ func (l *LeaderSyncProxy) updateCurrentEpochAfterQuorum() error {
 	if err != nil {
 		return err
 	}
+	
+	// update the current epoch based on the quorum result.   This function
+	// will perform update only if the new epoch is larger than existing value.
 	l.handler.NotifyNewCurrentEpoch(epoch)
 
 	return nil
@@ -851,7 +855,15 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 		return err
 	}
 	if epoch > acceptedEpoch {
-		// update the accepted epoch based on the quorum result
+		// Update the accepted epoch based on the quorum result.   This function
+		// will perform update only if the new epoch is larger than existing value.
+		// Once the accepted epoch is updated, it will not be reset even if the
+		// sychornization with the leader fails.  Therefore, the follower will always
+		// remember the largest accepted epoch known to it, such that it can be used
+		// in the next round of voting.   Note that the leader derives this new accepted
+		// epoch only after it has polled from a quorum of followers.  So even if sync fails,
+		// it is unlikey that in the next sync, the leader will give a new accepted epoch smaller
+		// than what is being stored now. 
 		l.handler.NotifyNewAcceptedEpoch(epoch)
 	} else if epoch == acceptedEpoch {
 		// In ZK, if the local epoch (acceptedEpoch) == leader's epoch (epoch), it will replly an EpochAck with epoch = -1.  
@@ -864,7 +876,10 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 
 	// Notify the leader that I have accepted the epoch.  Send
 	// the last logged txid and current epoch to the leader.
-	txid := l.handler.GetLastLoggedTxid()
+	txid, err := l.handler.GetLastLoggedTxid()
+	if err != nil {
+		return err
+	}
 	currentEpoch, err := l.handler.GetCurrentEpoch()
 	if err != nil {
 		return err
@@ -890,7 +905,15 @@ func (l *FollowerSyncProxy) receiveAndUpdateCurrentEpoch() error {
 
 	// TODO : validate the epoch from leader
 
-	// update the accepted epoch based on the quorum result
+	// Update the current epoch based on the quorum result.   This function
+	// will perform update only if the new epoch is larger than existing value.
+	// Once the current epoch is updated, it will not be reset even if the
+	// sychornization with the leader fails.  Therefore, the follower will always
+	// remember the largest current epoch known to it, such that it can be used
+	// in the next round of voting.   Note that the leader derives this new current 
+	// epoch only after it has polled from a quorum of followers.  So even if sync fails,
+	// it is unlikey that in the next sync, the leader will give a new current epoch smaller
+	// than what is being stored now. 
 	l.handler.NotifyNewCurrentEpoch(epoch)
 
 	// Notify the leader that I have accepted the epoch

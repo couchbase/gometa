@@ -450,5 +450,11 @@ func (s *Server) GetState() *ServerState {
 }
 
 func (s *Server) UpdateWinningEpoch(epoch uint32) {
+	// update the election site with the new epoch, such that
+	// for new incoming vote, the server can reply with the
+	// new and correct epoch
 	s.site.UpdateWinningEpoch(epoch)
+	
+	// any new tnxid from now on will use the new epoch
+	common.SetEpoch(epoch)
 }

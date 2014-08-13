@@ -72,7 +72,7 @@ func RunLeaderServer(naddr string,
 	if err != nil {
 		return err 
 	}
-	ensembleSize := uint64(len(GetPeerUDPAddr())) + 1 // include the leader itself in the ensemble size 
+	ensembleSize := handler.GetEnsembleSize()
 	consentState := protocol.NewConsentState(naddr, epoch, ensembleSize)
 	defer consentState.Terminate()
 
@@ -261,7 +261,7 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 	// followed this leader.  Get the change channel to keep track of  number of followers.
 	// If the leader no longer has quorum, it needs to let go of its leadership.
 	leaderchangech := s.leader.GetEnsembleChangeChannel()
-	ensembleSize := uint64(len(GetPeerUDPAddr())) + 1 // include the leader itself in the ensemble size 
+	ensembleSize := s.handler.GetEnsembleSize()
 	
 	// notify the request processor to start processing new request
 	for {
@@ -289,7 +289,7 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 			return nil
 		case <-leaderchangech:
 			// Listen to any change to the leader's ensemble, and to ensure that the leader maintain majority. 
-			numFollowers := s.leader.GetCurrentEnsembleSize()
+			numFollowers := s.leader.GetActiveEnsembleSize()
 			if numFollowers <= int(ensembleSize/2) {
 				// leader looses majority of follower.   
 				log.Printf("LeaderServer.processRequest(): leader looses majority of follower. Stop client request processing.")

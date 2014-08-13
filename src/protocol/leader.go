@@ -51,11 +51,11 @@ type Leader struct {
 	handler       	ActionHandler
 	factory       	MsgFactory
 	quorums       	map[common.Txnid][]string
+	pendings  		[]ProposalMsg
 
 	// mutex protected variable
 	mutex     		sync.Mutex
 	followers 		map[string]*MessageListener
-	pendings  		[]ProposalMsg
 	isClosed  		bool
 	changech        chan bool 
 }
@@ -124,7 +124,7 @@ func (l *Leader) GetEnsembleChangeChannel() <-chan bool {
 // Get the current ensmeble size of the leader.
 // It is the number of followers + 1 (including leader)
 //
-func (l *Leader) GetCurrentEnsembleSize() int {
+func (l *Leader) GetActiveEnsembleSize() int {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 	
@@ -258,10 +258,12 @@ func (l *Leader) removeListener(peer *MessageListener) {
 //
 func (l *Leader) handleMessage(msg common.Packet, follower string) (err error) {
 
-	// TODO: Parallelize RequesMsg independently from AcceptMsg
-	l.mutex.Lock()
-	defer l.mutex.Unlock()
+	//TODO: This looks like causing deadlock when follower sends teh request to leader.
+	// Leader.handleMessage() also calls mutex.lock
+	//l.mutex.Lock()
+	//defer l.mutex.Unlock()
 
+	// TODO: Parallelize RequesMsg independently from AcceptMsg for performance
 	switch request := msg.(type) {
 	case RequestMsg:
 		// TODO: handle error
@@ -286,14 +288,15 @@ func (l *Leader) handleMessage(msg common.Packet, follower string) (err error) {
 //
 func (l *Leader) CreateProposal(host string, req RequestMsg) error {
 
-	// Create a new proposal.  Note that there is a possibility that
-	// GetNextTnxId() returns a id that is overflow.  In this case,
-	// the epoch portion of the TxnId will be incremented.  In other
-	// words, the leader will be automatically granted a new term.
-
-	// TODO : In ZK, when the id is overflow, the server is being restarted. Check
-	//        if this implementation is safe for leader election.
+	// This should be the only place to call GetNextTxnId().  This function
+	// can panic if the txnid overflows.   In this case, this should terminate
+	// the leader and forces a new election for getting a new epoch. ZK has the
+	// same behavior.
 	txnid := l.handler.GetNextTxnId()
+	log.Printf("Leader.CreateProposal(): New Proposal : Epoch %d, Counter %d", 
+			txnid.GetEpoch(), txnid.GetCounter())
+
+	// Create a new proposal	
 	proposal := l.factory.CreateProposal(uint64(txnid),
 		host,		// this is the host the originates the request
 		req.GetReqId(),
@@ -319,7 +322,8 @@ func (l *Leader) NewProposal(proposal ProposalMsg) {
 	// logging.  By logging first, this approach is more aligned with RAFT.
 	l.handler.LogProposal(proposal)
 
-	// TODO: Send an Ack to the leader itself.  In ZK, leader can vote.
+	// The leader votes for itself 
+	l.updateQuorum(common.Txnid(proposal.GetTxnid()), l.GetFollowerId())
 
 	// Send the proposal to follower
 	l.sendProposal(proposal)
@@ -329,8 +333,8 @@ func (l *Leader) NewProposal(proposal ProposalMsg) {
 // send the proposal to the followers
 //
 func (l *Leader) sendProposal(proposal ProposalMsg) {
-
-	// TODO: Does this need to be mutex-ed? 
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
 
 	// Send the request to the followers
 	for _, f := range l.followers {
@@ -365,9 +369,12 @@ func (l *Leader) handleAccept(msg AcceptMsg) error {
 	// than others.  Therefore, the proposal may be
 	// committed, before the follower can Ack.
 	mtxid := common.Txnid(msg.GetTxnid())
+	/*
+	lastCommitted won't be initialized properly 
 	if l.lastCommitted >= mtxid {
 		return nil
 	}
+	*/
 
 	// look for the proposal with the matching txnid
 	for i := 0; i < len(l.pendings); i++ {
@@ -391,6 +398,7 @@ func (l *Leader) updateQuorum(txid common.Txnid, fid string) {
 	if l.quorums[txid] == nil {
 		l.quorums[txid] = make([]string, 0, common.MAX_FOLLOWERS)
 	}
+	log.Printf("Leader.updateQuorum: current quorum for txid %d : %d", uint64(txid), len(l.quorums[txid]))
 
 	var found bool
 	for i := 0; i < len(l.quorums[txid]); i++ {
@@ -404,6 +412,8 @@ func (l *Leader) updateQuorum(txid common.Txnid, fid string) {
 	if !found {
 		l.quorums[txid] = append(l.quorums[txid], fid)
 	}
+	
+	log.Printf("Leader.updateQuorum: new quorum for txid %d : %d", uint64(txid), len(l.quorums[txid]))
 }
 
 //
@@ -423,7 +433,7 @@ func (l *Leader) hasQuorum(txid common.Txnid) bool {
 		return false
 	}
 
-	return len(accepted) >= (len(l.followers)/2 + 1)
+	return uint64(len(accepted)) > (l.handler.GetEnsembleSize()/2)
 }
 
 //

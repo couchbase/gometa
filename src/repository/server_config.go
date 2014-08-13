@@ -31,14 +31,26 @@ func (r *ServerConfig) GetCurrentEpoch() (uint32, error) {
 	return uint32(value), err
 }
 
+func (r *ServerConfig) GetBootstrapCurrentEpoch() uint32 {
+	return uint32(0) 
+}
+
 func (r *ServerConfig) GetAcceptedEpoch() (uint32, error) {
 	value, err := r.GetInt(common.CONFIG_ACCEPTED_EPOCH)
 	return uint32(value), err
 }
 
+func (r *ServerConfig) GetBootstrapAcceptedEpoch() uint32 {
+	return uint32(0)
+}
+
 func (r *ServerConfig) GetLastLoggedTxnId() (uint64, error) {
 	value, err := r.GetInt(common.CONFIG_LAST_LOGGED_TXID)
 	return value, err
+}
+
+func (r *ServerConfig) GetBootstrapTxnId() uint64 {
+	return uint64(0)
 }
 
 func (r *ServerConfig) SetCurrentEpoch(epoch uint32) {
@@ -120,8 +132,8 @@ func (r *ServerConfig) bootstrap() {
 	value, err := r.GetInt(common.CONFIG_MAGIC)
 	if err != nil || value != common.CONFIG_MAGIC_VALUE {
 		r.LogInt(common.CONFIG_MAGIC, common.CONFIG_MAGIC_VALUE)
-		r.SetCurrentEpoch(0)
-		r.SetAcceptedEpoch(0)
-		r.SetLastLoggedTxid(0)
+		r.SetCurrentEpoch(r.GetBootstrapCurrentEpoch())
+		r.SetAcceptedEpoch(r.GetBootstrapAcceptedEpoch())
+		r.SetLastLoggedTxid(r.GetBootstrapTxnId())
 	}
 }

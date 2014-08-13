@@ -2,6 +2,7 @@ package common
 
 import (
 	"sync"
+	"fmt"
 )
 
 type Txnid uint64
@@ -10,26 +11,28 @@ var gEpoch uint64 = 0
 var gCounter uint64 = 0
 var gMutex sync.Mutex
 
-var mask uint64 = 0x00000000FFFFFFFF
+var mask uint64 = 0x0000000000000000FFFFFFFFFFFFFFFF
 
 func GetNextTxnId() Txnid {
 	gMutex.Lock()
 	defer gMutex.Unlock()
 
-	// Increment the epoch if the counter overflows.
-	// This is equivalent to a new leader being selected.
-	// Note that we check 0xFFFFFFFE so that if we do
-	// (Txnid + 1), it will not overflow.
-	// TODO: Need to check if we need to resync the state if this happens.
-	// TODO: Need to see if we need to make the epoch and id volatile
-	gCounter++
-	if gCounter == 0xFFFFFFFE {
-		gEpoch++
-		gCounter = 0
+	// Increment the epoch. If the counter overflows, panic.
+	if gCounter == 0xFFFFFFFF {
+		panic(fmt.Sprintf("Counter overflows for epoch %d", gEpoch))
 	}
+	gCounter++
 
-	epoch := gEpoch << 32
+	epoch := uint64(gEpoch << 32)
 	return Txnid(epoch + gCounter)
+}
+
+func SetEpoch(newEpoch uint32) {
+	gMutex.Lock()
+	defer gMutex.Unlock()
+	
+	gEpoch = uint64(newEpoch)
+	gCounter = 0
 }
 
 func (id Txnid) GetEpoch() uint64 {
@@ -38,6 +41,7 @@ func (id Txnid) GetEpoch() uint64 {
 }
 
 func (id Txnid) GetCounter() uint64 {
-	v := uint64(id)
-	return (v | mask)
+	v := uint32(id)
+	return uint64(v)
+	//return uint64(v | mask)
 }

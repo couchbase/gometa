@@ -9,6 +9,7 @@ import (
 	http "net/http"
 	"protocol"
 	"fmt"
+	"time"
 )
 
 /////////////////////////////////////////////////
@@ -87,8 +88,8 @@ func (s *RequestReceiver) NewRequest(message []byte, reply *[]byte) error {
 		return err 
 	}
 
-	// TODO : Assign an unique id to the request msg
-	id := uint64(1)
+	// TODO: Should make the requst id as a string?
+	id := uint64(time.Now().UnixNano())
 	request := s.server.factory.CreateRequest(id,
 		req.GetOpCode(),
 		req.GetKey(),

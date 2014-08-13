@@ -32,6 +32,14 @@ func NewServerAction(s *Server) *ServerAction {
 }
 
 ////////////////////////////////////////////////////////////////////////////
+// Server Action for Environment 
+/////////////////////////////////////////////////////////////////////////////
+
+func (a *ServerAction) GetEnsembleSize() uint64 {
+	return uint64(len(GetPeerUDPAddr())) + 1  // including myself 
+}
+
+////////////////////////////////////////////////////////////////////////////
 // Server Action for Broadcast stage (normal execution)
 /////////////////////////////////////////////////////////////////////////////
 
@@ -71,8 +79,13 @@ func (a *ServerAction) GetFollowerId() string {
 // Server Action for retrieving repository state
 /////////////////////////////////////////////////////////////////////////////
 
-func (a *ServerAction) GetLastLoggedTxid() common.Txnid {
-	return a.log.GetLastLoggedTxnId()
+func (a *ServerAction) GetLastLoggedTxid() (common.Txnid, error) {
+	val, err := a.config.GetLastLoggedTxnId()
+	return common.Txnid(val), err
+}
+
+func (a *ServerAction) GetBootstrapTxid() common.Txnid {
+	return common.Txnid(a.config.GetBootstrapTxnId())
 }
 
 func (a *ServerAction) GetStatus() protocol.PeerStatus {
@@ -83,8 +96,16 @@ func (a *ServerAction) GetCurrentEpoch() (uint32, error) {
 	return a.config.GetCurrentEpoch()
 }
 
+func (a *ServerAction) GetBootstrapCurrentEpoch() uint32 {
+	return a.config.GetBootstrapCurrentEpoch()
+}
+
 func (a *ServerAction) GetAcceptedEpoch() (uint32, error) {
 	return a.config.GetAcceptedEpoch()
+}
+
+func (a *ServerAction) GetBootstrapAcceptedEpoch() uint32 {
+	return a.config.GetBootstrapAcceptedEpoch()
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -92,12 +113,22 @@ func (a *ServerAction) GetAcceptedEpoch() (uint32, error) {
 /////////////////////////////////////////////////////////////////////////////
 
 func (a *ServerAction) NotifyNewAcceptedEpoch(epoch uint32) {
-	a.config.SetAcceptedEpoch(epoch)
+	oldEpoch, _ := a.GetAcceptedEpoch()
+	
+	// update only if the new epoch is larger
+	if oldEpoch < epoch {  
+		a.config.SetAcceptedEpoch(epoch)
+	}
 }
 
 func (a *ServerAction) NotifyNewCurrentEpoch(epoch uint32) {
-	a.config.SetCurrentEpoch(epoch)
-	a.server.UpdateWinningEpoch(epoch)
+	oldEpoch, _ := a.GetCurrentEpoch()
+	
+	// update only if the new epoch is larger
+	if oldEpoch < epoch {  
+		a.config.SetCurrentEpoch(epoch)
+		a.server.UpdateWinningEpoch(epoch)
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -138,7 +169,11 @@ func (a *ServerAction) startLogStreamer(startTxid uint64,
 	}
 
 	// stream the last entry with txid again
-	msg := a.factory.CreateLogEntry(startTxid, uint32(common.OPCODE_STREAM_END_MARKER), "StreamEnd", []byte("StreamEnd"))
+	body, err = repo.CollateString("StreamEnd")
+	if err != nil {
+		body = []byte("StreamEnd")
+	}
+	msg := a.factory.CreateLogEntry(startTxid, uint32(common.OPCODE_STREAM_END_MARKER), "StreamEnd", body)
 	logChan <- msg
 
 	// TODO : The item is supposed to be with even if the channel is closed. Double check.

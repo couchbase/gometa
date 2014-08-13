@@ -14,7 +14,6 @@ import (
 type CommitLog struct {
 	repo            *Repository
 	factory         *message.ConcreteMsgFactory
-	lastLoggedTxnid common.Txnid
 	mutex           sync.Mutex
 }
 
@@ -32,10 +31,8 @@ type LogIterator struct {
 // Create a new commit log
 //
 func NewCommitLog(repo *Repository) *CommitLog {
-	// TODO: Need to get the lastLoggedTxnid from repository during bootstrap
 	return &CommitLog{repo: repo, 
-	                  factory: message.NewConcreteMsgFactory(),
-	                  lastLoggedTxnid : 0}
+	                  factory: message.NewConcreteMsgFactory()}
 }
 
 //
@@ -55,18 +52,7 @@ func (r *CommitLog) Log(txid common.Txnid, op common.OpCode, key string, content
 		return err
 	}
 
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-	r.lastLoggedTxnid = txid
-
 	return nil
-}
-
-//
-// Get the last logged Txnid
-//
-func (r *CommitLog) GetLastLoggedTxnId() common.Txnid {
-	return r.lastLoggedTxnid
 }
 
 //
