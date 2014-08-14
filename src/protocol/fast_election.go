@@ -12,14 +12,6 @@ import (
 // Type Declaration
 /////////////////////////////////////////////////////////////////////////////
 
-type CompareResult byte
-
-const (
-	EQUAL CompareResult = iota
-	GREATER
-	LESSER
-)
-
 //
 // The ElectionSite controls all the participants of a election.
 // 1) messenger - repsonsible for sending messages to other voter
@@ -207,12 +199,11 @@ func (s *ElectionSite) createVoteFromCurState() VoteMsg {
 		epoch = s.handler.GetBootstrapCurrentEpoch() 
 	}
 
-	// TODO : handle error	
 	txid, err := s.handler.GetLastLoggedTxid()
 	if err != nil {
 		// if txid is missing, set the txid to the smallest possible
 		// number.  This likely will cause the peer to ignore my vote. 
-		txid = s.handler.GetBootstrapTxid()
+		txid = s.handler.GetBootstrapLastLoggedTxid()
 	}
 	
 	vote := s.factory.CreateVote(s.master.round,
@@ -718,13 +709,13 @@ func (w *PollWorker) handleVoteForElectingPeer(voter net.Addr, vote VoteMsg) boo
 	compareRound := w.compareRound(vote)
 
 	// if the incoming vote has a greater round, re-ballot.
-	if compareRound == GREATER {
+	if compareRound == common.GREATER {
 
 		// update the current round.  This need to be done
 		// before updateProposed() is called.
 		w.site.master.setCurrentRound(vote.GetRound())
 		
-		if w.compareVoteWithCurState(vote) == GREATER {
+		if w.compareVoteWithCurState(vote) == common.GREATER {
 			// Update my vote if the incoming vote is larger.
 			w.ballot.resetAndUpdateProposed(vote, w.site)
 		} else {
@@ -739,10 +730,10 @@ func (w *PollWorker) handleVoteForElectingPeer(voter net.Addr, vote VoteMsg) boo
 		// and stop election
 		return w.acceptAndCheckQuorum(voter, vote)
 
-	} else if compareRound == EQUAL {
+	} else if compareRound == common.EQUAL {
 		// if it is the same round and the incoming vote has higher epoch or txid,
 		// update myself to the incoming vote and broadcast my new vote
-		if w.compareVoteWithProposed(vote) == GREATER {
+		if w.compareVoteWithProposed(vote) == common.GREATER {
 			// update and notify that our new vote
 		    w.ballot.updateProposed(vote, w.site)
 			w.site.messenger.Multicast(w.cloneProposedVote(), w.site.ensemble)
@@ -788,7 +779,7 @@ func (w *PollWorker) handleVoteForActivePeer(voter net.Addr, vote VoteMsg) bool 
 	// compare the round
 	compareRound := w.compareRound(vote)
 
-	if compareRound == EQUAL {
+	if compareRound == common.EQUAL {
 		// If I recieve a vote with the same round, then it could mean
 		// that an esemble is forming from a set of electing peers.  Add
 		// this vote to the list of received votes.  All the received votes
@@ -834,56 +825,59 @@ func (w *PollWorker) handleVoteForActivePeer(voter net.Addr, vote VoteMsg) bool 
 //
 // Compare the current round with the given vote
 //
-func (w *PollWorker) compareRound(vote VoteMsg) CompareResult {
+func (w *PollWorker) compareRound(vote VoteMsg) common.CompareResult {
 
 	currentRound := w.site.master.round
 
 	if vote.GetRound() == currentRound {
-		return EQUAL
+		return common.EQUAL
 	}
 
 	if vote.GetRound() > currentRound {
-		return GREATER
+		return common.GREATER
 	}
 
-	return LESSER
+	return common.LESSER
 }
 
 //
 // Compare two votes.  Return true if vote1 is larger than vote2.
 //
-func (w *PollWorker) compareVote(vote1, vote2 VoteMsg) CompareResult {
-	if vote1.GetEpoch() > vote2.GetEpoch() {
-		return GREATER
-	}
+func (w *PollWorker) compareVote(vote1, vote2 VoteMsg) common.CompareResult {
 
-	if vote1.GetEpoch() < vote2.GetEpoch() {
-		return LESSER
+	result := common.CompareEpoch(vote1.GetEpoch(), vote2.GetEpoch())
+	
+	if result == common.MORE_RECENT {
+		return common.GREATER
 	}
-
+	
+	if result == common.LESS_RECENT {
+		return common.LESSER
+	}
+	
 	if vote1.GetCndTxnId() > vote2.GetCndTxnId() {
-		return GREATER
+		return common.GREATER
 	}
 
 	if vote1.GetCndTxnId() < vote2.GetCndTxnId() {
-		return LESSER
+		return common.LESSER
 	}
 
 	if vote1.GetCndId() > vote2.GetCndId() {
-		return GREATER
+		return common.GREATER
 	}
 
 	if vote1.GetCndId() < vote2.GetCndId() {
-		return LESSER
+		return common.LESSER
 	}
 
-	return EQUAL
+	return common.EQUAL
 }
 
 //
 // Compare the given vote with currennt state (epoch, lastLoggedTxnid)
 //
-func (w *PollWorker) compareVoteWithCurState(vote VoteMsg) CompareResult {
+func (w *PollWorker) compareVoteWithCurState(vote VoteMsg) common.CompareResult {
 
 	vote2 := w.site.createVoteFromCurState()
 	return w.compareVote(vote, vote2)
@@ -892,7 +886,7 @@ func (w *PollWorker) compareVoteWithCurState(vote VoteMsg) CompareResult {
 //
 // Compare the given vote with proposed vote
 //
-func (w *PollWorker) compareVoteWithProposed(vote VoteMsg) CompareResult {
+func (w *PollWorker) compareVoteWithProposed(vote VoteMsg) common.CompareResult {
 
 	return w.compareVote(vote, w.ballot.result.proposed)
 }
@@ -924,7 +918,7 @@ func (w *PollWorker) checkQuorum(votes map[string]VoteMsg, candidate VoteMsg) bo
 	for _, vote := range votes {
 		if PeerStatus(vote.GetStatus()) == ELECTING ||
 			PeerStatus(candidate.GetStatus()) == ELECTING {
-			if w.compareVote(vote, candidate) == EQUAL &&
+			if w.compareVote(vote, candidate) == common.EQUAL &&
 				vote.GetRound() == candidate.GetRound() {
 				count++
 			}

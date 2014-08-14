@@ -45,7 +45,11 @@ type ActionHandler interface {
 	//
 	GetLastLoggedTxid() (common.Txnid, error)
 	
-	GetBootstrapTxid() common.Txnid
+	GetBootstrapLastLoggedTxid() common.Txnid
+
+	GetLastCommittedTxid() (common.Txnid, error)
+	
+	GetBootstrapLastCommittedTxid() common.Txnid
 
 	GetStatus() PeerStatus
 
@@ -66,12 +70,14 @@ type ActionHandler interface {
 
 	GetCommitedEntries(txid uint64) (chan LogEntryMsg, chan error, error)
 
-	CommitEntry(txid uint64, op uint32, key string, content []byte) error
+	AppendLog(txid uint64, op uint32, key string, content []byte) error
 
 	// Set new accepted epoch as well as creating new txnid
 	NotifyNewAcceptedEpoch(uint32)
 
 	NotifyNewCurrentEpoch(uint32)
+	
+	NotifyNewLastCommittedTxid(uint64)
 
 	//
 	// The following API are used during normal execution

@@ -49,7 +49,16 @@ func (r *ServerConfig) GetLastLoggedTxnId() (uint64, error) {
 	return value, err
 }
 
-func (r *ServerConfig) GetBootstrapTxnId() uint64 {
+func (r *ServerConfig) GetBootstrapLastLoggedTxnId() uint64 {
+	return uint64(0)
+}
+
+func (r *ServerConfig) GetLastCommittedTxnId() (uint64, error) {
+	value, err := r.GetInt(common.CONFIG_LAST_COMMITTED_TXID)
+	return value, err
+}
+
+func (r *ServerConfig) GetBootstrapLastCommittedTxnId() uint64 {
 	return uint64(0)
 }
 
@@ -63,6 +72,10 @@ func (r *ServerConfig) SetAcceptedEpoch(epoch uint32) {
 
 func (r *ServerConfig) SetLastLoggedTxid(lastLoggedTxid uint64) {
 	r.LogInt(common.CONFIG_LAST_LOGGED_TXID, lastLoggedTxid)
+}
+
+func (r *ServerConfig) SetLastCommittedTxid(lastCommittedTxid uint64) {
+	r.LogInt(common.CONFIG_LAST_COMMITTED_TXID, lastCommittedTxid)
 }
 
 //
@@ -134,6 +147,7 @@ func (r *ServerConfig) bootstrap() {
 		r.LogInt(common.CONFIG_MAGIC, common.CONFIG_MAGIC_VALUE)
 		r.SetCurrentEpoch(r.GetBootstrapCurrentEpoch())
 		r.SetAcceptedEpoch(r.GetBootstrapAcceptedEpoch())
-		r.SetLastLoggedTxid(r.GetBootstrapTxnId())
+		r.SetLastLoggedTxid(r.GetBootstrapLastLoggedTxnId())
+		r.SetLastCommittedTxid(r.GetBootstrapLastCommittedTxnId())
 	}
 }

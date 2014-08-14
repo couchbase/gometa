@@ -19,3 +19,13 @@ func SafeRun(funcName string, f FuncToRun) {
 
 	f()
 }
+
+type CompareResult byte
+
+const (
+	EQUAL CompareResult = iota
+	GREATER
+	LESSER
+ 	MORE_RECENT	
+	LESS_RECENT	
+)

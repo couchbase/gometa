@@ -274,7 +274,7 @@ func (l *Leader) handleMessage(msg common.Packet, follower string) (err error) {
 			return err
 		}
 	default:
-		// TODO : if we don't recoginize the message.  Just log it and ignore.
+		log.Printf("Leader.handleMessage(): Leader unable to process message of type %s. Ignore message.", request.Name())
 	}
 	return nil
 }
@@ -318,8 +318,6 @@ func (l *Leader) NewProposal(proposal ProposalMsg) {
 	l.pendings = append(l.pendings, proposal)
 
 	// Call out to log the proposal
-	// This deviates from ZK where the proposal is sent to followers before
-	// logging.  By logging first, this approach is more aligned with RAFT.
 	l.handler.LogProposal(proposal)
 
 	// The leader votes for itself 
@@ -424,9 +422,6 @@ func (l *Leader) hasQuorum(txid common.Txnid) bool {
 	// hierarchy quorums for scalability (servers are put into different
 	// groups and quorums are obtained within a group).
 
-	// TODO: The implementation assumes the number of followers are stable.
-	// Need to work on variable number of followers.
-
 	accepted := l.quorums[txid]
 	if accepted == nil {
 		// we need at least one follower to accept.
@@ -480,7 +475,6 @@ func (l *Leader) commit(txid common.Txnid, p ProposalMsg) {
 		// TODO throw error
 	}
 
-	// TODO: send response to client
 	// TODO: update election site
 }
 
@@ -488,13 +482,11 @@ func (l *Leader) commit(txid common.Txnid, p ProposalMsg) {
 // send commit messages to all followers
 //
 func (l *Leader) sendCommit(txnid common.Txnid) error {
-
-	// TODO: Does this need to be mutex-ed?
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
 
 	msg := l.factory.CreateCommit(uint64(txnid))
 
-	// TODO: check if we need to send to all followers or
-	// just the follower which responds
 	// Send the request to the followers
 	for _, f := range l.followers {
 		f.pipe.Send(msg)

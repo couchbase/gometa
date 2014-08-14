@@ -107,6 +107,8 @@ const (
 //
 func NewConsentState(sid string, epoch uint32, ensemble uint64) *ConsentState {
 
+	epoch = common.CompareAndIncrementEpoch(epoch, 0) // increment epoch to next value
+	
 	state := &ConsentState{acceptedEpoch: epoch,
 		acceptedEpochSet: make(map[string]uint32),
 		ackEpochSet:      make(map[string]string),
@@ -136,9 +138,8 @@ func (s *ConsentState) voteAcceptedEpoch(voter string, newEpoch uint32) (uint32,
 
 	s.acceptedEpochSet[voter] = newEpoch
 
-	if newEpoch >= s.acceptedEpoch {
-		s.acceptedEpoch = newEpoch + 1
-	}
+	// This function can panic if we exceed epoch limit	
+	s.acceptedEpoch = common.CompareAndIncrementEpoch(newEpoch, s.acceptedEpoch)
 
 	if len(s.acceptedEpochSet) > int(s.ensembleSize/2) {
 		// reach quorum. Notify
@@ -486,6 +487,8 @@ func (l *LeaderSyncProxy) execute(donech chan bool) {
 
 func (l *LeaderSyncProxy) updateAcceptedEpochAfterQuorum() error {
 
+	log.Printf("LeaderSyncProxy.updateAcceptedEpochAfterQuroum()")
+
 	// Get my follower's vote for the accepted epoch
 	packet, err := listen("FollowerInfo", l.follower)
 	if err != nil {
@@ -516,6 +519,8 @@ func (l *LeaderSyncProxy) updateAcceptedEpochAfterQuorum() error {
 
 func (l *LeaderSyncProxy) notifyNewEpoch() error {
 
+	log.Printf("LeaderSyncProxy.notifyNewEpoch()")
+	
 	epoch, err := l.handler.GetAcceptedEpoch()
 	if err != nil {
 		return err
@@ -526,6 +531,8 @@ func (l *LeaderSyncProxy) notifyNewEpoch() error {
 
 func (l *LeaderSyncProxy) updateCurrentEpochAfterQuorum() error {
 
+	log.Printf("LeaderSyncProxy.updateCurrentEpochAfterQuorum()")
+	
 	// Get my follower's vote for the epoch ack
 	packet, err := listen("EpochAck", l.follower)
 	if err != nil {
@@ -560,8 +567,10 @@ func (l *LeaderSyncProxy) updateCurrentEpochAfterQuorum() error {
 
 func (l *LeaderSyncProxy) declareNewLeaderAfterQuorum() error {
 
+	log.Printf("LeaderSyncProxy.declareNewLeaderAfterQuorum()")
+	
 	// return the new epoch to the follower
-	epoch, err := l.handler.GetAcceptedEpoch()
+	epoch, err := l.handler.GetCurrentEpoch()
 	if err != nil {
 		return err
 	}
@@ -581,9 +590,7 @@ func (l *LeaderSyncProxy) declareNewLeaderAfterQuorum() error {
 	ack = ack // TODO : just to get around compile error
 
 	// update my vote and wait for quorum of ack from followers
-	log.Printf("LeaderSyncProxy: before voteNewLeaderAck")
 	ok := l.state.voteNewLeaderAck(l.GetFid())
-	log.Printf("LeaderSyncProxy: after voteNewLeaderAck")
 	if !ok {
 		return common.NewError(common.ELECTION_ERROR, 
 			"LeaderSyncProxy.declareNewLeaderAfterQuorum(): Fail to reach quorum on NewLeaderAck")
@@ -594,6 +601,8 @@ func (l *LeaderSyncProxy) declareNewLeaderAfterQuorum() error {
 
 func (l *LeaderSyncProxy) syncWithLeader() error {
 
+	log.Printf("LeaderSyncProxy.syncWithLeader()")
+	
 	logChan, errChan, err := l.handler.GetCommitedEntries(l.followerState.lastLoggedTxid)
 	if err != nil {
 		return err
@@ -609,14 +618,10 @@ func (l *LeaderSyncProxy) syncWithLeader() error {
 
 			err = send(entry, l.follower)
 			if err != nil {
-				// TODO: What to do with the peer?  Need to close the pipe.
 				return err
 			}
 
-			// TODO: Need to send the proposal in flight
-
 		case err := <-errChan:
-			// TODO : Need to close the pipe
 			if err != nil {
 				return err
 			}
@@ -824,6 +829,8 @@ func (l *FollowerSyncProxy) execute(donech chan bool) {
 
 func (l *FollowerSyncProxy) sendFollowerInfo() error {
 
+	log.Printf("LeaderSyncProxy.sendFollowerInfo()")
+	
 	// Send my accepted epoch to the leader for voting (don't send current epoch)
 	epoch, err := l.handler.GetAcceptedEpoch()
 	if err != nil {
@@ -835,6 +842,8 @@ func (l *FollowerSyncProxy) sendFollowerInfo() error {
 
 func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 
+	log.Printf("LeaderSyncProxy.receiveAndUpdateAcceptedEpoch()")
+	
 	// Get the accepted epoch from the leader.   This epoch
 	// is already being voted on by multiple followers (the highest
 	// epoch among the quorum of followers).
@@ -891,6 +900,8 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 
 func (l *FollowerSyncProxy) receiveAndUpdateCurrentEpoch() error {
 
+	log.Printf("LeaderSyncProxy.receiveAndUpdateCurrentEpoch()")
+	
 	// Get the accepted epoch from the leader.   This epoch
 	// is already being voted on by multiple followers (the highest
 	// epoch among the quorum of followers).
@@ -923,10 +934,8 @@ func (l *FollowerSyncProxy) receiveAndUpdateCurrentEpoch() error {
 
 func (l *FollowerSyncProxy) syncReceive() error {
 
-	// skip the first log entry if l.state.lastLoggedTxid is not 0.
-	// lastLoggedTxid == 0  means empty log in local repository, and we don't want to skip
-	skip := (l.state.lastLoggedTxid != 0)
-
+	log.Printf("LeaderSyncProxy.syncReceive()")
+	
 	for {
 		packet, err := listen("LogEntry", l.leader)
 		if err != nil {
@@ -934,28 +943,32 @@ func (l *FollowerSyncProxy) syncReceive() error {
 		}
 
 		entry := packet.(LogEntryMsg)
-		lastLoggedTxnid := entry.GetTxnid()
+		lastTxnid := entry.GetTxnid()
 
-		// If this is the last one, then return.
+		// If this is the first one, skip
+		if entry.GetOpCode() == uint32(common.OPCODE_STREAM_BEGIN_MARKER) {
+			log.Printf("LeaderSyncProxy.syncReceive(). Receive stream_begin.  Txid : %d", lastTxnid)
+			
+			// If it is the first entry, we expect the entry txid to be the same as my last logged txid
+			if lastTxnid != l.state.lastLoggedTxid {
+				return common.NewError(common.PROTOCOL_ERROR, 
+					fmt.Sprintf("Expect to receive first LogEntryMsg with txnid = %d. Get %d", l.state.lastLoggedTxid, lastTxnid))
+			}
+			
+			continue
+		}
+		
+		// If this is the last one, then set the CommittedTxnid 
 		if entry.GetOpCode() == uint32(common.OPCODE_STREAM_END_MARKER) {
+			log.Printf("LeaderSyncProxy.syncReceive(). Receive stream_end.  Txid : %d", lastTxnid)
+			l.handler.NotifyNewLastCommittedTxid(lastTxnid)		
 			return nil
 		}
 	
-		// If it is the first entry, we expect the entry txid to be the same as my last logged txid
-		if skip && lastLoggedTxnid != l.state.lastLoggedTxid {
-			return common.NewError(common.PROTOCOL_ERROR, 
-					fmt.Sprintf("Expect to receive first LogEntryMsg with txnid = %d. Get %d", l.state.lastLoggedTxid, lastLoggedTxnid))
-		}
-
-		if skip {
-			// always skip the first entry since I have this entry in my commit log already
-			skip = false 
-		} else {
-			// write the new commit entry
-			err = l.handler.CommitEntry(entry.GetTxnid(), entry.GetOpCode(), entry.GetKey(), entry.GetContent())
-			if err != nil {
-				return err
-			}
+		// write the new commit entry
+		err = l.handler.AppendLog(entry.GetTxnid(), entry.GetOpCode(), entry.GetKey(), entry.GetContent())
+		if err != nil {
+			return err
 		}
 	}
 

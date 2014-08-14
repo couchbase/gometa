@@ -2,6 +2,7 @@ package common
 
 import (
 	"time"
+	"math"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -27,5 +28,8 @@ var PREFIX_COMMIT_LOG_PATH = "/couchbase/cstore/100/commitlog/"      // Director
 var CONFIG_ACCEPTED_EPOCH = "AcceptedEpoch"                          // Server Config Param : AcceptedEpoch
 var CONFIG_CURRENT_EPOCH = "CurrentEpoch"                            // Server Config Param : CurrentEpoch
 var CONFIG_LAST_LOGGED_TXID = "LastLoggedTxid"                       // Server Config Param : LastLoggedTxid
+var CONFIG_LAST_COMMITTED_TXID = "LastCommittedTxid"                 // Server Config Param : LastCommittedTxid
 var CONFIG_MAGIC = "MagicNumber"                                     // Server Config Param : Magic Number 
 var CONFIG_MAGIC_VALUE uint64 = 0x0123456789                         // Server Config Param : Magic Number Value
+var MAX_EPOCH uint32 = math.MaxUint32                                // Max value for epoch 
+var MAX_COUNTER uint32 = math.MaxUint32                              // Max value for counter 

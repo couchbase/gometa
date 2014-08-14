@@ -4,6 +4,7 @@ import (
 	"common"
 	"protocol"
 	repo "repository"
+	"log"	
 )
 
 ////////////////////////////////////////////////////////////////////////////
@@ -45,15 +46,13 @@ func (a *ServerAction) GetEnsembleSize() uint64 {
 
 func (a *ServerAction) Commit(p protocol.ProposalMsg) error {
 
+	// TODO: Make the whole func transactional
 	err := a.persistChange(common.OpCode(p.GetOpCode()), p)
 	if err != nil {
 		return err
 	}
-
-	err = a.appendCommitLog(common.Txnid(p.GetTxnid()), common.OpCode(p.GetOpCode()), p.GetKey(), p.GetContent())
-	if err != nil {
-		return err
-	}
+	
+	a.config.SetLastCommittedTxid(p.GetTxnid())
 
 	a.server.UpdateStateOnCommit(p)
 
@@ -62,6 +61,11 @@ func (a *ServerAction) Commit(p protocol.ProposalMsg) error {
 
 func (a *ServerAction) LogProposal(p protocol.ProposalMsg) error {
 
+	err := a.appendCommitLog(common.Txnid(p.GetTxnid()), common.OpCode(p.GetOpCode()), p.GetKey(), p.GetContent())
+	if err != nil {
+		return err
+	}
+	
 	a.server.UpdateStateOnNewProposal(p)
 
 	return nil
@@ -84,8 +88,17 @@ func (a *ServerAction) GetLastLoggedTxid() (common.Txnid, error) {
 	return common.Txnid(val), err
 }
 
-func (a *ServerAction) GetBootstrapTxid() common.Txnid {
-	return common.Txnid(a.config.GetBootstrapTxnId())
+func (a *ServerAction) GetBootstrapLastLoggedTxid() common.Txnid {
+	return common.Txnid(a.config.GetBootstrapLastLoggedTxnId())
+}
+
+func (a *ServerAction) GetLastCommittedTxid() (common.Txnid, error) {
+	val, err := a.config.GetLastCommittedTxnId()
+	return common.Txnid(val), err
+}
+
+func (a *ServerAction) GetBootstrapLastCommittedTxid() common.Txnid {
+	return common.Txnid(a.config.GetBootstrapLastCommittedTxnId())
 }
 
 func (a *ServerAction) GetStatus() protocol.PeerStatus {
@@ -131,6 +144,11 @@ func (a *ServerAction) NotifyNewCurrentEpoch(epoch uint32) {
 	}
 }
 
+func (a *ServerAction) NotifyNewLastCommittedTxid(txid uint64) {
+
+	a.config.SetLastCommittedTxid(txid)
+}
+
 ////////////////////////////////////////////////////////////////////////////
 // Function for discovery phase
 /////////////////////////////////////////////////////////////////////////////
@@ -161,25 +179,36 @@ func (a *ServerAction) startLogStreamer(startTxid uint64,
 	defer iter.Close()
 
 	// TODO : Need to lock the commitLog so there is no new commit while streaming
+	
+	// stream the first entry with given txid
+	msg := a.factory.CreateLogEntry(startTxid, uint32(common.OPCODE_STREAM_BEGIN_MARKER), "StreamBegin", ([]byte)("StreamBegin"))
+	logChan <- msg
+	
 	txnid, op, key, body, err := iter.Next() 
 	for err == nil  {
-		msg := a.factory.CreateLogEntry(uint64(txnid), uint32(op), key, body)
-		logChan <- msg
+		// only stream entry with a txid greater than the given one.  The caller would already 
+		// have the entry for startTxid. If the caller use the boostrap value for txnid (0),
+		// then this will stream everything.
+		if uint64(txnid) > startTxid {
+			msg := a.factory.CreateLogEntry(uint64(txnid), uint32(op), key, body)
+			logChan <- msg
+		}
 		txnid, op, key, body, err = iter.Next()
 	}
 
-	// stream the last entry with txid again
-	msg := a.factory.CreateLogEntry(startTxid, uint32(common.OPCODE_STREAM_END_MARKER), "StreamEnd", ([]byte)("StreamEnd"))
+	// stream the last entry with the committed txid 
+	lastCommitted, err := a.GetLastCommittedTxid() 
+	msg = a.factory.CreateLogEntry(uint64(lastCommitted), uint32(common.OPCODE_STREAM_END_MARKER), "StreamEnd", ([]byte)("StreamEnd"))
 	logChan <- msg
 
-	// TODO : The item is supposed to be with even if the channel is closed. Double check.
+	// Nothing more to send.  The entries will be in the channel until the reciever consumes them. 
 	close(logChan)
 	close(errChan)
 }
 
-func (a *ServerAction) CommitEntry(txid uint64, op uint32, key string, content []byte) error {
+func (a *ServerAction) AppendLog(txid uint64, op uint32, key string, content []byte) error {
 
-	return a.log.Log(common.Txnid(txid), common.OpCode(op), key, content)
+	return a.appendCommitLog(common.Txnid(txid), common.OpCode(op), key, content)
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -202,5 +231,13 @@ func (a *ServerAction) persistChange(op common.OpCode, p protocol.ProposalMsg) e
 
 func (a *ServerAction) appendCommitLog(txnid common.Txnid, opCode common.OpCode, key string, content []byte) error {
 
-	return a.log.Log(txnid, opCode, key, content)
+	// TODO: Make the whole func transactional
+	err := a.log.Log(txnid, opCode, key, content)
+	if err != nil {
+		return err
+	}
+	
+	a.config.SetLastLoggedTxid(uint64(txnid))
+	
+	return nil
 }
