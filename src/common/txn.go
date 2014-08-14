@@ -10,6 +10,7 @@ type Txnid uint64
 var gEpoch uint64 = 0
 var gCounter uint64 = 0
 var gMutex sync.Mutex
+var gCurTxnid Txnid = 0
 
 func GetNextTxnId() Txnid {
 	gMutex.Lock()
@@ -21,18 +22,36 @@ func GetNextTxnId() Txnid {
 	}
 	gCounter++
 
-	//TODO: double check
 	epoch := uint64(gEpoch << 32)
-	return Txnid(epoch + gCounter)
+	newTxnid := Txnid(epoch + gCounter)
+	
+	if gCurTxnid >= newTxnid {
+		// Assertion.  This is to ensure integrity of the system.  Wrong txnid can result in corruption. 
+		panic(fmt.Sprintf("GetNextTxnId(): Assertion: New Txnid %d is smaller than or equal to old txnid %d", newTxnid, gCurTxnid))
+	}
+	
+	gCurTxnid = newTxnid
+	
+	return gCurTxnid 
 }
 
 func SetEpoch(newEpoch uint32) {
 	gMutex.Lock()
 	defer gMutex.Unlock()
 
-	// Do not need to check if the newEpoch is larger.
+	if gEpoch >= uint64(newEpoch) {
+		// Assertion.  This is to ensure integrity of the system.  We do not support epoch rollover yet. 
+		panic(fmt.Sprintf("SetEpoch(): Assertion: New Epoch %d is smaller than or equal to old epoch %d", newEpoch, gEpoch))
+	}
+	
 	gEpoch = uint64(newEpoch)
 	gCounter = 0
+}
+
+func InitCurrentTxnid(txnid Txnid) {
+	if txnid > gCurTxnid {
+		gCurTxnid = txnid
+	}	
 }
 
 func (id Txnid) GetEpoch() uint64 {

@@ -91,19 +91,34 @@ func RunServer() error {
 //
 func (s *Server) bootstrap() (err error) {
 
+	// Initialize server state
 	s.state = newServerState()
-	
+
+	// Initialize repository service	
 	s.repo, err = r.OpenRepository()
 	if err != nil {
 		return err
 	}
-
 	s.log = r.NewCommitLog(s.repo)
 	s.srvConfig = r.NewServerConfig(s.repo)
+	
+	// initialize the current transaction id to the lastLoggedTxid.  This
+	// is the txid that this node has seen so far.  If this node becomes
+	// the leader, a new epoch will be used and new current txid will
+	// be generated.   
+	lastLoggedTxid, err := s.srvConfig.GetLastLoggedTxnId() 
+	if err != nil {
+		return err
+	}
+	common.InitCurrentTxnid(common.Txnid(lastLoggedTxid))
+
+	// Initialize various callback facility for leader election and
+	// voting protocol.
 	s.factory = message.NewConcreteMsgFactory()
 	s.handler = NewServerAction(s)
 	s.skillch = make(chan bool, 1) // make it buffered to unblock sender
-
+	s.site = nil
+	
 	// Need to start the peer listener before election. A follower may
 	// finish its election before a leader finishes its election. Therefore,
 	// a follower node can request a connection to the leader node before that
@@ -120,8 +135,6 @@ func (s *Server) bootstrap() (err error) {
 	if err != nil {
 		return common.WrapError(common.SERVER_ERROR, "Fail to start RequestListener.", err)
 	}
-	
-	s.site = nil
 	
 	return nil
 }
