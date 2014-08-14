@@ -28,7 +28,7 @@ type RequestReceiver struct {
 	server	*Server
 }
 
-var gHasRegistered bool = false
+var gHandler *RequestReceiver = nil
 
 /////////////////////////////////////////////////
 // Public Function
@@ -40,11 +40,13 @@ var gHasRegistered bool = false
 //
 func StartRequestListener(laddr string, server *Server) (*RequestListener, error) {
 
-	if !gHasRegistered {
-		handler := &RequestReceiver{server : server} 
-		rpc.Register(handler)
+	if gHandler == nil {
+		// first time initializatino
+		gHandler = &RequestReceiver{server : server} 
+		rpc.Register(gHandler)
 		rpc.HandleHTTP()
-		gHasRegistered = true
+	} else {
+		gHandler.setServer(server)
 	}
 
 	li, err := net.Listen(common.MESSAGE_TRANSPORT_TYPE, laddr)
@@ -69,6 +71,13 @@ func (li *RequestListener) Close() {
 		li.isClosed = true
 		li.listener.Close()	
 	}
+}
+
+//
+// Set the server
+//
+func (s *RequestReceiver) setServer(server *Server) {
+	s.server = server
 }
 
 //

@@ -272,7 +272,6 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 				s.addPendingRequest(handle)
 
 				// create the proposal and forward to the leader
-				// TODO: This will send to every follower asynchronously
 				s.leader.CreateProposal(s.leader.GetFollowerId(), handle.request)
 			} else {
 				// server shutdown.
@@ -309,9 +308,10 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 // Notify when server is ready
 //
 func (s *LeaderServer) notifyReady() {
+
 	s.state.mutex.Lock()
 	defer s.state.mutex.Unlock()
-
+	
 	if !s.state.ready {
 		s.state.ready = true
 		s.state.readych <- true
@@ -405,6 +405,8 @@ func (s *LeaderServer) deregisterOutstandingProxy(key string) {
 // Terminate all proxies 
 //
 func (s *LeaderServer) terminateAllOutstandingProxies() {
+	// TODO: Should copy the proxies and release the mutex
+	// before sending to the channels
 	s.state.mutex.Lock()
 	defer s.state.mutex.Unlock()
 

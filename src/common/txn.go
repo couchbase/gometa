@@ -49,6 +49,9 @@ func SetEpoch(newEpoch uint32) {
 }
 
 func InitCurrentTxnid(txnid Txnid) {
+	gMutex.Lock()
+	defer gMutex.Unlock()
+	
 	if txnid > gCurTxnid {
 		gCurTxnid = txnid
 	}	
