@@ -51,21 +51,29 @@ type Leader struct {
 	handler       	ActionHandler
 	factory       	MsgFactory
 	
-	// mutex protected variable
-	mutex     		sync.Mutex
+	notifications   chan *notification
 	lastCommitted 	common.Txnid
 	quorums       	map[common.Txnid][]string
 	proposals       map[common.Txnid]ProposalMsg
-	followers 		map[string]*MessageListener
+		
+	// mutex protected variable
+	mutex     		sync.Mutex
+	followers 		map[string]*messageListener
 	isClosed  		bool
-	changech        chan bool 
+	changech        chan bool  	// notify membership of active followers have changed
 }
 
-type MessageListener struct {
+type messageListener struct {
 	fid 	  string
 	pipe 	  *common.PeerPipe
 	leader    *Leader
 	killch    chan bool	
+}
+
+type notification struct {
+	// follower message
+	fid			string
+	payload		common.Packet
 }
 
 /////////////////////////////////////////////////
@@ -80,13 +88,14 @@ func NewLeader(naddr string,
 	factory MsgFactory) (leader *Leader, err error) {
 
 	leader = &Leader{naddr: naddr,
-		followers:     make(map[string]*MessageListener),
-		quorums:       make(map[common.Txnid][]string),
-		proposals:     make(map[common.Txnid]ProposalMsg),
-		handler:       handler,
-		factory:       factory,
-		isClosed:  	   false,
-		changech:      make(chan bool, common.MAX_PEERS)} // make it buffered so sender won't block
+		followers:     	make(map[string]*messageListener),
+		quorums:       	make(map[common.Txnid][]string),
+		proposals:    	make(map[common.Txnid]ProposalMsg),
+		notifications:  make(chan *notification, common.MAX_PROPOSALS),
+		handler:       	handler,
+		factory:       	factory,
+		isClosed:  	   	false,
+		changech:      	make(chan bool, common.MAX_PEERS)} // make it buffered so sender won't block
 
 	// This is initialized to the lastCommitted in repository. Subsequent commit() will update this 
 	// field to the latest committed txnid. This field is used for ensuring the commit order is preserved.  
@@ -95,6 +104,9 @@ func NewLeader(naddr string,
 	if err != nil {
 		return nil, err
 	}
+
+	// start a listener go-routine.  This will be closed when the leader terminate.
+	go leader.listen()
 	
 	return leader, nil
 }
@@ -113,7 +125,21 @@ func (l *Leader) Terminate() {
 		for _, listener := range l.followers {
 			listener.terminate()
 		}
+	    common.SafeRun("Leader.Terminate()",
+			func() {
+				close(l.notifications)
+			})
 	}
+}
+
+//
+// Has the leader terminated/closed?
+//
+func (l *Leader) IsClosed() bool {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	return l.isClosed
 }
 
 //
@@ -170,13 +196,13 @@ func (l *Leader) GetFollowerId() string {
 }
 
 /////////////////////////////////////////////////
-// MessageListener
+// messageListener
 /////////////////////////////////////////////////
 
 // Create a new listener
-func newListener(fid string, pipe *common.PeerPipe, leader *Leader) *MessageListener {
+func newListener(fid string, pipe *common.PeerPipe, leader *Leader) *messageListener {
 
-	return &MessageListener{fid : fid,
+	return &messageListener{fid : fid,
 							pipe : pipe,
 							leader : leader,
 							killch : make(chan bool, 1)}
@@ -190,44 +216,40 @@ func newListener(fid string, pipe *common.PeerPipe, leader *Leader) *MessageList
 // The listener can be killed by calling terminate() or closing 
 // the PeerPipe. 
 //
-func (l *MessageListener) start() {
+func (l *messageListener) start() {
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in MessageListener.start() : %s\n", r)
+			log.Printf("panic in messageListener.start() : %s\n", r)
 		}
 		
-	    common.SafeRun("MessageListener.start()",
+	    common.SafeRun("messageListener.start()",
 			func() {
 				l.leader.removeListener(l)
 			})
 			
-	    common.SafeRun("MessageListener.start()",
+	    common.SafeRun("messageListener.start()",
 			func() {
 				l.pipe.Close()
 			})
 	}()
 
-	log.Printf("MessageListener.start(): start listening to message from peer %s", l.fid)
+	log.Printf("messageListener.start(): start listening to message from peer %s", l.fid)
 	reqch := l.pipe.ReceiveChannel()
 
 	for {
 		select {
 			case req, ok := <-reqch:
 				if ok {
-					err := l.leader.handleMessage(req, l.fid)
-					if err != nil {
-						log.Printf("MessageListener.start(): Encounter error when processing message %s. Error %s. Terminate", 
-							l.fid, err.Error()) 
-						return
-					}
+					n := &notification{fid : l.fid, payload : req}
+					l.leader.notifications <- n 
 				} else {
 					// The channel is closed.  Need to shutdown the listener.
-					log.Printf("MessageListener.start(): message channel closed. Remove peer %s as follower.", l.fid) 
+					log.Printf("messageListener.start(): message channel closed. Remove peer %s as follower.", l.fid) 
 					return
 				}
 			case <- l.killch:
-				log.Printf("MessageListener.start(): Listener for %s receive kill signal. Terminate.", l.fid) 
+				log.Printf("messageListener.start(): Listener for %s receive kill signal. Terminate.", l.fid) 
 				return
 				
 		}
@@ -237,7 +259,7 @@ func (l *MessageListener) start() {
 //
 // Terminate the listener.  This should only be called by the leader.
 //
-func (l *MessageListener) terminate() {
+func (l *messageListener) terminate() {
 	l.killch <- true
 }
 
@@ -248,7 +270,7 @@ func (l *MessageListener) terminate() {
 //
 // Remove the follower from being tracked
 //
-func (l *Leader) removeListener(peer *MessageListener) {
+func (l *Leader) removeListener(peer *messageListener) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
@@ -262,15 +284,56 @@ func (l *Leader) removeListener(peer *MessageListener) {
 /////////////////////////////////////////////////////////
 
 //
-// Main entry point for processing messages from followers
+// Main processing message loop for leader.
+//
+func (l *Leader) listen() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in Leader.listen() : %s\n", r)
+		}
+		
+	    common.SafeRun("Leader.listen()",
+			func() {
+				l.Terminate()
+			})
+	}()
+
+	log.Printf("Leader.listen(): start listening to message for leader")
+	
+	for {
+		select {
+			case msg, ok := <- l.notifications:
+				if ok {
+					if !l.IsClosed() {
+						err := l.handleMessage(msg.payload, msg.fid) 
+						if err != nil {
+							log.Printf("Leader.listen(): Encounter error when processing message %s. Error %s. Terminate", 
+								msg.fid, err.Error()) 
+							return
+						}
+					} else {
+						log.Printf("Leader.listen(): Leader is closed. Terminate message processing loop.")
+						return
+					}
+				} else {
+					// The channel is closed.  
+					log.Printf("Leader.listen(): message channel closed. Terminate message processing loop for leader.") 
+					return
+				}
+		}
+	}
+}
+
+//
+// Handle an incoming message based on its type.  All incoming messages from followers are processed serially 
+// (by Leader.listen()).  Therefore, the order of corresponding outbound messages (proposal, commit) will be placed 
+// in the same order into each follower's pipe.   This implies that we can use 2 state variables (LastLoggedTxid and
+// LastCommittedTxid) to determine which peer has the latest repository.  This, in turn, enforces stronger serializability
+// semantics, since we won't have a case where one peer may have a higher LastLoggedTxid while another has a higher 
+// LastCommittedTxid.
 //
 func (l *Leader) handleMessage(msg common.Packet, follower string) (err error) {
 
-	l.mutex.Lock()
-	defer l.mutex.Unlock()
-	
-	// TODO: Parallelize RequesMsg independently from AcceptMsg for performance
-	
 	err = nil
 	switch request := msg.(type) {
 	case RequestMsg:
@@ -343,6 +406,9 @@ func (l *Leader) NewProposal(proposal ProposalMsg) error {
 //
 func (l *Leader) sendProposal(proposal ProposalMsg) {
 
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
 	// Send the request to the followers.  Each follower
 	// has a pipe (channel) and there is separate go-routine
 	// that will read from the channel and send to the follower
@@ -507,6 +573,9 @@ func (l *Leader) commit(txid common.Txnid) error {
 //
 func (l *Leader) sendCommit(txnid common.Txnid) error {
 
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
 	// Send the request to the followers.  See the same
 	// comment as in sendProposal()
 	//

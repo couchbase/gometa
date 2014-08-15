@@ -829,7 +829,7 @@ func (l *FollowerSyncProxy) execute(donech chan bool) {
 
 func (l *FollowerSyncProxy) sendFollowerInfo() error {
 
-	log.Printf("LeaderSyncProxy.sendFollowerInfo()")
+	log.Printf("FollowerSyncProxy.sendFollowerInfo()")
 	
 	// Send my accepted epoch to the leader for voting (don't send current epoch)
 	epoch, err := l.handler.GetAcceptedEpoch()
@@ -842,7 +842,7 @@ func (l *FollowerSyncProxy) sendFollowerInfo() error {
 
 func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 
-	log.Printf("LeaderSyncProxy.receiveAndUpdateAcceptedEpoch()")
+	log.Printf("FollowerSyncProxy.receiveAndUpdateAcceptedEpoch()")
 	
 	// Get the accepted epoch from the leader.   This epoch
 	// is already being voted on by multiple followers (the highest
@@ -900,7 +900,7 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 
 func (l *FollowerSyncProxy) receiveAndUpdateCurrentEpoch() error {
 
-	log.Printf("LeaderSyncProxy.receiveAndUpdateCurrentEpoch()")
+	log.Printf("FollowerSyncProxy.receiveAndUpdateCurrentEpoch()")
 	
 	// Get the accepted epoch from the leader.   This epoch
 	// is already being voted on by multiple followers (the highest

@@ -453,8 +453,6 @@ func (s *Server) UpdateStateOnCommit(proposal protocol.ProposalMsg) {
 		defer handle.condVar.L.Unlock()
 
 		handle.condVar.Signal()
-	} else {
-		log.Printf("Server.UpdateStateOnCommit(): cannot find matching proposal %d to notify client", proposal.GetTxnid())
 	} 
 }
 

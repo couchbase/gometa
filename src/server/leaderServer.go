@@ -142,7 +142,12 @@ func (l *LeaderServer) listenFollower(listenerState *ListenerState) {
 		select {
 		case conn := <-connCh:
 			{
-				// There is a new peer connection request
+				// There is a new peer connection request from the follower.  Start a proxy to synchronize with the follower.
+				// The leader does not proactively connect to follower:
+				// 1) The ensemble is stable, but a follower may just reboot and needs to connect to the leader
+				// 2) Even if the leader receives votes from the leader, the leader cannot tell for sure that the follower does
+				//    not change its vote.  Only if the follower connects, the leader can confirm the follower's alliance. 
+				//
 				log.Printf("LeaderServer.listenFollower(): Receive connection request from follower %s", conn.RemoteAddr())
 				if l.registerOutstandingProxy(conn.RemoteAddr().String()) {
 					pipe := common.NewPeerPipe(conn)
@@ -174,7 +179,7 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 		l.deregisterOutstandingProxy(peer.GetAddr())
 	}()
 	
-	// create a proxy that will sycnhronize with the peer
+	// create a proxy that will sycnhronize with the peer.   
 	log.Printf("LeaderServer.startProxy(): Start synchronization with follower. Peer TCP connection (%s)", peer.GetAddr())
 	proxy := protocol.NewLeaderSyncProxy(l.consentState, peer, l.handler, l.factory)
 	donech := proxy.GetDoneChannel()
