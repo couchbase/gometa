@@ -22,12 +22,13 @@ message Commit {
 }
 
 message Vote {
-    required uint32          version   = 1; // protocol version TBD
-   	required uint64          round     = 2; // round
-   	required uint32          status    = 3; // status - ELECTING,LEADING,FOLLOWING 
-   	required uint32          epoch     = 4; // epoch (leader term)
-   	required string          cndId     = 5; // proposed candidate Id
-   	required uint64          cndTxnId  = 6; // proposed candidate TxnId
+    required uint32          version   			= 1; // protocol version TBD
+   	required uint64          round     			= 2; // round
+   	required uint32          status    			= 3; // status - ELECTING,LEADING,FOLLOWING 
+   	required uint32          epoch     			= 4; // epoch (leader term)
+   	required string          cndId     			= 5; // proposed candidate Id
+   	required uint64          cndLoggedTxnId  	= 6; // proposed candidate last logged TxnId
+   	required uint64          cndCommittedTxnId  = 7; // proposed candidate last committed TxnId
 }
 
 message FollowerInfo {
@@ -48,8 +49,8 @@ message LeaderInfo {
 }
 
 message NewLeader {
-    required uint32          version   = 1; // protocol version TBD
-   	required uint32          epoch     = 2; 
+    required uint32          version   		  = 1; // protocol version TBD
+   	required uint32          currentEpoch     = 2; 
 }
 
 message NewLeaderAck {

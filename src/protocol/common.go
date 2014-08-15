@@ -100,7 +100,7 @@ type MsgFactory interface {
 
 	CreateCommit(txnid uint64) CommitMsg
 
-	CreateVote(round uint64, status uint32, epoch uint32, cndId string, cndTxnId uint64) VoteMsg
+	CreateVote(round uint64, status uint32, epoch uint32, cndId string, cndLoggedTxnId uint64, cndCommittedTxnId uint64) VoteMsg
 
 	CreateFollowerInfo(epoch uint32, fid string) FollowerInfoMsg
 
@@ -160,7 +160,8 @@ type VoteMsg interface {
 	GetStatus() uint32
 	GetEpoch() uint32
 	GetCndId() string
-	GetCndTxnId() uint64
+	GetCndLoggedTxnId() uint64
+	GetCndCommittedTxnId() uint64
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -186,7 +187,7 @@ type EpochAckMsg interface {
 
 type NewLeaderMsg interface {
 	common.Packet
-	GetEpoch() uint32
+	GetCurrentEpoch() uint32
 }
 
 type NewLeaderAckMsg interface {

@@ -151,13 +151,14 @@ func (m *Commit) GetTxnid() uint64 {
 }
 
 type Vote struct {
-	Version          *uint32 `protobuf:"varint,1,req,name=version" json:"version,omitempty"`
-	Round            *uint64 `protobuf:"varint,2,req,name=round" json:"round,omitempty"`
-	Status           *uint32 `protobuf:"varint,3,req,name=status" json:"status,omitempty"`
-	Epoch            *uint32 `protobuf:"varint,4,req,name=epoch" json:"epoch,omitempty"`
-	CndId            *string `protobuf:"bytes,5,req,name=cndId" json:"cndId,omitempty"`
-	CndTxnId         *uint64 `protobuf:"varint,6,req,name=cndTxnId" json:"cndTxnId,omitempty"`
-	XXX_unrecognized []byte  `json:"-"`
+	Version           *uint32 `protobuf:"varint,1,req,name=version" json:"version,omitempty"`
+	Round             *uint64 `protobuf:"varint,2,req,name=round" json:"round,omitempty"`
+	Status            *uint32 `protobuf:"varint,3,req,name=status" json:"status,omitempty"`
+	Epoch             *uint32 `protobuf:"varint,4,req,name=epoch" json:"epoch,omitempty"`
+	CndId             *string `protobuf:"bytes,5,req,name=cndId" json:"cndId,omitempty"`
+	CndLoggedTxnId    *uint64 `protobuf:"varint,6,req,name=cndLoggedTxnId" json:"cndLoggedTxnId,omitempty"`
+	CndCommittedTxnId *uint64 `protobuf:"varint,7,req,name=cndCommittedTxnId" json:"cndCommittedTxnId,omitempty"`
+	XXX_unrecognized  []byte  `json:"-"`
 }
 
 func (m *Vote) Reset()         { *m = Vote{} }
@@ -199,9 +200,16 @@ func (m *Vote) GetCndId() string {
 	return ""
 }
 
-func (m *Vote) GetCndTxnId() uint64 {
-	if m != nil && m.CndTxnId != nil {
-		return *m.CndTxnId
+func (m *Vote) GetCndLoggedTxnId() uint64 {
+	if m != nil && m.CndLoggedTxnId != nil {
+		return *m.CndLoggedTxnId
+	}
+	return 0
+}
+
+func (m *Vote) GetCndCommittedTxnId() uint64 {
+	if m != nil && m.CndCommittedTxnId != nil {
+		return *m.CndCommittedTxnId
 	}
 	return 0
 }
@@ -296,7 +304,7 @@ func (m *LeaderInfo) GetAcceptedEpoch() uint32 {
 
 type NewLeader struct {
 	Version          *uint32 `protobuf:"varint,1,req,name=version" json:"version,omitempty"`
-	Epoch            *uint32 `protobuf:"varint,2,req,name=epoch" json:"epoch,omitempty"`
+	CurrentEpoch     *uint32 `protobuf:"varint,2,req,name=currentEpoch" json:"currentEpoch,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
@@ -311,9 +319,9 @@ func (m *NewLeader) GetVersion() uint32 {
 	return 0
 }
 
-func (m *NewLeader) GetEpoch() uint32 {
-	if m != nil && m.Epoch != nil {
-		return *m.Epoch
+func (m *NewLeader) GetCurrentEpoch() uint32 {
+	if m != nil && m.CurrentEpoch != nil {
+		return *m.CurrentEpoch
 	}
 	return 0
 }

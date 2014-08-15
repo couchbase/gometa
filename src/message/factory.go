@@ -57,14 +57,16 @@ func (f *ConcreteMsgFactory) CreateVote(round uint64,
 	status uint32,
 	epoch uint32,
 	cndId string,
-	cndTxnId uint64) protocol.VoteMsg {
+	loggedTxnId uint64,
+	committedTxnId uint64) protocol.VoteMsg {
 
 	return &Vote{Version: proto.Uint32(ProtoVersion()),
 		Round:    proto.Uint64(round),
 		Status:   proto.Uint32(status),
 		Epoch:    proto.Uint32(epoch),
 		CndId:    proto.String(cndId),
-		CndTxnId: proto.Uint64(cndTxnId)}
+		CndLoggedTxnId: proto.Uint64(loggedTxnId),
+		CndCommittedTxnId: proto.Uint64(committedTxnId)}
 }
 
 func (f *ConcreteMsgFactory) CreateLogEntry(txnid uint64,
@@ -103,7 +105,7 @@ func (f *ConcreteMsgFactory) CreateEpochAck(txid uint64, epoch uint32) protocol.
 func (f *ConcreteMsgFactory) CreateNewLeader(epoch uint32) protocol.NewLeaderMsg {
 
 	return &NewLeader{Version: proto.Uint32(ProtoVersion()),
-		Epoch: proto.Uint32(epoch)}
+		CurrentEpoch: proto.Uint32(epoch)}
 }
 
 func (f *ConcreteMsgFactory) CreateNewLeaderAck() protocol.NewLeaderAckMsg {

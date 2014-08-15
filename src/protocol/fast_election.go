@@ -199,18 +199,26 @@ func (s *ElectionSite) createVoteFromCurState() VoteMsg {
 		epoch = s.handler.GetBootstrapCurrentEpoch() 
 	}
 
-	txid, err := s.handler.GetLastLoggedTxid()
+	lastLoggedTxid, err := s.handler.GetLastLoggedTxid()
 	if err != nil {
 		// if txid is missing, set the txid to the smallest possible
 		// number.  This likely will cause the peer to ignore my vote. 
-		txid = s.handler.GetBootstrapLastLoggedTxid()
+		lastLoggedTxid = s.handler.GetBootstrapLastLoggedTxid()
+	}
+	
+	lastCommittedTxid, err := s.handler.GetLastCommittedTxid()
+	if err != nil {
+		// if txid is missing, set the txid to the smallest possible
+		// number.  This likely will cause the peer to ignore my vote. 
+		lastCommittedTxid = s.handler.GetBootstrapLastCommittedTxid()
 	}
 	
 	vote := s.factory.CreateVote(s.master.round,
 		uint32(s.handler.GetStatus()),
 		epoch,
 		s.messenger.GetLocalAddr(), // this is localhost UDP port
-		uint64(txid))
+		uint64(lastLoggedTxid),
+		uint64(lastCommittedTxid))
 
 	return vote
 }
@@ -407,7 +415,8 @@ func (b *BallotMaster) cloneWinningVote() VoteMsg {
 			uint32(b.site.handler.GetStatus()),
 			b.winner.winningEpoch,
 			b.winner.proposed.GetCndId(),
-			b.winner.proposed.GetCndTxnId())
+			b.winner.proposed.GetCndLoggedTxnId(),
+			b.winner.proposed.GetCndCommittedTxnId())
 	}
 
 	return nil
@@ -845,6 +854,7 @@ func (w *PollWorker) compareRound(vote VoteMsg) common.CompareResult {
 //
 func (w *PollWorker) compareVote(vote1, vote2 VoteMsg) common.CompareResult {
 
+	// Vote with the larger epoch always is larger 
 	result := common.CompareEpoch(vote1.GetEpoch(), vote2.GetEpoch())
 	
 	if result == common.MORE_RECENT {
@@ -854,15 +864,31 @@ func (w *PollWorker) compareVote(vote1, vote2 VoteMsg) common.CompareResult {
 	if result == common.LESS_RECENT {
 		return common.LESSER
 	}
-	
-	if vote1.GetCndTxnId() > vote2.GetCndTxnId() {
+
+	// If a candidate has a larger logged txid, it means the candidate
+	// has processed more proposals.   This vote is larger. 
+	if vote1.GetCndLoggedTxnId() > vote2.GetCndLoggedTxnId() {
 		return common.GREATER
 	}
 
-	if vote1.GetCndTxnId() < vote2.GetCndTxnId() {
+	if vote1.GetCndLoggedTxnId() < vote2.GetCndLoggedTxnId() {
 		return common.LESSER
 	}
 
+	// This candidate has the same number of proposals in his committed log as 
+	// the other one. But if a candidate has a larger committed txid, 
+	// it means this candidate also has processed more commit messages from the
+	// previous leader.   This vote is larger. 
+	if vote1.GetCndCommittedTxnId() > vote2.GetCndCommittedTxnId() {
+		return common.GREATER
+	}
+
+	if vote1.GetCndCommittedTxnId() < vote2.GetCndCommittedTxnId() {
+		return common.LESSER
+	}
+
+	// All else is equal (e.g. during inital system startup -- repository is emtpy),
+	// use the ip address.
 	if vote1.GetCndId() > vote2.GetCndId() {
 		return common.GREATER
 	}
@@ -943,7 +969,8 @@ func (w *PollWorker) cloneProposedVote() VoteMsg {
 		uint32(w.site.handler.GetStatus()),
 		uint32(w.ballot.result.proposed.GetEpoch()),
 		w.ballot.result.proposed.GetCndId(),
-		w.ballot.result.proposed.GetCndTxnId())
+		w.ballot.result.proposed.GetCndLoggedTxnId(),
+		w.ballot.result.proposed.GetCndCommittedTxnId())
 }
 
 //

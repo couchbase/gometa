@@ -912,7 +912,7 @@ func (l *FollowerSyncProxy) receiveAndUpdateCurrentEpoch() error {
 
 	// Get epoch from follower message
 	info := packet.(NewLeaderMsg)
-	epoch := info.GetEpoch()
+	epoch := info.GetCurrentEpoch()
 
 	// TODO : validate the epoch from leader
 

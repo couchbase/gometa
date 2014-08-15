@@ -91,7 +91,8 @@ func (req *Vote) Print() {
 	log.Printf("	Status          : %d", req.GetStatus())
 	log.Printf("	Epoch           : %d", req.GetEpoch())
 	log.Printf("	Candidate Id    : %s", req.GetCndId())
-	log.Printf("	Candidate TxnId : %d", req.GetCndTxnId())
+	log.Printf("	Logged TxnId    : %d", req.GetCndLoggedTxnId())
+	log.Printf("	Committed TxnId : %d", req.GetCndCommittedTxnId())
 }
 
 //
@@ -194,7 +195,7 @@ func (req *NewLeader) Decode(data []byte) (err error) {
 
 func (req *NewLeader) Print() {
 	log.Printf("NewLeader Message:")
-	log.Printf("	Epoch : %d", req.GetEpoch())
+	log.Printf("	CurrentEpoch : %d", req.GetCurrentEpoch())
 }
 
 //
