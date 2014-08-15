@@ -48,14 +48,14 @@ import (
 
 type Leader struct {
 	naddr         	string
-	lastCommitted 	common.Txnid
 	handler       	ActionHandler
 	factory       	MsgFactory
-	quorums       	map[common.Txnid][]string
-	proposals       map[common.Txnid]ProposalMsg
-
+	
 	// mutex protected variable
 	mutex     		sync.Mutex
+	lastCommitted 	common.Txnid
+	quorums       	map[common.Txnid][]string
+	proposals       map[common.Txnid]ProposalMsg
 	followers 		map[string]*MessageListener
 	isClosed  		bool
 	changech        chan bool 
@@ -266,6 +266,9 @@ func (l *Leader) removeListener(peer *MessageListener) {
 //
 func (l *Leader) handleMessage(msg common.Packet, follower string) (err error) {
 
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
 	// TODO: Parallelize RequesMsg independently from AcceptMsg for performance
 	
 	err = nil
@@ -339,8 +342,6 @@ func (l *Leader) NewProposal(proposal ProposalMsg) error {
 // send the proposal to the followers
 //
 func (l *Leader) sendProposal(proposal ProposalMsg) {
-	l.mutex.Lock()
-	defer l.mutex.Unlock()
 
 	// Send the request to the followers.  Each follower
 	// has a pipe (channel) and there is separate go-routine
@@ -505,8 +506,6 @@ func (l *Leader) commit(txid common.Txnid) error {
 // send commit messages to all followers
 //
 func (l *Leader) sendCommit(txnid common.Txnid) error {
-	l.mutex.Lock()
-	defer l.mutex.Unlock()
 
 	// Send the request to the followers.  See the same
 	// comment as in sendProposal()
