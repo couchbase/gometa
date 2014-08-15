@@ -4,6 +4,7 @@ import (
 	"common"
 	"log"
 	"sync"
+	"fmt"
 )
 
 /////////////////////////////////////////////////
@@ -157,6 +158,7 @@ func (f *Follower) close() {
 // Handle message from the leader.
 //
 func (f *Follower) handleMessage(msg common.Packet) (err error) {
+	err = nil
 	switch request := msg.(type) {
 	case ProposalMsg:
 		err = f.handleProposal(request)
@@ -173,17 +175,17 @@ func (f *Follower) handleMessage(msg common.Packet) (err error) {
 //
 func (f *Follower) handleProposal(msg ProposalMsg) error {
 	// TODO : Check if the txnid is the next one (last txnid + 1)
-	// ZK will only warn
 
 	// Call service to log the proposal
-	f.handler.LogProposal(msg)	
+	err := f.handler.LogProposal(msg)	
+	if err != nil {
+		return err
+	}
 
 	// Add to pending list
 	f.pendings = append(f.pendings, msg)
 
 	// Send Accept Message
-	// TODO: Should only accept if the txnid exceeeds the last one.
-	//       ZK does not do that.  Need to double check Paxos Protocol.
 	return f.sendAccept(common.Txnid(msg.GetTxnid()), f.GetFollowerId())
 }
 
@@ -197,27 +199,26 @@ func (f *Follower) handleCommit(msg CommitMsg) error {
 		return nil
 	}
 
-	// check if the commit is the first one in the pending list.
-	// If not, ZK will crash the follower.    All commits are
-	// processed sequentially.
-	next := f.pendings[0]
-	if next == nil || next.GetTxnid() != msg.GetTxnid() {
-		// TODO : Log an error and panic
+	// Check if the commit is the first one in the pending list.
+	// All commits are processed sequentially to ensure serializability.
+	p := f.pendings[0]
+	if p == nil || p.GetTxnid() != msg.GetTxnid() {
+		return common.NewError(common.PROTOCOL_ERROR, 
+			fmt.Sprintf("Proposal must committed in sequential order for the same leader term. " +
+			"Found out-of-order commit. Last proposal txid %d, commit msg %d", p.GetTxnid(), msg.GetTxnid()))
 	}
 
 	// remove proposal from pendings
-	p := f.pendings[0]
 	f.pendings = f.pendings[1:]
 
 	// commit
 	err := f.handler.Commit(p)
 	if err != nil {
-		log.Println("Follower.Commit(): Error in commit.  Error = %s", err.Error())	
-		// TODO : throw error
+		return err
 	}
+	
+	// TODO: do we need to update election site?  I don't think so, but need to double check.
 
-	// TODO: send response to client
-	// TODO: update election site
 	return nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"common"
 	"sync"
 	"log"
+	"fmt"
 )
 
 /////////////////////////////////////////////////
@@ -51,7 +52,7 @@ type Leader struct {
 	handler       	ActionHandler
 	factory       	MsgFactory
 	quorums       	map[common.Txnid][]string
-	pendings  		[]ProposalMsg
+	proposals       map[common.Txnid]ProposalMsg
 
 	// mutex protected variable
 	mutex     		sync.Mutex
@@ -76,19 +77,26 @@ type MessageListener struct {
 //
 func NewLeader(naddr string,
 	handler ActionHandler,
-	factory MsgFactory) *Leader {
-	
-	leader := &Leader{naddr: naddr,
+	factory MsgFactory) (leader *Leader, err error) {
+
+	leader = &Leader{naddr: naddr,
 		followers:     make(map[string]*MessageListener),
-		pendings:      make([]ProposalMsg, 0, common.MAX_PROPOSALS),
-		lastCommitted: 0,
 		quorums:       make(map[common.Txnid][]string),
+		proposals:     make(map[common.Txnid]ProposalMsg),
 		handler:       handler,
 		factory:       factory,
 		isClosed:  	   false,
 		changech:      make(chan bool, common.MAX_PEERS)} // make it buffered so sender won't block
-		
-	return leader
+
+	// This is initialized to the lastCommitted in repository. Subsequent commit() will update this 
+	// field to the latest committed txnid. This field is used for ensuring the commit order is preserved.  
+	// The leader will commit the proposal in the strict order as it arrives as to preserve serializability.
+	leader.lastCommitted, err = handler.GetLastCommittedTxid() 
+	if err != nil {
+		return nil, err
+	}
+	
+	return leader, nil
 }
 
 //
@@ -258,25 +266,18 @@ func (l *Leader) removeListener(peer *MessageListener) {
 //
 func (l *Leader) handleMessage(msg common.Packet, follower string) (err error) {
 
-	//TODO: This looks like causing deadlock when follower sends teh request to leader.
-	// Leader.handleMessage() also calls mutex.lock
-	//l.mutex.Lock()
-	//defer l.mutex.Unlock()
-
 	// TODO: Parallelize RequesMsg independently from AcceptMsg for performance
+	
+	err = nil
 	switch request := msg.(type) {
 	case RequestMsg:
-		// TODO: handle error
-		l.CreateProposal(follower, request)
+		err = l.CreateProposal(follower, request)
 	case AcceptMsg:
 		err = l.handleAccept(request)
-		if err != nil {
-			return err
-		}
 	default:
 		log.Printf("Leader.handleMessage(): Leader unable to process message of type %s. Ignore message.", request.Name())
 	}
-	return nil
+	return err 
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -292,7 +293,7 @@ func (l *Leader) CreateProposal(host string, req RequestMsg) error {
 	// can panic if the txnid overflows.   In this case, this should terminate
 	// the leader and forces a new election for getting a new epoch. ZK has the
 	// same behavior.
-	txnid := l.handler.GetNextTxnId()
+	txnid := common.GetNextTxnId()
 	log.Printf("Leader.CreateProposal(): New Proposal : Epoch %d, Counter %d", 
 			txnid.GetEpoch(), txnid.GetCounter())
 
@@ -304,27 +305,34 @@ func (l *Leader) CreateProposal(host string, req RequestMsg) error {
 		req.GetKey(),
 		req.GetContent())
 
-	l.NewProposal(proposal)
-
-	return nil
+	return l.NewProposal(proposal)
 }
 
 //
 // Handle a new proposal
 //
-func (l *Leader) NewProposal(proposal ProposalMsg) {
-
-	// Keep track of the pending proposal
-	l.pendings = append(l.pendings, proposal)
+func (l *Leader) NewProposal(proposal ProposalMsg) error {
 
 	// Call out to log the proposal
-	l.handler.LogProposal(proposal)
+	err := l.handler.LogProposal(proposal)
+	if err != nil {
+		// If fails to log the proposal, return the error. 
+		// This can cause the leader to re-elect.  Just to handle 
+		// case where there is hardware failure or repository
+		// corruption.
+		return err
+	}
 
 	// The leader votes for itself 
 	l.updateQuorum(common.Txnid(proposal.GetTxnid()), l.GetFollowerId())
+	
+	// remember this proposal so I can commmit it later
+	l.proposals[common.Txnid(proposal.GetTxnid())] = proposal
 
 	// Send the proposal to follower
 	l.sendProposal(proposal)
+	
+	return nil
 }
 
 //
@@ -334,7 +342,23 @@ func (l *Leader) sendProposal(proposal ProposalMsg) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
-	// Send the request to the followers
+	// Send the request to the followers.  Each follower
+	// has a pipe (channel) and there is separate go-routine
+	// that will read from the channel and send to the follower
+	// through reliable connection (TCP).   If the connection is
+	// broken, then the follower will go through election again,
+	// and the follower will re-sync the repository with the leader.
+	// Therefore, we don't have to worry about re-sending proposal
+	// to disconnected follower here.   
+	//
+	// If the leader cannot send to a follower, then pipe will
+	// be broken and the leader will take the follower out.  If
+	// the leader looses majority of followers, it will bring
+	// itself into election again.    So we can process this
+	// asynchronously without worrying about sending the message 
+	// to majority of followers.  If that can't be done, the
+	// leader re-elect.
+	//
 	for _, f := range l.followers {
 		msg := l.factory.CreateProposal(proposal.GetTxnid(),
 			proposal.GetFid(),
@@ -355,37 +379,35 @@ func (l *Leader) sendProposal(proposal ProposalMsg) {
 //
 func (l *Leader) handleAccept(msg AcceptMsg) error {
 
-	// This can happen if the follower is slow when
-	// the proposal has reached quorum before the follower
-	// can accept.
-	if len(l.pendings) == 0 {
-		return nil
-	}
-
 	// If this Ack is on an old proposal, then ignore.
 	// This indicates that the follower may be slower
 	// than others.  Therefore, the proposal may be
 	// committed, before the follower can Ack.
 	mtxid := common.Txnid(msg.GetTxnid())
-	/*
-	lastCommitted won't be initialized properly 
 	if l.lastCommitted >= mtxid {
+		// cleanup.  l.quorums should not have mtxid.  
+		// This is just in case since we will never commit
+		// this proposal.
+		_, ok := l.quorums[mtxid]
+		if ok {
+			delete(l.quorums, mtxid)
+			delete(l.proposals, mtxid)
+		}
 		return nil
 	}
-	*/
 
-	// look for the proposal with the matching txnid
-	for i := 0; i < len(l.pendings); i++ {
-		p := l.pendings[i]
-		if common.Txnid(p.GetTxnid()) == mtxid {
-			l.updateQuorum(mtxid, msg.GetFid())
-			if l.hasQuorum(mtxid) {
-				l.commit(mtxid, p)
-				break
-			}
+	// update quorum
+	l.updateQuorum(mtxid, msg.GetFid())
+	if l.hasQuorum(mtxid) {
+		// proposal has quorum. Now commit. If cannot commit, then return error
+		// which will cause the leader to re-election.  Just to handle 
+		// case where there is hardware failure or repository corruption.
+		err := l.commit(mtxid)
+		if err != nil {
+			return err
 		}
 	}
-
+	
 	return nil
 }
 
@@ -393,11 +415,13 @@ func (l *Leader) handleAccept(msg AcceptMsg) error {
 // update quorum of proposal
 //
 func (l *Leader) updateQuorum(txid common.Txnid, fid string) {
+
 	if l.quorums[txid] == nil {
 		l.quorums[txid] = make([]string, 0, common.MAX_FOLLOWERS)
 	}
 	log.Printf("Leader.updateQuorum: current quorum for txid %d : %d", uint64(txid), len(l.quorums[txid]))
 
+	// Just to double check if the follower has already voted on this proposal.
 	var found bool
 	for i := 0; i < len(l.quorums[txid]); i++ {
 		a := l.quorums[txid][i]
@@ -422,9 +446,9 @@ func (l *Leader) hasQuorum(txid common.Txnid) bool {
 	// hierarchy quorums for scalability (servers are put into different
 	// groups and quorums are obtained within a group).
 
-	accepted := l.quorums[txid]
-	if accepted == nil {
-		// we need at least one follower to accept.
+	accepted, ok := l.quorums[txid]
+	if !ok {
+		// no one has voted yet on this proposal 
 		return false
 	}
 
@@ -434,7 +458,7 @@ func (l *Leader) hasQuorum(txid common.Txnid) bool {
 //
 // commit proposal
 //
-func (l *Leader) commit(txid common.Txnid, p ProposalMsg) {
+func (l *Leader) commit(txid common.Txnid) error {
 
 	// We are skipping proposal.  The protocol expects that each follower must
 	// send Accept Msg in the order of Proposal being received.   Since the
@@ -442,40 +466,39 @@ func (l *Leader) commit(txid common.Txnid, p ProposalMsg) {
 	// quorum out of order.  Particularly, if a new follower leaves and rejoins,
 	// the leader is responsible for resending all the pending proposals to the
 	// followers.   So if we see the txid is out-of-order there, then it is
-	// a fatal condition due to protocol error.
-	if txid != l.lastCommitted+1 {
-		// TODO: log warning
+	// a fatal condition due to protocol error. 
+	//
+	if !common.IsNextInSequence(txid, l.lastCommitted) {
+		return common.NewError(common.PROTOCOL_ERROR, 
+			fmt.Sprintf("Proposal must committed in sequential order for the same leader term. " +
+			"Found out-of-order commit. Leader last committed txid %d, commit msg %d", l.lastCommitted, txid))
+	}
+	
+	p, ok := l.proposals[txid]
+	if !ok {
+		return common.NewError(common.SERVER_ERROR, 
+			fmt.Sprintf("Cannot find a proposal for the txid %d. Fail to commit the proposal.", txid))
 	}
 
-	// remove the proposal
-	// TODO: remove proposals that are older than txid, since
-	// those proposals should never be committed.
-	for i := 0; i < len(l.pendings); i++ {
-		p := l.pendings[i]
-		if common.Txnid(p.GetTxnid()) == txid {
-			// TODO: Make it more efficient
-			// TODO: if i == 0
-			dst := make([]ProposalMsg, 0, common.MAX_PROPOSALS)
-			dst = append(dst, l.pendings[0:i]...)
-			dst = append(dst, l.pendings[i+1:]...)
-			l.pendings = dst
-			break
-		}
-	}
-	delete(l.quorums, txid)
-
-	// send Commit to followers
-	l.lastCommitted = txid
-	l.sendCommit(txid)
-
-	// handle the commit action
+	// marking the proposal as committed 
 	err := l.handler.Commit(p)
 	if err != nil {
-		log.Println("Leader.Commit(): Error in commit.  Error = %s", err.Error())	
-		// TODO throw error
+		return err
 	}
 
-	// TODO: update election site
+	// remove the votes
+	delete(l.quorums, txid)
+	delete(l.proposals, txid)
+
+	// Update lastCommitted 
+	l.lastCommitted = txid
+	
+	// Send the commit to followers
+	l.sendCommit(txid)
+	
+	// TODO: do we need to update election site?  I don't think so, but need to double check.
+	
+	return nil
 }
 
 //
@@ -485,10 +508,11 @@ func (l *Leader) sendCommit(txnid common.Txnid) error {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
-	msg := l.factory.CreateCommit(uint64(txnid))
-
-	// Send the request to the followers
+	// Send the request to the followers.  See the same
+	// comment as in sendProposal()
+	//
 	for _, f := range l.followers {
+		msg := l.factory.CreateCommit(uint64(txnid))
 		f.pipe.Send(msg)
 	}
 

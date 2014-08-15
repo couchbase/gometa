@@ -68,7 +68,7 @@ type ActionHandler interface {
 	// The following API are used during discovery/sync
 	//
 
-	GetCommitedEntries(txid uint64) (chan LogEntryMsg, chan error, error)
+	GetCommitedEntries(txid uint64) (<- chan LogEntryMsg, <- chan error, error)
 
 	AppendLog(txid uint64, op uint32, key string, content []byte) error
 
@@ -84,8 +84,6 @@ type ActionHandler interface {
 	//
 	GetFollowerId() string
 	
-	GetNextTxnId() common.Txnid
-
 	LogProposal(proposal ProposalMsg) error
 
 	Commit(proposal ProposalMsg) error

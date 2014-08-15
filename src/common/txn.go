@@ -10,7 +10,7 @@ type Txnid uint64
 var gEpoch uint64 = 0
 var gCounter uint64 = 0
 var gMutex sync.Mutex
-var gCurTxnid Txnid = 0
+var gCurTxnid Txnid = 0  
 
 func GetNextTxnId() Txnid {
 	gMutex.Lock()
@@ -24,7 +24,9 @@ func GetNextTxnId() Txnid {
 
 	epoch := uint64(gEpoch << 32)
 	newTxnid := Txnid(epoch + gCounter)
-	
+
+	// gCurTxnid is initialized using the LastLoggedTxid in the local repository.  So if this node becomes master,
+	// we want to make sure that the new txid is larger than the one that we saw before.
 	if gCurTxnid >= newTxnid {
 		// Assertion.  This is to ensure integrity of the system.  Wrong txnid can result in corruption. 
 		panic(fmt.Sprintf("GetNextTxnId(): Assertion: New Txnid %d is smaller than or equal to old txnid %d", newTxnid, gCurTxnid))
@@ -33,6 +35,25 @@ func GetNextTxnId() Txnid {
 	gCurTxnid = newTxnid
 	
 	return gCurTxnid 
+}
+
+// Return true if txid2 is logically next in sequence from txid1.
+// If txid2 and txid1 have different epoch, then only check if
+// txid2 has a larger epoch.  Otherwise, compare the counter such
+// that txid2 is txid1 + 1 
+func IsNextInSequence(new, old Txnid) bool {
+
+	if new.GetEpoch() > old.GetEpoch() {
+		return true
+	}
+	
+	if new.GetEpoch() == old.GetEpoch() &&
+	   uint32(old.GetCounter()) != MAX_COUNTER &&
+	   new == old + 1 {
+	   return true
+	}
+	
+	return false
 }
 
 func SetEpoch(newEpoch uint32) {
@@ -51,10 +72,10 @@ func SetEpoch(newEpoch uint32) {
 func InitCurrentTxnid(txnid Txnid) {
 	gMutex.Lock()
 	defer gMutex.Unlock()
-	
+
 	if txnid > gCurTxnid {
 		gCurTxnid = txnid
-	}	
+	}
 }
 
 func (id Txnid) GetEpoch() uint64 {

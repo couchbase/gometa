@@ -70,10 +70,6 @@ func (a *ServerAction) LogProposal(p protocol.ProposalMsg) error {
 	return nil
 }
 
-func (a *ServerAction) GetNextTxnId() common.Txnid {
-	return common.GetNextTxnId()
-}
-
 func (a *ServerAction) GetFollowerId() string {
 	return GetHostTCPAddr() 
 }
@@ -152,7 +148,7 @@ func (a *ServerAction) NotifyNewLastCommittedTxid(txid uint64) {
 // Function for discovery phase
 /////////////////////////////////////////////////////////////////////////////
 
-func (a *ServerAction) GetCommitedEntries(txid uint64) (chan protocol.LogEntryMsg, chan error, error) {
+func (a *ServerAction) GetCommitedEntries(txid uint64) (<- chan protocol.LogEntryMsg, <- chan error, error) {
 
 	// Get an iterator thas has exclusive write access.  This means there will not be
 	// new commit entry being written while iterating.

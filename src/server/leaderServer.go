@@ -64,7 +64,10 @@ func RunLeaderServer(naddr string,
 	}()
 		
 	// create a leader
-	leader := protocol.NewLeader(naddr, handler, factory)
+	leader, err := protocol.NewLeader(naddr, handler, factory)
+	if err != nil {
+		return err
+	}
 	defer leader.Terminate()
 
 	// create a ConsentState
