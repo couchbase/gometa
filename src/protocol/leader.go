@@ -197,26 +197,6 @@ func (l *Leader) GetFollowerId() string {
 	return l.handler.GetFollowerId()
 }
 
-//
-// Add observer
-//
-func (l *Leader) AddObserver(id string, o *observer) {
-	l.mutex.Lock()
-	defer l.mutex.Unlock()
-	
-	l.observers[id] = o
-}
-
-//
-// Remove observer
-//
-func (l *Leader) RemoveObserver(id string) {
-	l.mutex.Lock()
-	defer l.mutex.Unlock()
-	
-	delete(l.observers, id)	
-}
-
 /////////////////////////////////////////////////
 // messageListener
 /////////////////////////////////////////////////
@@ -461,7 +441,7 @@ func (l *Leader) sendProposal(proposal ProposalMsg) {
 	}
 	
 	for _, o := range l.observers {
-		o.Send(msg)
+		o.send(msg)
 	}
 }
 
@@ -615,8 +595,32 @@ func (l *Leader) sendCommit(txnid common.Txnid) error {
 
 	// Send the message to the observer
 	for _, o := range l.observers {
-		o.Send(msg)
+		o.send(msg)
 	}
 	
 	return nil
+}
+
+/////////////////////////////////////////////////////////
+// Leader - Private Function : Observer 
+/////////////////////////////////////////////////////////
+
+//
+// Add observer
+//
+func (l *Leader) addObserver(id string, o *observer) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	l.observers[id] = o
+}
+
+//
+// Remove observer
+//
+func (l *Leader) removeObserver(id string) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	delete(l.observers, id)	
 }

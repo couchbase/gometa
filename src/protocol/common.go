@@ -68,7 +68,7 @@ type ActionHandler interface {
 	// The following API are used during discovery/sync
 	//
 
-	GetCommitedEntries(txid uint64) (<- chan LogEntryMsg, <- chan error, error)
+	GetCommitedEntries(txid1, txid2 common.Txnid) (<- chan LogEntryMsg, <- chan error, error)
 
 	AppendLog(txid uint64, op uint32, key string, content []byte) error
 
@@ -77,7 +77,7 @@ type ActionHandler interface {
 
 	NotifyNewCurrentEpoch(uint32)
 	
-	NotifyNewLastCommittedTxid(uint64)
+	NotifyNewLastCommittedTxid(common.Txnid)
 
 	//
 	// The following API are used during normal execution

@@ -99,20 +99,6 @@ func (r *Repository) Delete(key string) error {
 }
 
 //
-// Acquire exclusive write lock to the repository
-//
-func (r *Repository) Lock() {
-	r.mutex.Lock()
-}
-
-//
-// Release exclusive write lock to the repository
-//
-func (r *Repository) Unlock() {
-	r.mutex.Unlock()
-}
-
-//
 // Close repository.
 //
 func (r *Repository) Close() {

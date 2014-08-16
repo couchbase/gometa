@@ -181,7 +181,7 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 	
 	// create a proxy that will sycnhronize with the peer.   
 	log.Printf("LeaderServer.startProxy(): Start synchronization with follower. Peer TCP connection (%s)", peer.GetAddr())
-	proxy := protocol.NewLeaderSyncProxy(l.consentState, peer, l.handler, l.factory)
+	proxy := protocol.NewLeaderSyncProxy(l.leader, l.consentState, peer, l.handler, l.factory)
 	donech := proxy.GetDoneChannel()
 	go proxy.Start()
 	defer proxy.Terminate()

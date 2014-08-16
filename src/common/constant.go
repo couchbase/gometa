@@ -33,3 +33,5 @@ var CONFIG_MAGIC = "MagicNumber"                                     // Server C
 var CONFIG_MAGIC_VALUE uint64 = 0x0123456789                         // Server Config Param : Magic Number Value
 var MAX_EPOCH uint32 = math.MaxUint32                                // Max value for epoch 
 var MAX_COUNTER uint32 = math.MaxUint32                              // Max value for counter 
+var BOOTSTRAP_LAST_COMMITTED_TXID Txnid = Txnid(0)                   // Boostrap value of last committed txid
+

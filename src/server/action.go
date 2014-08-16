@@ -51,7 +51,7 @@ func (a *ServerAction) Commit(p protocol.ProposalMsg) error {
 		return err
 	}
 	
-	a.config.SetLastCommittedTxid(p.GetTxnid())
+	a.config.SetLastCommittedTxid(common.Txnid(p.GetTxnid()))
 
 	a.server.UpdateStateOnCommit(p)
 
@@ -139,7 +139,7 @@ func (a *ServerAction) NotifyNewCurrentEpoch(epoch uint32) {
 	}
 }
 
-func (a *ServerAction) NotifyNewLastCommittedTxid(txid uint64) {
+func (a *ServerAction) NotifyNewLastCommittedTxid(txid common.Txnid) {
 
 	a.config.SetLastCommittedTxid(txid)
 }
@@ -148,11 +148,11 @@ func (a *ServerAction) NotifyNewLastCommittedTxid(txid uint64) {
 // Function for discovery phase
 /////////////////////////////////////////////////////////////////////////////
 
-func (a *ServerAction) GetCommitedEntries(txid uint64) (<- chan protocol.LogEntryMsg, <- chan error, error) {
+func (a *ServerAction) GetCommitedEntries(txid1, txid2 common.Txnid) (<- chan protocol.LogEntryMsg, <- chan error, error) {
 
 	// Get an iterator thas has exclusive write access.  This means there will not be
 	// new commit entry being written while iterating.
-	iter, err := a.log.NewIterator(common.Txnid(txid), true)
+	iter, err := a.log.NewIterator(txid1, txid2)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -160,12 +160,12 @@ func (a *ServerAction) GetCommitedEntries(txid uint64) (<- chan protocol.LogEntr
 	logChan := make(chan protocol.LogEntryMsg)
 	errChan := make(chan error)
 
-	go a.startLogStreamer(txid, iter, logChan, errChan)
+	go a.startLogStreamer(txid1, iter, logChan, errChan)
 
 	return logChan, errChan, nil
 }
 
-func (a *ServerAction) startLogStreamer(startTxid uint64,
+func (a *ServerAction) startLogStreamer(startTxid common.Txnid,
 	iter *repo.LogIterator,
 	logChan chan protocol.LogEntryMsg,
 	errChan chan error) {
@@ -175,26 +175,17 @@ func (a *ServerAction) startLogStreamer(startTxid uint64,
 
 	// TODO : Need to lock the commitLog so there is no new commit while streaming
 	
-	// stream the first entry with given txid
-	msg := a.factory.CreateLogEntry(startTxid, uint32(common.OPCODE_STREAM_BEGIN_MARKER), "StreamBegin", ([]byte)("StreamBegin"))
-	logChan <- msg
-	
 	txnid, op, key, body, err := iter.Next() 
 	for err == nil  {
 		// only stream entry with a txid greater than the given one.  The caller would already 
 		// have the entry for startTxid. If the caller use the boostrap value for txnid (0),
 		// then this will stream everything.
-		if uint64(txnid) > startTxid {
+		if txnid > startTxid {
 			msg := a.factory.CreateLogEntry(uint64(txnid), uint32(op), key, body)
 			logChan <- msg
 		}
 		txnid, op, key, body, err = iter.Next()
 	}
-
-	// stream the last entry with the committed txid 
-	lastCommitted, err := a.GetLastCommittedTxid() 
-	msg = a.factory.CreateLogEntry(uint64(lastCommitted), uint32(common.OPCODE_STREAM_END_MARKER), "StreamEnd", ([]byte)("StreamEnd"))
-	logChan <- msg
 
 	// Nothing more to send.  The entries will be in the channel until the reciever consumes them. 
 	close(logChan)

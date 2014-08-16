@@ -18,6 +18,7 @@ type LeaderSyncProxy struct {
 	handler        ActionHandler
 	factory        MsgFactory
 	followerState *followerState
+	leader        *Leader
 	
 	mutex          sync.Mutex
 	isClosed       bool
@@ -56,7 +57,7 @@ type ConsentState struct {
 
 type followerState struct {
 	currentEpoch   uint32
-	lastLoggedTxid uint64
+	lastLoggedTxid common.Txnid 
 	fid 		   string
 }
 
@@ -109,11 +110,12 @@ func NewConsentState(sid string, epoch uint32, ensemble uint64) *ConsentState {
 
 	epoch = common.CompareAndIncrementEpoch(epoch, 0) // increment epoch to next value
 	
-	state := &ConsentState{acceptedEpoch: epoch,
-		acceptedEpochSet: make(map[string]uint32),
-		ackEpochSet:      make(map[string]string),
-		newLeaderAckSet:  make(map[string]string),
-		ensembleSize:     ensemble}
+	state := &ConsentState{
+		acceptedEpoch: 		epoch,
+		acceptedEpochSet: 	make(map[string]uint32),
+		ackEpochSet:      	make(map[string]string),
+		newLeaderAckSet:  	make(map[string]string),
+		ensembleSize:     	ensemble}
 
 	state.acceptedEpochCond = sync.NewCond(&state.acceptedEpochMutex)
 	state.ackEpochCond = sync.NewCond(&state.ackEpochMutex)
@@ -262,12 +264,15 @@ func (s *ConsentState) Terminate() {
 // 2) Follower: The follower is a PeerPipe (TCP connection).    This is
 //    used to exchange messages with the follower node.
 //
-func NewLeaderSyncProxy(state *ConsentState,
+func NewLeaderSyncProxy(leader *Leader,
+	state *ConsentState,
 	follower *common.PeerPipe,
 	handler ActionHandler,
 	factory MsgFactory) *LeaderSyncProxy {
 
-	sync := &LeaderSyncProxy{state: state,
+	sync := &LeaderSyncProxy{
+		leader : leader,
+		state: state,
 		follower: follower,
 		handler:  handler,
 		factory:  factory,
@@ -307,12 +312,19 @@ func (l *LeaderSyncProxy) Start() bool {
 	}()
 
 	timeout := time.After(common.SYNC_TIMEOUT * time.Millisecond)
+	
+	// Create an observer for the leader.  The leader will put on-going proposal and commits
+	// onto the observer queue.  This ensure that we can stream those mutations to the follower
+	// as well.
+	o := newObserver()
+	l.leader.addObserver(l.follower.GetAddr(), o)
+	defer l.leader.removeObserver(l.follower.GetAddr())
 
 	// spawn a go-routine to perform synchronziation.  Do not close donech2, just
 	// let it garbage collect when the go-routine is done.	 Make sure using
 	// buffered channel since this go-routine may go away before execute() does.
 	donech2 := make(chan bool, 1)
-	go l.execute(donech2)
+	go l.execute(donech2, o)
 	
 	select {
 		case success, ok := <- donech2:
@@ -415,7 +427,7 @@ func (l *LeaderSyncProxy) close() {
 // in which the caller may have aborted.  donech must be a buffered channel
 // to ensure that this go-routine will not get blocked if the caller dies first.
 //
-func (l *LeaderSyncProxy) execute(donech chan bool) {
+func (l *LeaderSyncProxy) execute(donech chan bool, o *observer) {
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -460,7 +472,7 @@ func (l *LeaderSyncProxy) execute(donech chan bool) {
 			}
 		case SYNC_SEND:
 			{
-				err := l.syncWithLeader() 
+				err := l.syncWithLeader(o) 
 				if err != nil {
 					log.Printf("LeaderSyncProxy.syncWithLeader(): Error encountered = %s", err.Error())
 					safeSend("LeaderSyncProxy:execute()", donech, false)
@@ -543,7 +555,7 @@ func (l *LeaderSyncProxy) updateCurrentEpochAfterQuorum() error {
 	// TODO : Validate follower epoch
 	info := packet.(EpochAckMsg)
 	l.followerState.currentEpoch = info.GetCurrentEpoch()
-	l.followerState.lastLoggedTxid = info.GetLastLoggedTxid()
+	l.followerState.lastLoggedTxid = common.Txnid(info.GetLastLoggedTxid())
 
 	// update my vote and wait for quorum of ack from followers
 	ok := l.state.voteEpochAck(l.GetFid())
@@ -599,37 +611,202 @@ func (l *LeaderSyncProxy) declareNewLeaderAfterQuorum() error {
 	return nil
 }
 
-func (l *LeaderSyncProxy) syncWithLeader() error {
+func (l *LeaderSyncProxy) syncWithLeader(o *observer) error {
 
 	log.Printf("LeaderSyncProxy.syncWithLeader()")
-	
-	logChan, errChan, err := l.handler.GetCommitedEntries(l.followerState.lastLoggedTxid)
+
+	// Figure out the data that needs to be read from commit log.
+	// The start key is the last logged txid from the follower
+	// The end key is the first txid in the observer queue (or 0 if queue is empty)
+	startTxid := l.followerState.lastLoggedTxid
+	endTxid := l.firstTxnIdInObserver(o)
+	// TODO: Is the endTxid inclusive during iteration?
+
+	// First, Send the header with the start txid
+	if err := l.sendHeader(startTxid); err != nil {
+		return err
+	}
+
+	// Second, Now stream the entry from the log
+	lastSeen, err := l.sendEntriesInCommittedLog(startTxid, endTxid, o)
 	if err != nil {
 		return err
+	}
+
+	// Third, need to send the items in the observer queue to the follower
+	lastCommitted, err := l.sendEntriesInObserver(o, lastSeen)
+	if err != nil {
+		return err
+	}
+
+	// Forth, stream the trailer with the committed txid 
+	if err = l.sendTrailer(lastCommitted); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+//
+// Send the header with starting txid
+//
+func (l *LeaderSyncProxy) sendHeader(startTxid common.Txnid) error {
+
+	msg := l.factory.CreateLogEntry(
+			uint64(startTxid), 
+			uint32(common.OPCODE_STREAM_BEGIN_MARKER), 
+			"StreamBegin", 
+			([]byte)("StreamBegin"))
+			
+	return send(msg, l.follower)
+} 
+
+//
+// Send the entries in the committed log to the follower
+//
+func (l *LeaderSyncProxy) sendEntriesInCommittedLog(startTxid, endTxid common.Txnid, o *observer) (common.Txnid, error) {
+
+	var lastSeen common.Txnid = common.BOOTSTRAP_LAST_COMMITTED_TXID 
+	
+	logChan, errChan, err := l.handler.GetCommitedEntries(startTxid, endTxid)
+	if err != nil {
+		return lastSeen, err
 	}
 
 	for {
 		select {
 		case entry, ok := <-logChan:
 			if !ok {
-				// channel close, nothing to send
-				return nil
+				return lastSeen, nil // no more data
 			}
 
+			// send the entry to follower
 			err = send(entry, l.follower)
 			if err != nil {
-				return err
+				return lastSeen, err
 			}
-
+			
+			lastSeen = common.Txnid(entry.GetTxnid())
+			
+			// we found the committed entries matches what's in observer queue
+			if l.hasSeenEntryInObserver(o, entry) {
+				return lastSeen, nil
+			}
+		
 		case err := <-errChan:
 			if err != nil {
-				return err
+				return lastSeen, err
 			}
-			return nil
+			break
 		}
 	}
+	
+	return lastSeen, nil
+}
 
-	return nil
+//
+// Send the entries in the observer to the follower
+//
+func (l *LeaderSyncProxy) sendEntriesInObserver(o *observer, lastSeen common.Txnid) (common.Txnid, error) {
+
+	var lastCommitted common.Txnid = common.BOOTSTRAP_LAST_COMMITTED_TXID 
+	
+	for packet := o.getNext(); packet != nil; packet = o.getNext() {
+		txid := l.getPacketTxnId(packet)
+		
+		// Make sure that we send only items that has a higher txid then the one 
+		// in the last committed entry received from iterator
+		if  txid > lastSeen {
+			lastCommitted, err := l.handlePacket(packet, lastCommitted)
+			if err != nil {
+				return lastCommitted, err
+			}
+		}
+	} 
+	
+	return lastCommitted, nil
+}
+
+//
+// Send the trailer with the last committed txid
+//
+func (l *LeaderSyncProxy) sendTrailer(lastCommitted common.Txnid) (err error) {
+
+	if lastCommitted == common.BOOTSTRAP_LAST_COMMITTED_TXID {
+		lastCommitted, err = l.handler.GetLastCommittedTxid() 
+		if err != nil {
+			return err
+		}
+	}
+	
+	msg := l.factory.CreateLogEntry(
+		uint64(lastCommitted), 
+		uint32(common.OPCODE_STREAM_END_MARKER), 
+		"StreamEnd", 
+		([]byte)("StreamEnd"))
+		
+	return send(msg, l.follower)
+}
+
+//
+// Check if I see the given Txnid in observer
+//
+func (l *LeaderSyncProxy) hasSeenEntryInObserver(o *observer, entry LogEntryMsg) bool {
+
+	txnid := l.firstTxnIdInObserver(o) 
+	return txnid != l.handler.GetBootstrapLastLoggedTxid() && txnid <= common.Txnid(entry.GetTxnid())
+}
+
+//
+// Get the txnid from the head of the observer
+//
+func (l *LeaderSyncProxy) firstTxnIdInObserver(o *observer) common.Txnid {
+
+	packet := o.peekFirst()
+	return l.getPacketTxnId(packet)
+}
+
+//
+// Get the txnid from the packet if the packet is a ProposalMsg or CommitMsg.
+//
+func (l *LeaderSyncProxy) getPacketTxnId(packet common.Packet) common.Txnid {
+
+	txid := l.handler.GetBootstrapLastLoggedTxid()  
+	if packet != nil {
+		switch request := packet.(type) {
+			case ProposalMsg:
+			case CommitMsg:
+				txid = common.Txnid(request.GetTxnid())
+		}
+	} 
+	
+	return txid
+}
+
+//
+// Handle the packet.  If Proposal, forward it to the follower.  If
+// Commit, then just remember the last txid committed. 
+//
+func (l *LeaderSyncProxy) handlePacket(packet common.Packet, lastCommitted common.Txnid) (common.Txnid, error) {
+
+	if packet != nil {
+		switch request := packet.(type) {
+			case ProposalMsg:
+				msg := l.factory.CreateLogEntry(
+						request.GetTxnid(), 
+						request.GetOpCode(),
+						request.GetKey(),
+						request.GetContent())
+				err := send(msg, l.follower)
+				if err != nil {
+					return lastCommitted, err
+				}
+			case CommitMsg:
+				lastCommitted = common.Txnid(request.GetTxnid())
+		}
+	}
+	
+	return lastCommitted, nil
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -893,7 +1070,7 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 	if err != nil {
 		return err
 	}
-	l.state = &followerState{lastLoggedTxid: uint64(txid), currentEpoch: currentEpoch}
+	l.state = &followerState{lastLoggedTxid: common.Txnid(txid), currentEpoch: currentEpoch}
 	packet = l.factory.CreateEpochAck(uint64(txid), currentEpoch)
 	return send(packet, l.leader)
 }
@@ -934,7 +1111,7 @@ func (l *FollowerSyncProxy) receiveAndUpdateCurrentEpoch() error {
 
 func (l *FollowerSyncProxy) syncReceive() error {
 
-	log.Printf("LeaderSyncProxy.syncReceive()")
+	log.Printf("FollowerSyncProxy.syncReceive()")
 	
 	for {
 		packet, err := listen("LogEntry", l.leader)
@@ -943,7 +1120,7 @@ func (l *FollowerSyncProxy) syncReceive() error {
 		}
 
 		entry := packet.(LogEntryMsg)
-		lastTxnid := entry.GetTxnid()
+		lastTxnid := common.Txnid(entry.GetTxnid())
 
 		// If this is the first one, skip
 		if entry.GetOpCode() == uint32(common.OPCODE_STREAM_BEGIN_MARKER) {

@@ -20,7 +20,6 @@ type CommitLog struct {
 type LogIterator struct {
 	repo    *Repository
 	iter    *RepoIterator
-	hasLock bool
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -89,21 +88,23 @@ func (r *CommitLog) Delete(txid common.Txnid) error {
 //
 // Create a new iterator
 //
-func (r *CommitLog) NewIterator(txid common.Txnid, exclusive bool) (*LogIterator, error) {
+func (r *CommitLog) NewIterator(txid1, txid2 common.Txnid) (*LogIterator, error) {
 
-	startKey := createLogKey(txid)
-	iter, err := r.repo.NewIterator(startKey, "")
+	startKey := createLogKey(txid1)
+	endKey := "" 		// get everything until the commit log is exhausted
+	if txid2 != 0 { 	// if txid2 is not the bootstrap value
+		endKey = createLogKey(txid2) 
+	}
+	 
+	iter, err := r.repo.NewIterator(startKey, endKey)
 	if err != nil {
 		return nil, err
 	}
 
-	if exclusive {
-		r.repo.Lock()
-	}
-
-	result := &LogIterator{iter: iter,
-		repo:    r.repo,
-		hasLock: exclusive}
+	result := &LogIterator{
+					iter: 		iter,
+					repo:    	r.repo}
+		
 	return result, nil
 }
 
@@ -128,12 +129,8 @@ func (i *LogIterator) Next() (txnid common.Txnid, op common.OpCode, key string, 
 
 // close iterator
 func (i *LogIterator) Close() {
+
 	// TODO: Check if fdb iterator is closed
-
-	if i.hasLock {
-		i.repo.Unlock()
-	}
-
 	i.iter.Close()
 }
 
