@@ -59,6 +59,7 @@ type Leader struct {
 	// mutex protected variable
 	mutex     		sync.Mutex
 	followers 		map[string]*messageListener
+	observers       map[string]*observer
 	isClosed  		bool
 	changech        chan bool  	// notify membership of active followers have changed
 }
@@ -89,6 +90,7 @@ func NewLeader(naddr string,
 
 	leader = &Leader{naddr: naddr,
 		followers:     	make(map[string]*messageListener),
+		observers:     	make(map[string]*observer),
 		quorums:       	make(map[common.Txnid][]string),
 		proposals:    	make(map[common.Txnid]ProposalMsg),
 		notifications:  make(chan *notification, common.MAX_PROPOSALS),
@@ -193,6 +195,26 @@ func (l *Leader) AddFollower(fid string, peer *common.PeerPipe) {
 //
 func (l *Leader) GetFollowerId() string {
 	return l.handler.GetFollowerId()
+}
+
+//
+// Add observer
+//
+func (l *Leader) AddObserver(id string, o *observer) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	l.observers[id] = o
+}
+
+//
+// Remove observer
+//
+func (l *Leader) RemoveObserver(id string) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	delete(l.observers, id)	
 }
 
 /////////////////////////////////////////////////
@@ -379,7 +401,8 @@ func (l *Leader) CreateProposal(host string, req RequestMsg) error {
 //
 func (l *Leader) NewProposal(proposal ProposalMsg) error {
 
-	// Call out to log the proposal
+	// Call out to log the proposal.  Always do this first before
+	// sending to followers.
 	err := l.handler.LogProposal(proposal)
 	if err != nil {
 		// If fails to log the proposal, return the error. 
@@ -426,14 +449,19 @@ func (l *Leader) sendProposal(proposal ProposalMsg) {
 	// to majority of followers.  If that can't be done, the
 	// leader re-elect.
 	//
-	for _, f := range l.followers {
-		msg := l.factory.CreateProposal(proposal.GetTxnid(),
+	msg := l.factory.CreateProposal(proposal.GetTxnid(),
 			proposal.GetFid(),
 			proposal.GetReqId(),
 			proposal.GetOpCode(),
 			proposal.GetKey(),
 			proposal.GetContent())
+			
+	for _, f := range l.followers {
 		f.pipe.Send(msg)
+	}
+	
+	for _, o := range l.observers {
+		o.Send(msg)
 	}
 }
 
@@ -547,7 +575,7 @@ func (l *Leader) commit(txid common.Txnid) error {
 			fmt.Sprintf("Cannot find a proposal for the txid %d. Fail to commit the proposal.", txid))
 	}
 
-	// marking the proposal as committed 
+	// marking the proposal as committed.  Always do this first before sending to followers. 
 	err := l.handler.Commit(p)
 	if err != nil {
 		return err
@@ -576,13 +604,19 @@ func (l *Leader) sendCommit(txnid common.Txnid) error {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 	
+	msg := l.factory.CreateCommit(uint64(txnid))
+	
 	// Send the request to the followers.  See the same
 	// comment as in sendProposal()
 	//
 	for _, f := range l.followers {
-		msg := l.factory.CreateCommit(uint64(txnid))
 		f.pipe.Send(msg)
 	}
 
+	// Send the message to the observer
+	for _, o := range l.observers {
+		o.Send(msg)
+	}
+	
 	return nil
 }

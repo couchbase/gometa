@@ -21,8 +21,8 @@ import (
 //
 type ElectionSite struct {
 	messenger    *common.PeerMessenger
-	master       *BallotMaster
-	worker       *PollWorker
+	master       *ballotMaster
+	worker       *pollWorker
 	
 	ensemble     []net.Addr
 	fullEnsemble []string
@@ -33,7 +33,7 @@ type ElectionSite struct {
 	isClosed     bool
 }
 
-type BallotResult struct {
+type ballotResult struct {
 	proposed      VoteMsg
 	winningEpoch  uint32		// winning epoch : can be updated after follower has sync with leader
 	receivedVotes map[string]VoteMsg // the map key is voter UDP address
@@ -41,21 +41,21 @@ type BallotResult struct {
 }
 
 type Ballot struct {
-	result   *BallotResult
-	resultch chan bool // should only be closed by PollWorker
+	result   *ballotResult
+	resultch chan bool // should only be closed by pollWorker
 }
 
-type BallotMaster struct {
+type ballotMaster struct {
 	site   *ElectionSite
 
 	// mutex protected state	
 	mutex  sync.Mutex
-	winner *BallotResult
+	winner *ballotResult
 	inProg bool
 	round  uint64
 }
 
-type PollWorker struct {
+type pollWorker struct {
 	site     *ElectionSite
 	ballot   *Ballot
 	listench chan *Ballot
@@ -169,10 +169,10 @@ func (e *ElectionSite) IsClosed() bool {
 // follower what is the actual epoch value -- after the
 // leader gets a quorum of followers).  There are other
 // possible implementations (e.g. keeping the winning
-// vote with the server -- not the BallotMaster), but
+// vote with the server -- not the ballotMaster), but
 // for now, let's just have this API to update the
 // epoch. Note that this is just a public wrapper
-// method on top of BallotMaster.
+// method on top of ballotMaster.
 //
 func (s *ElectionSite) UpdateWinningEpoch(epoch uint32) {
 
@@ -258,15 +258,15 @@ func cloneEnsemble(peers []string, laddr string) ([]net.Addr, []string, error) {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-// BallotMaster
+// ballotMaster
 /////////////////////////////////////////////////////////////////////////////
 
 //
-// Create a new BallotMaster.
+// Create a new ballotMaster.
 //
-func newBallotMaster(site *ElectionSite) *BallotMaster {
+func newBallotMaster(site *ElectionSite) *ballotMaster {
 
-	master := &BallotMaster{site: site,
+	master := &ballotMaster{site: site,
 		winner: nil,
 		round:  gElectionRound,
 		inProg: false}
@@ -277,7 +277,7 @@ func newBallotMaster(site *ElectionSite) *BallotMaster {
 //
 // Start a new round of ballot.
 //
-func (b *BallotMaster) castBallot(winnerch chan string) {
+func (b *ballotMaster) castBallot(winnerch chan string) {
 
 	// close the channel to make sure that the caller won't be
 	// block forever.  If the balltot is successful, a value would
@@ -286,10 +286,10 @@ func (b *BallotMaster) castBallot(winnerch chan string) {
 	// successful.
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in BallotMaster.castBallot() : %s\n", r)
+			log.Printf("panic in ballotMaster.castBallot() : %s\n", r)
 		}
 		
-		common.SafeRun("BallotMaster.castBallot()",
+		common.SafeRun("ballotMaster.castBallot()",
 			func() {
 				close(winnerch)  // unblock caller
 				
@@ -324,7 +324,7 @@ func (b *BallotMaster) castBallot(winnerch chan string) {
 	if success {
 		winner, ok := b.GetWinner()
 		if ok {
-			common.SafeRun("BallotMaster.castBallot()",
+			common.SafeRun("ballotMaster.castBallot()",
 				func() {
 					// Remember the last round.  
 					gElectionRound = b.round
@@ -338,7 +338,7 @@ func (b *BallotMaster) castBallot(winnerch chan string) {
 //
 // close the ballot master.
 //
-func (b *BallotMaster) close() {
+func (b *ballotMaster) close() {
 	// Nothing to do now (jsut placeholder).   The current ballot
 	// is closed when the ballot resultch is closed.
 	// Instead of doing it in this method, should
@@ -348,7 +348,7 @@ func (b *BallotMaster) close() {
 //
 // if there is a balllot in progress
 //
-func (b *BallotMaster) setBallotInProg(clear bool) bool {
+func (b *ballotMaster) setBallotInProg(clear bool) bool {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 
@@ -372,7 +372,7 @@ func (b *BallotMaster) setBallotInProg(clear bool) bool {
 //
 // Get the next id for ballot.
 //
-func (b *BallotMaster) getNextRound() uint64 {
+func (b *ballotMaster) getNextRound() uint64 {
 
 	result := b.round
 	b.round++
@@ -382,9 +382,9 @@ func (b *BallotMaster) getNextRound() uint64 {
 //
 // Create a ballot
 //
-func (b *BallotMaster) createInitialBallot(resultch chan bool) *Ballot {
+func (b *ballotMaster) createInitialBallot(resultch chan bool) *Ballot {
 
-	result := &BallotResult{winningEpoch : 0,
+	result := &ballotResult{winningEpoch : 0,
 	                        receivedVotes: make(map[string]VoteMsg),
 		                    activePeers: make(map[string]VoteMsg)}
 
@@ -402,7 +402,7 @@ func (b *BallotMaster) createInitialBallot(resultch chan bool) *Ballot {
 // Copy a winning vote.  This function is called when
 // there is no active ballot going on.  
 //
-func (b *BallotMaster) cloneWinningVote() VoteMsg {
+func (b *ballotMaster) cloneWinningVote() VoteMsg {
 
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
@@ -424,13 +424,13 @@ func (b *BallotMaster) cloneWinningVote() VoteMsg {
 
 /////////////////////////////////////////////////////////////////////////////
 // Function for upkeeping the election state.  These covers function from
-// BallotMaster and Ballot.
+// ballotMaster and Ballot.
 /////////////////////////////////////////////////////////////////////////////
 
 //
 // Return the winner
 //
-func (b *BallotMaster) GetWinner() (string, bool) {
+func (b *ballotMaster) GetWinner() (string, bool) {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 	
@@ -444,7 +444,7 @@ func (b *BallotMaster) GetWinner() (string, bool) {
 //
 // Set the winner
 //
-func (b *BallotMaster) setWinner(result *BallotResult) {
+func (b *ballotMaster) setWinner(result *ballotResult) {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 	
@@ -455,7 +455,7 @@ func (b *BallotMaster) setWinner(result *BallotResult) {
 //
 // Update the epcoh of the winning vote
 //
-func (b *BallotMaster) updateWinningEpoch(epoch uint32) {
+func (b *ballotMaster) updateWinningEpoch(epoch uint32) {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 	
@@ -465,11 +465,11 @@ func (b *BallotMaster) updateWinningEpoch(epoch uint32) {
 //
 // Set the current round.  This function is there just for
 // easier to keep track of different places that set
-// the BallotMaster.round.   BallotMaster.round should
+// the ballotMaster.round.   ballotMaster.round should
 // always be in sycn with the ballot.result.proposed.round or
 // the master.winner.proposed.round.
 //
-func (b *BallotMaster) setCurrentRound(round uint64) {
+func (b *ballotMaster) setCurrentRound(round uint64) {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 	
@@ -479,7 +479,7 @@ func (b *BallotMaster) setCurrentRound(round uint64) {
 // 
 // Get the current round
 //
-func (b *BallotMaster) getCurrentRound() uint64 {
+func (b *ballotMaster) getCurrentRound() uint64 {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 	
@@ -487,7 +487,7 @@ func (b *BallotMaster) getCurrentRound() uint64 {
 }
 
 //
-// Make the given vote as the proposed vote. Since PollWorker
+// Make the given vote as the proposed vote. Since pollWorker
 // executes serially, this does not need mutex.
 //
 func (b *Ballot) updateProposed(proposed VoteMsg, site *ElectionSite) {
@@ -519,16 +519,16 @@ func (b *Ballot) resetAndUpdateProposed(proposed VoteMsg, site *ElectionSite) {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-// PollWorker
+// pollWorker
 /////////////////////////////////////////////////////////////////////////////
 
 //
-// Create a new PollWorker.  The PollWorker listens to the Vote receving from
+// Create a new pollWorker.  The pollWorker listens to the Vote receving from
 // the peers for a particular ballot.
 //
-func startPollWorker(site *ElectionSite) *PollWorker {
+func startPollWorker(site *ElectionSite) *pollWorker {
 
-	worker := &PollWorker{site: site,
+	worker := &pollWorker{site: site,
 		ballot:   nil,
 		killch:   make(chan bool, 1),     // make sure sender won't block
 		listench: make(chan *Ballot, 1)}  // make sure sender won't block
@@ -539,19 +539,19 @@ func startPollWorker(site *ElectionSite) *PollWorker {
 }
 
 //
-// Notify the PollWorker that there is a new ballot.
+// Notify the pollWorker that there is a new ballot.
 //
-func (w *PollWorker) observe(ballot *Ballot) {
+func (w *pollWorker) observe(ballot *Ballot) {
 	// This synchronous.  This is to ensure that listen() receives the ballot
-	// before this function return to the BallotMaster.
+	// before this function return to the ballotMaster.
 	w.ballot = ballot
 	w.listench <- ballot
 }
 
 //
-// Close the PollWorker
+// Close the pollWorker
 //
-func (p *PollWorker) close() {
+func (p *pollWorker) close() {
 	p.killch <- true
 }
 
@@ -564,7 +564,7 @@ func (p *PollWorker) close() {
 // Candidate -> the peer that is voted for by the voter.
 // It is the peer (CndId) that is inside the vote.
 //
-func (w *PollWorker) listen() {
+func (w *pollWorker) listen() {
 
 	// If this loop terminates (e.g. due to panic), then make sure 
 	// there is no outstanding ballot waiting for a result.   Close
@@ -572,20 +572,20 @@ func (w *PollWorker) listen() {
 	// won't get blocked forever.
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in PollWorker.listen() : %s\n", r)
+			log.Printf("panic in pollWorker.listen() : %s\n", r)
 		}
 	
 		// make sure we close the ElectionSite first such that
 		// there is no new ballot coming while we are shutting
-		// down the PollWorker. If not, then the some go-routine
+		// down the pollWorker. If not, then the some go-routine
 		// may be waiting forever for the new ballot to complete. 
-	    common.SafeRun("PollWorker.listen()",
+	    common.SafeRun("pollWorker.listen()",
 			func() {
 				w.site.Close()
 			})
 		
 		// unlock anyone waiting for existing ballot to complete.	
-	    common.SafeRun("PollWorker.listen()",
+	    common.SafeRun("pollWorker.listen()",
 			func() {
 				if w.ballot != nil {
 					close(w.ballot.resultch)
@@ -674,10 +674,10 @@ func (w *PollWorker) listen() {
 }
 
 //
-// The PollWorker is no longer in election.  Respond to inquiry from
+// The pollWorker is no longer in election.  Respond to inquiry from
 // the peer.
 //
-func (w *PollWorker) respondInquiry(voter net.Addr, vote VoteMsg) {
+func (w *pollWorker) respondInquiry(voter net.Addr, vote VoteMsg) {
 
 	if PeerStatus(vote.GetStatus()) == ELECTING {
 		msg := w.site.master.cloneWinningVote()
@@ -695,7 +695,7 @@ func (w *PollWorker) respondInquiry(voter net.Addr, vote VoteMsg) {
 //
 // Handle a new vote.
 //
-func (w *PollWorker) handleVote(voter net.Addr, vote VoteMsg) bool {
+func (w *pollWorker) handleVote(voter net.Addr, vote VoteMsg) bool {
 
 	if PeerStatus(vote.GetStatus()) == ELECTING {
 		// if peer is still in election
@@ -709,7 +709,7 @@ func (w *PollWorker) handleVote(voter net.Addr, vote VoteMsg) bool {
 //
 // Handle a new vote if peer is electing.
 //
-func (w *PollWorker) handleVoteForElectingPeer(voter net.Addr, vote VoteMsg) bool {
+func (w *pollWorker) handleVoteForElectingPeer(voter net.Addr, vote VoteMsg) bool {
 
 	// compare the round.  When there are electing peers, they will eventually
 	// converge to the same round when quorum is reached.  This implies that
@@ -783,7 +783,7 @@ func (w *PollWorker) handleVoteForElectingPeer(voter net.Addr, vote VoteMsg) boo
 // 4) An rogue node re-join the network while I am running election 
 //    (due to bug/race condition?).    
 //
-func (w *PollWorker) handleVoteForActivePeer(voter net.Addr, vote VoteMsg) bool {
+func (w *pollWorker) handleVoteForActivePeer(voter net.Addr, vote VoteMsg) bool {
 
 	// compare the round
 	compareRound := w.compareRound(vote)
@@ -834,7 +834,7 @@ func (w *PollWorker) handleVoteForActivePeer(voter net.Addr, vote VoteMsg) bool 
 //
 // Compare the current round with the given vote
 //
-func (w *PollWorker) compareRound(vote VoteMsg) common.CompareResult {
+func (w *pollWorker) compareRound(vote VoteMsg) common.CompareResult {
 
 	currentRound := w.site.master.round
 
@@ -852,7 +852,7 @@ func (w *PollWorker) compareRound(vote VoteMsg) common.CompareResult {
 //
 // Compare two votes.  Return true if vote1 is larger than vote2.
 //
-func (w *PollWorker) compareVote(vote1, vote2 VoteMsg) common.CompareResult {
+func (w *pollWorker) compareVote(vote1, vote2 VoteMsg) common.CompareResult {
 
 	// Vote with the larger epoch always is larger 
 	result := common.CompareEpoch(vote1.GetEpoch(), vote2.GetEpoch())
@@ -903,7 +903,7 @@ func (w *PollWorker) compareVote(vote1, vote2 VoteMsg) common.CompareResult {
 //
 // Compare the given vote with currennt state (epoch, lastLoggedTxnid)
 //
-func (w *PollWorker) compareVoteWithCurState(vote VoteMsg) common.CompareResult {
+func (w *pollWorker) compareVoteWithCurState(vote VoteMsg) common.CompareResult {
 
 	vote2 := w.site.createVoteFromCurState()
 	return w.compareVote(vote, vote2)
@@ -912,7 +912,7 @@ func (w *PollWorker) compareVoteWithCurState(vote VoteMsg) common.CompareResult 
 //
 // Compare the given vote with proposed vote
 //
-func (w *PollWorker) compareVoteWithProposed(vote VoteMsg) common.CompareResult {
+func (w *pollWorker) compareVoteWithProposed(vote VoteMsg) common.CompareResult {
 
 	return w.compareVote(vote, w.ballot.result.proposed)
 }
@@ -920,7 +920,7 @@ func (w *PollWorker) compareVoteWithProposed(vote VoteMsg) common.CompareResult 
 //
 // Accept the check quorum
 //
-func (w *PollWorker) acceptAndCheckQuorum(voter net.Addr, vote VoteMsg) bool {
+func (w *pollWorker) acceptAndCheckQuorum(voter net.Addr, vote VoteMsg) bool {
 
 	// Remember this peer's vote.  Note that ZK never takes away a voter's votes
 	// even if the voter has gone down (ZK would not know).  But ZK will ensure
@@ -938,7 +938,7 @@ func (w *PollWorker) acceptAndCheckQuorum(voter net.Addr, vote VoteMsg) bool {
 //
 // Check Quorum
 //
-func (w *PollWorker) checkQuorum(votes map[string]VoteMsg, candidate VoteMsg) bool {
+func (w *pollWorker) checkQuorum(votes map[string]VoteMsg, candidate VoteMsg) bool {
 
 	count := 0
 	for _, vote := range votes {
@@ -960,7 +960,7 @@ func (w *PollWorker) checkQuorum(votes map[string]VoteMsg, candidate VoteMsg) bo
 //
 // Copy a proposed vote
 //
-func (w *PollWorker) cloneProposedVote() VoteMsg {
+func (w *pollWorker) cloneProposedVote() VoteMsg {
 
 	// w.site.master.round should be in sycn with
 	// w.ballot.result.proposed.round. Use w.site.master.round
@@ -976,7 +976,7 @@ func (w *PollWorker) cloneProposedVote() VoteMsg {
 //
 // Certify the leader before declaring followship
 //
-func (w *PollWorker) certifyLeader(vote VoteMsg) bool {
+func (w *pollWorker) certifyLeader(vote VoteMsg) bool {
 
 	// I am not voted as leader
 	if vote.GetCndId() != w.site.messenger.GetLocalAddr() {

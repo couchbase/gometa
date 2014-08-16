@@ -17,7 +17,7 @@ type LeaderSyncProxy struct {
 	follower      *common.PeerPipe
 	handler        ActionHandler
 	factory        MsgFactory
-	followerState *FollowerState
+	followerState *followerState
 	
 	mutex          sync.Mutex
 	isClosed       bool
@@ -29,7 +29,7 @@ type FollowerSyncProxy struct {
 	leader  *common.PeerPipe
 	handler  ActionHandler
 	factory  MsgFactory
-	state   *FollowerState
+	state   *followerState
 	
 	mutex          sync.Mutex
 	isClosed       bool
@@ -54,7 +54,7 @@ type ConsentState struct {
 	ensembleSize 		 uint64
 }
 
-type FollowerState struct {
+type followerState struct {
 	currentEpoch   uint32
 	lastLoggedTxid uint64
 	fid 		   string
@@ -501,7 +501,7 @@ func (l *LeaderSyncProxy) updateAcceptedEpochAfterQuorum() error {
 	fid := info.GetFid()
 
 	// initialize the follower state
-	l.followerState = &FollowerState{lastLoggedTxid: 0, currentEpoch: 0, fid : fid}
+	l.followerState = &followerState{lastLoggedTxid: 0, currentEpoch: 0, fid : fid}
 	
 	// update my vote and wait for epoch to reach quorum
 	newEpoch, ok := l.state.voteAcceptedEpoch(l.GetFid(), epoch)
@@ -893,7 +893,7 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 	if err != nil {
 		return err
 	}
-	l.state = &FollowerState{lastLoggedTxid: uint64(txid), currentEpoch: currentEpoch}
+	l.state = &followerState{lastLoggedTxid: uint64(txid), currentEpoch: currentEpoch}
 	packet = l.factory.CreateEpochAck(uint64(txid), currentEpoch)
 	return send(packet, l.leader)
 }
