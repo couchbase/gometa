@@ -61,35 +61,55 @@ func RunTestClient() {
 	for {
 		// read command from console 
 		var command, key, value string
-		fmt.Printf("Enter command, key, value\n")
-		n, err := fmt.Scanf("%s %s %s", &command, &key, &value)
+		var repeat int
+		fmt.Printf("Enter command(Add, Set, Delete)\n")
+		_, err := fmt.Scanf("%s", &command)
 		if err != nil {
 			fmt.Printf("Error : %s", err.Error())
 			continue
 		}
-		if n != 3 {
-			fmt.Printf("Missing arugments")
+		fmt.Printf("Enter Starting Key\n")
+		_, err = fmt.Scanf("%s", &key)
+		if err != nil {
+			fmt.Printf("Error : %s", err.Error())
+			continue
+		}
+		fmt.Printf("Enter Starting Value\n")
+		_, err = fmt.Scanf("%s", &value)
+		if err != nil {
+			fmt.Printf("Error : %s", err.Error())
+			continue
+		}
+		fmt.Printf("Enter Reptition\n")
+		_, err = fmt.Scanf("%d", &repeat)
+		if err != nil {
+			fmt.Printf("Error : %s", err.Error())
 			continue
 		}
 
-		// convert command string to byte
-		content, err := collateString(value)
-		if err != nil {
-	    	log.Printf("ClientTest() : Fail to convert content into bytes. Error %s. ", err.Error()) 
-		}		
+		for i:=0; i < repeat; i++ {
+			sendKey := fmt.Sprintf("%s-%d", key, i)
+			sendValue := fmt.Sprintf("%s-%d", value, i)
+			
+			// convert command string to byte
+			content, err := collateString(sendValue)
+			if err != nil {
+	    		log.Printf("ClientTest() : Fail to convert content into bytes. Error %s. ", err.Error()) 
+			}		
 	
-		// create a request object and serialize it	
-		request := factory.CreateRequest(uint64(1), uint32(common.GetOpCode(command)), key, content)
-		msg, err := common.Marshall(request)
-		if err != nil {
-	    	log.Printf("ClientTest() : Fail to marshall request message. Error %s. ", err.Error()) 
-		}	
+			// create a request object and serialize it	
+			request := factory.CreateRequest(uint64(1), uint32(common.GetOpCode(command)), sendKey, content)
+			msg, err := common.Marshall(request)
+			if err != nil {
+	    		log.Printf("ClientTest() : Fail to marshall request message. Error %s. ", err.Error()) 
+			}		
 	
-		// send serialized request object to server	
-		var reply []byte 
-		err = client.Call("RequestReceiver.NewRequest", msg, &reply)
-		if err != nil {
-	    	log.Printf("ClientTest() : Fail to call server %s. ", err.Error()) 
+			// send serialized request object to server	
+			var reply []byte 
+			err = client.Call("RequestReceiver.NewRequest", msg, &reply)
+			if err != nil {
+	    		log.Printf("ClientTest() : Fail to call server %s. ", err.Error()) 
+	    	}
 		}
 	}	
 }

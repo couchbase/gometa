@@ -666,6 +666,9 @@ func (l *LeaderSyncProxy) sendHeader(startTxid common.Txnid) error {
 //
 func (l *LeaderSyncProxy) sendEntriesInCommittedLog(startTxid, endTxid common.Txnid, o *observer) (common.Txnid, error) {
 
+	log.Printf("LeaderSyncProxy.sendEntriesInCommittedLog(): startTxid %d endTxid %d observer first txid %d",
+		startTxid, endTxid, l.firstTxnIdInObserver(o))
+	
 	var lastSeen common.Txnid = common.BOOTSTRAP_LAST_COMMITTED_TXID 
 	
 	logChan, errChan, err := l.handler.GetCommitedEntries(startTxid, endTxid)
@@ -709,10 +712,14 @@ func (l *LeaderSyncProxy) sendEntriesInCommittedLog(startTxid, endTxid common.Tx
 //
 func (l *LeaderSyncProxy) sendEntriesInObserver(o *observer, lastSeen common.Txnid) (common.Txnid, error) {
 
+	log.Printf("LeaderSyncProxy.sendEntriesInObserver(): last seen txid in commit log : %d, observer first txid %d",
+		lastSeen, l.firstTxnIdInObserver(o))
+		
 	var lastCommitted common.Txnid = common.BOOTSTRAP_LAST_COMMITTED_TXID 
 	
 	for packet := o.getNext(); packet != nil; packet = o.getNext() {
 		txid := l.getPacketTxnId(packet)
+	    log.Printf("LeaderSyncProxy.sendEntriesInObserver():  txid in observer %d type %s", txid, packet.Name())
 		
 		// Make sure that we send only items that has a higher txid then the one 
 		// in the last committed entry received from iterator
@@ -775,6 +782,7 @@ func (l *LeaderSyncProxy) getPacketTxnId(packet common.Packet) common.Txnid {
 	if packet != nil {
 		switch request := packet.(type) {
 			case ProposalMsg:
+				txid = common.Txnid(request.GetTxnid())
 			case CommitMsg:
 				txid = common.Txnid(request.GetTxnid())
 		}
