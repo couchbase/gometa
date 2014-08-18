@@ -11,6 +11,7 @@ import (
 	"common"
 	"server"
 	"bytes"
+	json "encoding/json"
 )
 
 //
@@ -19,15 +20,17 @@ import (
 func main() {
 
 	var isClient string
+	var config string
 	flag.StringVar(&isClient, "client", "false", "run as test client")
+	flag.StringVar(&config, "config", "", "path for configuration file")
 	flag.Parse()
 	
 	if isClient == "true" {
-		RunTestClient()
+		RunTestClient(config)
 		os.Exit(0)
 	}
 
-	err := server.RunServer()
+	err := server.RunServer(config)
 	if err != nil {
 		log.Printf("Encounter Error = %s. Terminate server", err.Error())	
 		os.Exit(1)
@@ -36,19 +39,56 @@ func main() {
 	os.Exit(0) 
 }
 
-func RunTestClient() {
+func RunTestClient(path string) {
 
 	// connect to the server
 	var host string
-	fmt.Printf("Enter server host\n") 
-	n, err := fmt.Scanf("%s", &host) 
-	if err != nil {
-		fmt.Printf("Error : %s", err.Error())
-		return
+	
+	if path == "" {
+		fmt.Printf("Enter server host\n") 
+		n, err := fmt.Scanf("%s", &host) 
+		if err != nil {
+			fmt.Printf("Error : %s", err.Error())
+			return
+		}
+		if n != 1 {
+			fmt.Printf("Missing arugment")
+		}
+	} else {
+		file, err := os.Open(path) 
+		if err != nil {
+			return 
+		}
+	
+		buffer := new(bytes.Buffer)
+		_, err = buffer.ReadFrom(file)
+		if err != nil {
+			return 
+		}
+
+		var config server.Config	
+		err = json.Unmarshal(buffer.Bytes(), &config) 
+		if err != nil {
+			return 
+		}
+		
+		for i, peer := range config.Peer {
+			fmt.Printf("\t%d - %s\n", i, peer.RequestAddr) 
+		}
+		var idx int
+		fmt.Printf("Select Host (number)\n") 
+		n, err := fmt.Scanf("%d", &idx) 
+		if err != nil {
+			fmt.Printf("Error : %s", err.Error())
+			return
+		}
+		if n != 1 || idx >= len(config.Peer) {
+			fmt.Printf("Invalid arugment")
+		}
+		
+		host = config.Peer[idx].RequestAddr		
 	}
-	if n != 1 {
-		fmt.Printf("Missing arugment")
-	}
+	
 	client, err := rpc.DialHTTP("tcp", host) 
 	if err != nil {
 		fmt.Printf("Fail to create connection to server %s.  Error %s", host, err.Error())

@@ -58,9 +58,9 @@ var gServer *Server = nil
 // Main Function 
 /////////////////////////////////////////////////////////////////////////////
 
-func RunServer() error {
+func RunServer(config string) error {
 
-	err := NewEnv()
+	err := NewEnv(config)
 	if err != nil {
 		return err	
 	}

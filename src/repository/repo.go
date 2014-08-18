@@ -114,7 +114,7 @@ func (r *Repository) Close() {
 /////////////////////////////////////////////////////////////////////////////
 
 //
-// Create a new iterator
+// Create a new iterator.  EndKey is inclusive.
 //
 func (r *Repository) NewIterator(startKey, endKey string) (*RepoIterator, error) {
 	// TODO: Check if fdb is closed.

@@ -5,21 +5,40 @@ import (
 	"strings"
 	"os"
 	"common"
+	"bytes"
+	"log"
+	json "encoding/json"
 )
 
 type Env struct {
-	hostUDPAddr net.Addr 
-	hostTCPAddr net.Addr 
+	hostUDPAddr 	net.Addr 
+	hostTCPAddr 	net.Addr 
 	hostRequestAddr net.Addr 
-	peerUDPAddr []string
-	peerTCPAddr []string
+	peerUDPAddr 	[]string
+	peerTCPAddr 	[]string
+}
+
+type Node struct {
+	ElectionAddr  	string
+	MessageAddr  	string
+	RequestAddr  	string 
+}
+
+type Config struct {
+	Host 			*Node
+	Peer 			[]*Node
 }
 
 var gEnv *Env
 
-func NewEnv() (err error) {
+func NewEnv(config string) (err error) {
 	gEnv = new(Env)
-	return gEnv.init()
+	
+	if config == "" {
+		return gEnv.initWithArgs()
+	}
+	
+	return gEnv.initWithConfig(config)
 }
 
 func GetHostUDPAddr() string {
@@ -60,7 +79,63 @@ func findMatchingPeerUDPAddr(tcpAddr string) string {
 	return "" 
 }
 
-func (e *Env) init() error {
+func (e *Env) initWithConfig(path string) error {
+
+	file, err := os.Open(path) 
+	if err != nil {
+		return err 
+	}
+	
+	buffer := new(bytes.Buffer)
+	_, err = buffer.ReadFrom(file)
+	if err != nil {
+		return err 
+	}
+
+	var config Config	
+	err = json.Unmarshal(buffer.Bytes(), &config) 
+	if err != nil {
+		return err 
+	}
+	
+	if e.hostUDPAddr, err = resolveAddr(common.ELECTION_TRANSPORT_TYPE, config.Host.ElectionAddr); err != nil {
+		return err
+	}
+	log.Printf("Env.initWithConfig(): Host UDP Addr %s", e.hostUDPAddr.String())
+	 
+	if e.hostTCPAddr, err = resolveAddr(common.MESSAGE_TRANSPORT_TYPE, config.Host.MessageAddr); err != nil {
+		return err
+	}
+	log.Printf("Env.initWithConfig(): Host TCP Addr %s", e.hostTCPAddr.String())
+	
+	if e.hostRequestAddr, err = resolveAddr(common.MESSAGE_TRANSPORT_TYPE, config.Host.RequestAddr); err != nil {
+		return err
+	}
+	log.Printf("Env.initWithConfig(): Host Request Addr %s", e.hostRequestAddr.String())
+
+	e.peerUDPAddr = make([]string, 0, len(config.Peer))	
+	e.peerTCPAddr = make([]string, 0, len(config.Peer)) 	
+	
+	for _, peer := range config.Peer {
+		 udpAddr, err := resolveAddr(common.ELECTION_TRANSPORT_TYPE, peer.ElectionAddr) 
+		 if err != nil {
+			return err
+		}
+		e.peerUDPAddr = append(e.peerUDPAddr, udpAddr.String())
+		log.Printf("Env.initWithConfig(): Peer UDP Addr %s", udpAddr.String())
+		
+		tcpAddr, err := resolveAddr(common.MESSAGE_TRANSPORT_TYPE, peer.MessageAddr)
+		if err != nil {
+			return err
+		}
+		e.peerTCPAddr = append(e.peerTCPAddr, tcpAddr.String())
+		log.Printf("Env.initWithConfig(): Peer TCP Addr %s", tcpAddr.String())
+	}
+	
+	return nil
+}
+
+func (e *Env) initWithArgs() error {
 	if len(os.Args) < 3 {
 		return common.NewError(common.ARG_ERROR, "Missing command line argument")
 	}
@@ -85,16 +160,19 @@ func (e *Env) resolveHostAddr() (err error) {
 	if err != nil {
 		return err	
 	}
+	log.Printf("Env.resoleHostAddr(): Host UDP Addr %s", e.hostUDPAddr.String())
 		
 	e.hostTCPAddr, err = resolveAddr(common.MESSAGE_TRANSPORT_TYPE, os.Args[2])
 	if err != nil {
 		return err	
 	}
+	log.Printf("Env.resolveHostAddr(): Host TCP Addr %s", e.hostTCPAddr.String())
 	
 	e.hostRequestAddr, err = resolveAddr(common.MESSAGE_TRANSPORT_TYPE, os.Args[3])
 	if err != nil {
 		return err	
 	}
+	log.Printf("Env.resolveHostAddr(): Host Request Addr %s", e.hostRequestAddr.String())
 	
 	return nil
 }
@@ -111,6 +189,7 @@ func (e *Env) resolvePeerAddr() error {
 		}
 		e.peerUDPAddr = append(e.peerUDPAddr, peer.String())
 		i++
+		log.Printf("Env.resolvePeerAddr(): Peer UDP Addr %s", peer.String())
 		
 		peer, err = resolveAddr(common.MESSAGE_TRANSPORT_TYPE, args[i])
 		if err != nil {
@@ -118,6 +197,7 @@ func (e *Env) resolvePeerAddr() error {
 		}
 		e.peerTCPAddr = append(e.peerTCPAddr, peer.String())
 		i++
+		log.Printf("Env.resolvePeerAddr(): Peer TCP Addr %s", peer.String())
 	}
 	
 	return nil
