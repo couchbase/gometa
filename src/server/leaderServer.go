@@ -183,10 +183,19 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 	log.Printf("LeaderServer.startProxy(): Start synchronization with follower. Peer TCP connection (%s)", peer.GetAddr())
 	proxy := protocol.NewLeaderSyncProxy(l.leader, l.consentState, peer, l.handler, l.factory)
 	donech := proxy.GetDoneChannel()
-	go proxy.Start()
+	
+	// Create an observer for the leader.  The leader will put on-going proposal msg and commit msg
+	// onto the observer queue.  This ensure that we can won't miss those mutations as the leader is
+	// sync'ign withe follower.  The messages in observer queue will eventually route to follower. 
+	o := protocol.NewObserver()
+	l.leader.AddObserver(peer.GetAddr(), o)
+	defer l.leader.RemoveObserver(peer.GetAddr())
+
+	// start the proxy	
+	go proxy.Start(o)
 	defer proxy.Terminate()
 	
-	// Get the killch for this proxy
+	// Get the killch for this go-routine 
 	killch := l.getProxyKillChan(peer.GetAddr())
 	if killch == nil {
    		log.Printf("LeaderServer.startProxy(): Cannot find killch for proxy (TCP connection = %s).", peer.GetAddr()) 
@@ -203,7 +212,7 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 				// tell the leader to add this follower for processing request.  If there is a follower running already,
 				// AddFollower() will terminate the existing follower instance, and then create a new one.
 	    		fid := proxy.GetFid()
-				l.leader.AddFollower(fid, peer)
+				l.leader.AddFollower(fid, peer, o)
 	    		log.Printf("LeaderServer.startProxy(): Synchronization with follower %s done (TCP conn = %s).  Add follower.", 
 	    				fid, peer.GetAddr())
 
@@ -295,7 +304,8 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 			log.Printf("LeaderServer.processRequest(): follower listener terminates. Stop client request processing.")
 			return nil
 		case <-leaderchangech:
-			// Listen to any change to the leader's ensemble, and to ensure that the leader maintain majority. 
+			// Listen to any change to the leader's active ensemble, and to ensure that the leader maintain majority. 
+			// The active ensemble is the set of running followers connected to the leader.
 			numFollowers := s.leader.GetActiveEnsembleSize()
 			if numFollowers <= int(ensembleSize/2) {
 				// leader looses majority of follower.   

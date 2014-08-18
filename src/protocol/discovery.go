@@ -300,7 +300,7 @@ func NewLeaderSyncProxy(leader *Leader,
 //
 // This function will catch panic.
 //
-func (l *LeaderSyncProxy) Start() bool {
+func (l *LeaderSyncProxy) Start(o *observer) bool {
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -312,13 +312,6 @@ func (l *LeaderSyncProxy) Start() bool {
 	}()
 
 	timeout := time.After(common.SYNC_TIMEOUT * time.Millisecond)
-	
-	// Create an observer for the leader.  The leader will put on-going proposal and commits
-	// onto the observer queue.  This ensure that we can stream those mutations to the follower
-	// as well.
-	o := newObserver()
-	l.leader.addObserver(l.follower.GetAddr(), o)
-	defer l.leader.removeObserver(l.follower.GetAddr())
 
 	// spawn a go-routine to perform synchronziation.  Do not close donech2, just
 	// let it garbage collect when the go-routine is done.	 Make sure using
@@ -617,10 +610,12 @@ func (l *LeaderSyncProxy) syncWithLeader(o *observer) error {
 
 	// Figure out the data that needs to be read from commit log.
 	// The start key is the last logged txid from the follower
-	// The end key is the first txid in the observer queue (or 0 if queue is empty)
+	// The end key is the first txid in the observer queue.
+	// If observer queue is empty, endTxid is 0 which will stream
+	// until either there is no more data in repository or there
+	// is a new entry added to the observer queue.
 	startTxid := l.followerState.lastLoggedTxid
-	endTxid := l.firstTxnIdInObserver(o)
-	// TODO: Is the endTxid inclusive during iteration?
+	endTxid := l.firstTxnIdInObserver(o) // inclusive
 
 	// First, Send the header with the start txid
 	if err := l.sendHeader(startTxid); err != nil {
@@ -670,8 +665,8 @@ func (l *LeaderSyncProxy) sendEntriesInCommittedLog(startTxid, endTxid common.Tx
 		startTxid, endTxid, l.firstTxnIdInObserver(o))
 	
 	var lastSeen common.Txnid = common.BOOTSTRAP_LAST_COMMITTED_TXID 
-	
-	logChan, errChan, err := l.handler.GetCommitedEntries(startTxid, endTxid)
+
+	logChan, errChan, killch, err := l.handler.GetCommitedEntries(startTxid, endTxid)
 	if err != nil {
 		return lastSeen, err
 	}
@@ -686,6 +681,7 @@ func (l *LeaderSyncProxy) sendEntriesInCommittedLog(startTxid, endTxid common.Tx
 			// send the entry to follower
 			err = send(entry, l.follower)
 			if err != nil {
+				// lastSeen can be 0 if there is no new entry in repo
 				return lastSeen, err
 			}
 			
@@ -693,6 +689,7 @@ func (l *LeaderSyncProxy) sendEntriesInCommittedLog(startTxid, endTxid common.Tx
 			
 			// we found the committed entries matches what's in observer queue
 			if l.hasSeenEntryInObserver(o, entry) {
+				killch <- true
 				return lastSeen, nil
 			}
 		
@@ -708,7 +705,9 @@ func (l *LeaderSyncProxy) sendEntriesInCommittedLog(startTxid, endTxid common.Tx
 }
 
 //
-// Send the entries in the observer to the follower
+// Send the entries in the observer to the follower.  We only send any proposal until we see the first
+// commit message.  Other messages in the observer queue will be sent after the synchronization phase is done
+// (they will be sent as regular message).
 //
 func (l *LeaderSyncProxy) sendEntriesInObserver(o *observer, lastSeen common.Txnid) (common.Txnid, error) {
 
@@ -721,12 +720,22 @@ func (l *LeaderSyncProxy) sendEntriesInObserver(o *observer, lastSeen common.Txn
 		txid := l.getPacketTxnId(packet)
 	    log.Printf("LeaderSyncProxy.sendEntriesInObserver():  txid in observer %d type %s", txid, packet.Name())
 		
-		// Make sure that we send only items that has a higher txid then the one 
-		// in the last committed entry received from iterator
-		if  txid > lastSeen {
-			lastCommitted, err := l.handlePacket(packet, lastCommitted)
+		if txid == lastSeen && packet.Name() == "Commit" {
+			// We have stream a logEntry with this txid to the follower already but 
+			// we need to know if this is a commit message.  If so, then return the txid right here. 
+	        log.Printf("LeaderSyncProxy.sendEntriesInObserver():  first entry in observe queue is Commit. Return commit %d", txid)
+			return txid, nil		
+		} else if  txid > lastSeen {
+			// This is an packet that has not yet sent over to the follower.   This function
+			// will return a different txid than lastCommitted if the msg is a commit msg.
+			lastCommitted2, err := l.handlePacket(packet, lastCommitted)
 			if err != nil {
-				return lastCommitted, err
+				return lastCommitted2, err
+			}
+			if lastCommitted2 != lastCommitted {
+				// This is a commit message.  Just return
+	        	log.Printf("LeaderSyncProxy.sendEntriesInObserver():  See new commit %d in observer queue. Return.", txid)
+				return lastCommitted2, nil			
 			}
 		}
 	} 

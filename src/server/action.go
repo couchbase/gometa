@@ -148,27 +148,29 @@ func (a *ServerAction) NotifyNewLastCommittedTxid(txid common.Txnid) {
 // Function for discovery phase
 /////////////////////////////////////////////////////////////////////////////
 
-func (a *ServerAction) GetCommitedEntries(txid1, txid2 common.Txnid) (<- chan protocol.LogEntryMsg, <- chan error, error) {
+func (a *ServerAction) GetCommitedEntries(txid1, txid2 common.Txnid) (<- chan protocol.LogEntryMsg, <- chan error, chan <- bool, error) {
 
 	// Get an iterator thas has exclusive write access.  This means there will not be
 	// new commit entry being written while iterating.
 	iter, err := a.log.NewIterator(txid1, txid2)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	logChan := make(chan protocol.LogEntryMsg)
-	errChan := make(chan error)
+	logChan := make(chan protocol.LogEntryMsg, 100)
+	errChan := make(chan error, 10)
+	killChan := make(chan bool, 1)
 
-	go a.startLogStreamer(txid1, iter, logChan, errChan)
+	go a.startLogStreamer(txid1, iter, logChan, errChan, killChan)
 
-	return logChan, errChan, nil
+	return logChan, errChan, killChan, nil
 }
 
 func (a *ServerAction) startLogStreamer(startTxid common.Txnid,
 	iter *repo.LogIterator,
 	logChan chan protocol.LogEntryMsg,
-	errChan chan error) {
+	errChan chan error,
+	killChan chan bool) {
 
 	// Close the iterator upon termination
 	defer iter.Close()
@@ -182,7 +184,11 @@ func (a *ServerAction) startLogStreamer(startTxid common.Txnid,
 		// then this will stream everything.
 		if txnid > startTxid {
 			msg := a.factory.CreateLogEntry(uint64(txnid), uint32(op), key, body)
-			logChan <- msg
+			select {
+				case logChan <- msg:
+				case _ = <- killChan :
+					break
+			}
 		}
 		txnid, op, key, body, err = iter.Next()
 	}

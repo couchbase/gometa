@@ -172,16 +172,40 @@ func (l *Leader) GetActiveEnsembleSize() int {
 // If the leader is terminated, the pipe between leader
 // and follower will also be closed.
 //
-func (l *Leader) AddFollower(fid string, peer *common.PeerPipe) {
+func (l *Leader) AddFollower(fid string, 
+							peer *common.PeerPipe,
+							o *observer) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-
+	
+		
+	// AddFollower requires holding the mutex such that the leader thread
+	// will not be sending new proposal or commit (see sendProposal() and
+	// sendCommit()) to followers.  This allow this function to copy the
+	// proposals and commits from the observer queue into the pipe, before
+	// the leader has a chance to send new messages.
+    for packet := o.getNext(); packet != nil; packet = o.getNext() {		
+   
+    	switch request := packet.(type) {
+			case ProposalMsg:
+				txid := common.Txnid(request.GetTxnid())
+				log.Printf("Leader.AddFollower() : send observer's packet %s, txid %d", packet.Name(), txid) 
+			case CommitMsg:
+				txid := common.Txnid(request.GetTxnid())
+				log.Printf("Leader.AddFollower() : send observer's packet %s, txid %d", packet.Name(), txid) 
+		}
+		
+		peer.Send(packet)    	
+    }
+    
+    // Rememeber the old message listener and start a new one.
 	oldListener, ok := l.followers[fid]
 	
 	listener := newListener(fid, peer, l)
 	l.followers[fid] = listener 
 	go listener.start()
-	
+
+	// kill the old message listener	
 	if ok && oldListener != nil {
 		log.Printf("Leader.AddFollower() : old Listener found for follower %s.  Terminating old listener", fid)
 		oldListener.terminate()
@@ -195,6 +219,30 @@ func (l *Leader) AddFollower(fid string, peer *common.PeerPipe) {
 //
 func (l *Leader) GetFollowerId() string {
 	return l.handler.GetFollowerId()
+}
+
+/////////////////////////////////////////////////////////
+// Leader - Public Function : Observer 
+/////////////////////////////////////////////////////////
+
+//
+// Add observer
+//
+func (l *Leader) AddObserver(id string, o *observer) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	l.observers[id] = o
+}
+
+//
+// Remove observer
+//
+func (l *Leader) RemoveObserver(id string) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	delete(l.observers, id)	
 }
 
 /////////////////////////////////////////////////
@@ -601,26 +649,3 @@ func (l *Leader) sendCommit(txnid common.Txnid) error {
 	return nil
 }
 
-/////////////////////////////////////////////////////////
-// Leader - Private Function : Observer 
-/////////////////////////////////////////////////////////
-
-//
-// Add observer
-//
-func (l *Leader) addObserver(id string, o *observer) {
-	l.mutex.Lock()
-	defer l.mutex.Unlock()
-	
-	l.observers[id] = o
-}
-
-//
-// Remove observer
-//
-func (l *Leader) removeObserver(id string) {
-	l.mutex.Lock()
-	defer l.mutex.Unlock()
-	
-	delete(l.observers, id)	
-}
