@@ -104,28 +104,42 @@ func (a *ServerAction) GetAcceptedEpoch() (uint32, error) {
 // Server Action for updating repository state
 /////////////////////////////////////////////////////////////////////////////
 
-func (a *ServerAction) NotifyNewAcceptedEpoch(epoch uint32) {
+func (a *ServerAction) NotifyNewAcceptedEpoch(epoch uint32) error {
 	oldEpoch, _ := a.GetAcceptedEpoch()
 	
 	// update only if the new epoch is larger
 	if oldEpoch < epoch {  
-		a.config.SetAcceptedEpoch(epoch)
+		err := a.config.SetAcceptedEpoch(epoch)
+		if err != nil {
+			return err
+		}
 	}
+	
+	return nil
 }
 
-func (a *ServerAction) NotifyNewCurrentEpoch(epoch uint32) {
+func (a *ServerAction) NotifyNewCurrentEpoch(epoch uint32) error {
 	oldEpoch, _ := a.GetCurrentEpoch()
 	
 	// update only if the new epoch is larger
 	if oldEpoch < epoch {  
-		a.config.SetCurrentEpoch(epoch)
+		err := a.config.SetCurrentEpoch(epoch)
+		if err != nil {
+			return err
+		}
 		a.server.UpdateWinningEpoch(epoch)
 	}
+	
+	return nil
 }
 
-func (a *ServerAction) NotifyNewLastCommittedTxid(txid common.Txnid) {
+func (a *ServerAction) NotifyNewLastCommittedTxid(txid common.Txnid) error {
 
-	a.config.SetLastCommittedTxid(txid)
+	err := a.config.SetLastCommittedTxid(txid)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////

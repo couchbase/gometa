@@ -46,20 +46,36 @@ func (r *ServerConfig) GetLastCommittedTxnId() (common.Txnid, error) {
 	return common.Txnid(value), err
 }
 
-func (r *ServerConfig) SetCurrentEpoch(epoch uint32) {
-	r.LogInt(common.CONFIG_CURRENT_EPOCH, uint64(epoch))
+func (r *ServerConfig) SetCurrentEpoch(epoch uint32) error {
+	err := r.LogInt(common.CONFIG_CURRENT_EPOCH, uint64(epoch))
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func (r *ServerConfig) SetAcceptedEpoch(epoch uint32) {
-	r.LogInt(common.CONFIG_ACCEPTED_EPOCH, uint64(epoch))
+func (r *ServerConfig) SetAcceptedEpoch(epoch uint32) error {
+	err := r.LogInt(common.CONFIG_ACCEPTED_EPOCH, uint64(epoch))
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func (r *ServerConfig) SetLastLoggedTxid(lastLoggedTxid common.Txnid) {
-	r.LogInt(common.CONFIG_LAST_LOGGED_TXID, uint64(lastLoggedTxid))
+func (r *ServerConfig) SetLastLoggedTxid(lastLoggedTxid common.Txnid) error {
+	err := r.LogInt(common.CONFIG_LAST_LOGGED_TXID, uint64(lastLoggedTxid))
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func (r *ServerConfig) SetLastCommittedTxid(lastCommittedTxid common.Txnid) {
-	r.LogInt(common.CONFIG_LAST_COMMITTED_TXID, uint64(lastCommittedTxid))
+func (r *ServerConfig) SetLastCommittedTxid(lastCommittedTxid common.Txnid) error {
+	err := r.LogInt(common.CONFIG_LAST_COMMITTED_TXID, uint64(lastCommittedTxid))
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 //

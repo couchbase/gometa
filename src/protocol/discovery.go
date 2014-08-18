@@ -517,7 +517,10 @@ func (l *LeaderSyncProxy) updateAcceptedEpochAfterQuorum() error {
 
 	// update the accepted epoch based on the quorum result.   This function
 	// will perform update only if the new epoch is larger than existing value.
-	l.handler.NotifyNewAcceptedEpoch(newEpoch)
+	err = l.handler.NotifyNewAcceptedEpoch(newEpoch)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -565,7 +568,10 @@ func (l *LeaderSyncProxy) updateCurrentEpochAfterQuorum() error {
 	
 	// update the current epoch based on the quorum result.   This function
 	// will perform update only if the new epoch is larger than existing value.
-	l.handler.NotifyNewCurrentEpoch(epoch)
+	err = l.handler.NotifyNewCurrentEpoch(epoch)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -1067,7 +1073,10 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 		// epoch only after it has polled from a quorum of followers.  So even if sync fails,
 		// it is unlikey that in the next sync, the leader will give a new accepted epoch smaller
 		// than what is being stored now. 
-		l.handler.NotifyNewAcceptedEpoch(epoch)
+		err = l.handler.NotifyNewAcceptedEpoch(epoch)
+		if err != nil {
+			return err 
+		}
 	} else if epoch == acceptedEpoch {
 		// In ZK, if the local epoch (acceptedEpoch) == leader's epoch (epoch), it will replly an EpochAck with epoch = -1.  
 		// This is to tell the leader that it should not count this EpockAck when computing quorum of EpochAck. 
@@ -1119,7 +1128,10 @@ func (l *FollowerSyncProxy) receiveAndUpdateCurrentEpoch() error {
 	// epoch only after it has polled from a quorum of followers.  So even if sync fails,
 	// it is unlikey that in the next sync, the leader will give a new current epoch smaller
 	// than what is being stored now. 
-	l.handler.NotifyNewCurrentEpoch(epoch)
+	err = l.handler.NotifyNewCurrentEpoch(epoch)
+	if err != nil {
+		return err
+	}
 
 	// Notify the leader that I have accepted the epoch
 	packet = l.factory.CreateNewLeaderAck()
@@ -1155,7 +1167,10 @@ func (l *FollowerSyncProxy) syncReceive() error {
 		// If this is the last one, then set the CommittedTxnid 
 		if entry.GetOpCode() == uint32(common.OPCODE_STREAM_END_MARKER) {
 			log.Printf("LeaderSyncProxy.syncReceive(). Receive stream_end.  Txid : %d", lastTxnid)
-			l.handler.NotifyNewLastCommittedTxid(lastTxnid)		
+			err = l.handler.NotifyNewLastCommittedTxid(lastTxnid)		
+			if err != nil {
+				return err
+			}
 			return nil
 		}
 	

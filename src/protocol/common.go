@@ -65,11 +65,11 @@ type ActionHandler interface {
 	AppendLog(txid uint64, op uint32, key string, content []byte) error
 
 	// Set new accepted epoch as well as creating new txnid
-	NotifyNewAcceptedEpoch(uint32)
+	NotifyNewAcceptedEpoch(uint32) error
 
-	NotifyNewCurrentEpoch(uint32)
+	NotifyNewCurrentEpoch(uint32) error
 	
-	NotifyNewLastCommittedTxid(common.Txnid)
+	NotifyNewLastCommittedTxid(common.Txnid) error
 
 	//
 	// The following API are used during normal execution
