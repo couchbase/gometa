@@ -45,25 +45,17 @@ type ActionHandler interface {
 	//
 	GetLastLoggedTxid() (common.Txnid, error)
 	
-	GetBootstrapLastLoggedTxid() common.Txnid
-
 	GetLastCommittedTxid() (common.Txnid, error)
 	
-	GetBootstrapLastCommittedTxid() common.Txnid
-
 	GetStatus() PeerStatus
 
 	// Current Epoch is set during leader/followr discovery phase.
 	// It is the current epoch (term) of the leader.
 	GetCurrentEpoch() (uint32, error)
 	
-	GetBootstrapCurrentEpoch() uint32
-
 	// This is the Epoch that leader/follower agrees during discovery/sync phase.
 	GetAcceptedEpoch() (uint32, error)
 	
-	GetBootstrapAcceptedEpoch() uint32
-
 	//
 	// The following API are used during discovery/sync
 	//

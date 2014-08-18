@@ -770,7 +770,7 @@ func (l *LeaderSyncProxy) sendTrailer(lastCommitted common.Txnid) (err error) {
 func (l *LeaderSyncProxy) hasSeenEntryInObserver(o *observer, entry LogEntryMsg) bool {
 
 	txnid := l.firstTxnIdInObserver(o) 
-	return txnid != l.handler.GetBootstrapLastLoggedTxid() && txnid <= common.Txnid(entry.GetTxnid())
+	return txnid != common.BOOTSTRAP_LAST_LOGGED_TXID && txnid <= common.Txnid(entry.GetTxnid())
 }
 
 //
@@ -787,7 +787,7 @@ func (l *LeaderSyncProxy) firstTxnIdInObserver(o *observer) common.Txnid {
 //
 func (l *LeaderSyncProxy) getPacketTxnId(packet common.Packet) common.Txnid {
 
-	txid := l.handler.GetBootstrapLastLoggedTxid()  
+	txid := common.BOOTSTRAP_LAST_LOGGED_TXID 
 	if packet != nil {
 		switch request := packet.(type) {
 			case ProposalMsg:

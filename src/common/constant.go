@@ -34,4 +34,7 @@ var CONFIG_MAGIC_VALUE uint64 = 0x0123456789                         // Server C
 var MAX_EPOCH uint32 = math.MaxUint32                                // Max value for epoch 
 var MAX_COUNTER uint32 = math.MaxUint32                              // Max value for counter 
 var BOOTSTRAP_LAST_COMMITTED_TXID Txnid = Txnid(0)                   // Boostrap value of last committed txid
+var BOOTSTRAP_LAST_LOGGED_TXID Txnid = Txnid(0)                      // Boostrap value of last logged txid
+var BOOTSTRAP_CURRENT_EPOCH uint32 = 0                      		 // Boostrap value of current epoch 
+var BOOTSTRAP_ACCEPTED_EPOCH uint32 = 0                      		 // Boostrap value of accepted epoch 
 

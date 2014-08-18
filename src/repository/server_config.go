@@ -31,17 +31,9 @@ func (r *ServerConfig) GetCurrentEpoch() (uint32, error) {
 	return uint32(value), err
 }
 
-func (r *ServerConfig) GetBootstrapCurrentEpoch() uint32 {
-	return uint32(0) 
-}
-
 func (r *ServerConfig) GetAcceptedEpoch() (uint32, error) {
 	value, err := r.GetInt(common.CONFIG_ACCEPTED_EPOCH)
 	return uint32(value), err
-}
-
-func (r *ServerConfig) GetBootstrapAcceptedEpoch() uint32 {
-	return uint32(0)
 }
 
 func (r *ServerConfig) GetLastLoggedTxnId() (uint64, error) {
@@ -49,17 +41,9 @@ func (r *ServerConfig) GetLastLoggedTxnId() (uint64, error) {
 	return value, err
 }
 
-func (r *ServerConfig) GetBootstrapLastLoggedTxnId() uint64 {
-	return uint64(0)
-}
-
 func (r *ServerConfig) GetLastCommittedTxnId() (common.Txnid, error) {
 	value, err := r.GetInt(common.CONFIG_LAST_COMMITTED_TXID)
 	return common.Txnid(value), err
-}
-
-func (r *ServerConfig) GetBootstrapLastCommittedTxnId() uint64 {
-	return uint64(0)
 }
 
 func (r *ServerConfig) SetCurrentEpoch(epoch uint32) {
@@ -70,8 +54,8 @@ func (r *ServerConfig) SetAcceptedEpoch(epoch uint32) {
 	r.LogInt(common.CONFIG_ACCEPTED_EPOCH, uint64(epoch))
 }
 
-func (r *ServerConfig) SetLastLoggedTxid(lastLoggedTxid uint64) {
-	r.LogInt(common.CONFIG_LAST_LOGGED_TXID, lastLoggedTxid)
+func (r *ServerConfig) SetLastLoggedTxid(lastLoggedTxid common.Txnid) {
+	r.LogInt(common.CONFIG_LAST_LOGGED_TXID, uint64(lastLoggedTxid))
 }
 
 func (r *ServerConfig) SetLastCommittedTxid(lastCommittedTxid common.Txnid) {
@@ -145,9 +129,9 @@ func (r *ServerConfig) bootstrap() {
 	value, err := r.GetInt(common.CONFIG_MAGIC)
 	if err != nil || value != common.CONFIG_MAGIC_VALUE {
 		r.LogInt(common.CONFIG_MAGIC, common.CONFIG_MAGIC_VALUE)
-		r.SetCurrentEpoch(r.GetBootstrapCurrentEpoch())
-		r.SetAcceptedEpoch(r.GetBootstrapAcceptedEpoch())
-		r.SetLastLoggedTxid(r.GetBootstrapLastLoggedTxnId())
-		r.SetLastCommittedTxid(common.Txnid(r.GetBootstrapLastCommittedTxnId()))
+		r.SetCurrentEpoch(common.BOOTSTRAP_CURRENT_EPOCH)
+		r.SetAcceptedEpoch(common.BOOTSTRAP_ACCEPTED_EPOCH)
+		r.SetLastLoggedTxid(common.BOOTSTRAP_LAST_LOGGED_TXID)
+		r.SetLastCommittedTxid(common.BOOTSTRAP_LAST_COMMITTED_TXID)
 	}
 }

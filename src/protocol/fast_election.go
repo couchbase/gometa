@@ -196,21 +196,21 @@ func (s *ElectionSite) createVoteFromCurState() VoteMsg {
 		// to proceed leader election.  After leader election, this 
 		// node will either be a leader or follower, and it will need
 		// to synchornize with the peer's state (acceptedEpoch, currentEpoch).
-		epoch = s.handler.GetBootstrapCurrentEpoch() 
+		epoch = common.BOOTSTRAP_CURRENT_EPOCH
 	}
 
 	lastLoggedTxid, err := s.handler.GetLastLoggedTxid()
 	if err != nil {
 		// if txid is missing, set the txid to the smallest possible
 		// number.  This likely will cause the peer to ignore my vote. 
-		lastLoggedTxid = s.handler.GetBootstrapLastLoggedTxid()
+		lastLoggedTxid = common.BOOTSTRAP_LAST_LOGGED_TXID
 	}
 	
 	lastCommittedTxid, err := s.handler.GetLastCommittedTxid()
 	if err != nil {
 		// if txid is missing, set the txid to the smallest possible
 		// number.  This likely will cause the peer to ignore my vote. 
-		lastCommittedTxid = s.handler.GetBootstrapLastCommittedTxid()
+		lastCommittedTxid = common.BOOTSTRAP_LAST_COMMITTED_TXID
 	}
 	
 	vote := s.factory.CreateVote(s.master.round,

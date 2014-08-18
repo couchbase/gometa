@@ -83,17 +83,9 @@ func (a *ServerAction) GetLastLoggedTxid() (common.Txnid, error) {
 	return common.Txnid(val), err
 }
 
-func (a *ServerAction) GetBootstrapLastLoggedTxid() common.Txnid {
-	return common.Txnid(a.config.GetBootstrapLastLoggedTxnId())
-}
-
 func (a *ServerAction) GetLastCommittedTxid() (common.Txnid, error) {
 	val, err := a.config.GetLastCommittedTxnId()
 	return common.Txnid(val), err
-}
-
-func (a *ServerAction) GetBootstrapLastCommittedTxid() common.Txnid {
-	return common.Txnid(a.config.GetBootstrapLastCommittedTxnId())
 }
 
 func (a *ServerAction) GetStatus() protocol.PeerStatus {
@@ -104,16 +96,8 @@ func (a *ServerAction) GetCurrentEpoch() (uint32, error) {
 	return a.config.GetCurrentEpoch()
 }
 
-func (a *ServerAction) GetBootstrapCurrentEpoch() uint32 {
-	return a.config.GetBootstrapCurrentEpoch()
-}
-
 func (a *ServerAction) GetAcceptedEpoch() (uint32, error) {
 	return a.config.GetAcceptedEpoch()
-}
-
-func (a *ServerAction) GetBootstrapAcceptedEpoch() uint32 {
-	return a.config.GetBootstrapAcceptedEpoch()
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -229,7 +213,7 @@ func (a *ServerAction) appendCommitLog(txnid common.Txnid, opCode common.OpCode,
 		return err
 	}
 	
-	a.config.SetLastLoggedTxid(uint64(txnid))
+	a.config.SetLastLoggedTxid(txnid)
 	
 	return nil
 }
