@@ -101,7 +101,11 @@ The client support 4 commands (Add, Set, Delete, Get).   For Add and Set, you ca
 III) DEPENDENCY 
 ---------------
 
-The metadata store uses forestdb.  You will need to get forestdb as well as goforestdb (forestdb GO wrapper).
+The metadata store uses forestdb.  You will need to get forestdb as well as goforestdb (forestdb GO wrapper).  It also uses protobuf for messaging.
+
+go get github.com/couchbaselabs/goforestdb
+
+go get -u code.google.com/p/goprotobuf/{proto,protoc-gen-go}
 
 IV) KEY BACKLOG
 ----------------
