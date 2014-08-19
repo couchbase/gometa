@@ -212,6 +212,12 @@ func (a *ServerAction) LogAndCommit(txid common.Txnid, op uint32, key string, co
 // Private Function
 /////////////////////////////////////////////////////////////////////////////
 
+func (a *ServerAction) get(key string) ([]byte, error) {
+
+	newKey := fmt.Sprintf("%s%s", common.PREFIX_DATA_PATH, key)
+	return a.repo.Get(newKey)
+}
+
 func (a *ServerAction) persistChange(op common.OpCode, key string, content []byte) error {
 
 	newKey := fmt.Sprintf("%s%s", common.PREFIX_DATA_PATH, key)

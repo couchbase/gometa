@@ -8,6 +8,7 @@ import (
 	"common"
 	http "net/http"
 	"time"
+	"fmt"
 )
 
 /////////////////////////////////////////////////
@@ -92,34 +93,54 @@ func (s *RequestReceiver) setServer(server *Server) {
 // Handle a new incoming request
 //
 //func (s *RequestReceiver) NewRequest(message []byte, reply *[]byte) error {
-func (s *RequestReceiver) NewRequest(req *Request, reply *Reply) error {
+func (s *RequestReceiver) NewRequest(req *Request, reply **Reply) error {
 
 	if s.server.IsDone() {
 		return common.NewError(common.SERVER_ERROR, "Server is terminated. Cannot process new request.")
 	}
 
-	id := uint64(time.Now().UnixNano())
-	request := s.server.factory.CreateRequest(id,
-		uint32(common.GetOpCode(req.OpCode)),	
-		req.Key,
-		req.Value)
-		
 	log.Printf("RequestReceiver.NewRequest(): Receive request from client")
-	request.Print()
+	log.Printf("RequestReceiver.NewRequest(): opCode %s key %s value %s", req.OpCode, req.Key, req.Value)
+		
+	opCode := common.GetOpCode(req.OpCode)
+	if opCode == common.OPCODE_GET {
+	
+		result, err := s.server.GetValue(req.Key)
+		if err != nil {
+			return err
+		}
+		log.Printf("RequestReceiver.NewRequest(): Receive response from server, len(value) = %d", len(result)) 
+	
+		*reply = &Reply{Result : result}
+		return nil
+	
+	} else 	if opCode == common.OPCODE_ADD || 
+			opCode == common.OPCODE_SET || 
+			opCode == common.OPCODE_DELETE {
+			
+		id := uint64(time.Now().UnixNano())
+		request := s.server.factory.CreateRequest(id,
+			uint32(common.GetOpCode(req.OpCode)),	
+			req.Key,
+			req.Value)
+		
+		handle := newRequestHandle(request)
 
-	handle := newRequestHandle(request)
+		handle.condVar.L.Lock()
+		defer handle.condVar.L.Unlock()
 
-	handle.condVar.L.Lock()
-	defer handle.condVar.L.Unlock()
+		// push the request to a channel
+		log.Printf("Handing new request to server. Key %s", req.Key)
+		s.server.state.incomings <- handle
 
-	// push the request to a channel
-	log.Printf("Handing new request to server. Key %s", req.Key)
-	s.server.state.incomings <- handle
+		// This goroutine will wait until the request has been processed.
+		handle.condVar.Wait()
+		log.Printf("Receive Response for request. Key %s", req.Key)
 
-	// This goroutine will wait until the request has been processed.
-	handle.condVar.Wait()
-	log.Printf("Receive Response for request. Key %s", req.Key)
-
-	reply = nil 
-	return handle.err
+		*reply = &Reply{Result : nil}
+		return handle.err
+		
+	} else {
+		return common.NewError(common.CLIENT_ERROR, fmt.Sprintf("Invalid Op code %s", req.OpCode))
+	}
 }

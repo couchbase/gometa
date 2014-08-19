@@ -21,7 +21,7 @@ type Server struct {
 	state     		*ServerState
 	site      		*protocol.ElectionSite
 	factory   		protocol.MsgFactory
-	handler   		protocol.ActionHandler
+	handler   		*ServerAction	
 	listener  		*common.PeerListener
 	reqListener 	*RequestListener
 	skillch   		chan bool
@@ -80,6 +80,11 @@ func RunServer(config string) error {
 	}
 	
 	return nil
+}
+
+func (s *Server) GetValue(key string) ([]byte, error) {
+
+	return s.handler.get(key)
 }
 
 /////////////////////////////////////////////////////////////////////////////

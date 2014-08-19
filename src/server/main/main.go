@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"net/rpc"
-	"github.com/prataprc/collatejson"
 	"server"
 	"bytes"
 	json "encoding/json"
@@ -107,7 +106,7 @@ func RunTestClient(path string) {
 		// read command from console 
 		var command, key, value string
 		var repeat int
-		fmt.Printf("Enter command(Add, Set, Delete)\n")
+		fmt.Printf("Enter command(Add, Set, Delete, Get)\n")
 		_, err := fmt.Scanf("%s", &command)
 		if err != nil {
 			fmt.Printf("Error : %s", err.Error())
@@ -133,7 +132,7 @@ func RunTestClient(path string) {
 				fmt.Printf("Error : %s", err.Error())
 				continue
 			}
-		} else if command == "Delete" {
+		} else if command == "Delete" || command == "Get" {
 			fmt.Printf("Enter Key\n")
 			_, err = fmt.Scanf("%s", &key)
 			if err != nil {
@@ -160,10 +159,7 @@ func RunTestClient(path string) {
 			
 			// convert command string to byte
 			if sendValue != "" {
-				content, err = collateString(sendValue)
-				if err != nil {
-	    			log.Printf("ClientTest() : Fail to convert content into bytes. Error %s. ", err.Error()) 
-				}		
+				content = ([]byte)(sendValue)
 			} else {
 				content = nil
 			}
@@ -174,21 +170,10 @@ func RunTestClient(path string) {
 			if err != nil {
 	    		log.Printf("ClientTest() : Fail to call server %s. ", err.Error()) 
 	    	}
+	    	
+	    	if reply != nil  && reply.Result != nil {
+				fmt.Printf("Result = %s, len(result) = %d\n", string(reply.Result), len(reply.Result))
+	    	}
 		}
 	}	
 }
-
-func collateString(key string) ([]byte, error) {
-	if key == "" {
-		return nil, nil
-	}
-
-	jsoncodec := collatejson.NewCodec()
-	buf := new(bytes.Buffer)
-	_, err := buf.Write(jsoncodec.EncodeString(key))
-	if err != nil {
-		return nil, err
-	}
-
-	return buf.Bytes(), nil
-}	

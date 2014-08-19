@@ -68,6 +68,8 @@ func (r *Repository) Set(key string, content []byte) error {
 //
 func (r *Repository) Get(key string) ([]byte, error) {
 
+	log.Printf("Repo.Get(): key %s", key)
+	
 	//convert key to its collatejson encoded byte representation
 	k, err := CollateString(key)
 	if err != nil {
