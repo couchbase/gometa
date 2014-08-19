@@ -71,6 +71,10 @@ You can then start the process as follow
 Once you start this process, it will run leader election and try to connect to the other processes (localhost:6001 and localhost:7001).  The leader
 election will select the leader from this ensemble.   The other 2 processes will act as followers.
 
+You would want to run each process in a different directory, since each process will create a database file (of the same name).  So you want the
+database file to be in different directory.
+
+
 B) Run As Client
 ----------------
 
