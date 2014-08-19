@@ -3,6 +3,7 @@ package server
 import (
 	"common"
 	"protocol"
+	"fmt"
 	repo "repository"
 )
 
@@ -196,9 +197,9 @@ func (a *ServerAction) startLogStreamer(startTxid common.Txnid,
 	close(errChan)
 }
 
-func (a *ServerAction) AppendLog(txid uint64, op uint32, key string, content []byte) error {
+func (a *ServerAction) AppendLog(txid common.Txnid, op uint32, key string, content []byte) error {
 
-	return a.appendCommitLog(common.Txnid(txid), common.OpCode(op), key, content)
+	return a.appendCommitLog(txid, common.OpCode(op), key, content)
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -207,16 +208,21 @@ func (a *ServerAction) AppendLog(txid uint64, op uint32, key string, content []b
 
 func (a *ServerAction) persistChange(op common.OpCode, p protocol.ProposalMsg) error {
 
+	key := fmt.Sprintf("%s%s", common.PREFIX_DATA_PATH, p.GetKey())
+	
+	if op == common.OPCODE_ADD {
+		return a.repo.Set(key, p.GetContent())
+	}
+		
 	if op == common.OPCODE_SET {
-		return a.repo.Set(p.GetKey(), p.GetContent())
+		return a.repo.Set(key, p.GetContent())
 	}
 
 	if op == common.OPCODE_DELETE {
-		return a.repo.Delete(p.GetKey())
+		return a.repo.Delete(key)
 	}
 
-	// TODO: Return error: invalid operation
-	return nil
+	return common.NewError(common.PROTOCOL_ERROR, fmt.Sprintf("ServerAction.persistChange() : Unknown op code %d", op))
 }
 
 func (a *ServerAction) appendCommitLog(txnid common.Txnid, opCode common.OpCode, key string, content []byte) error {

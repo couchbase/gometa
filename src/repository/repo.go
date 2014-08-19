@@ -1,10 +1,9 @@
 package repository
 
 import (
-	"bytes"
 	"common"
+	"log"
 	fdb "github.com/couchbaselabs/goforestdb"
-	"github.com/prataprc/collatejson"
 	"sync"
 )
 
@@ -46,6 +45,8 @@ func (r *Repository) Set(key string, content []byte) error {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+	
+	log.Printf("Repo.Set(): key %s, len(content) %d", key, len(content))
 
 	//convert key to its collatejson encoded byte representation
 	k, err := CollateString(key)
@@ -146,8 +147,7 @@ func (i *RepoIterator) Next() (key string, content []byte, err error) {
 		return "", nil, err
 	}
 
-	//TODO: Use collatejson?
-	key = string(doc.Key())
+	key = DecodeString(doc.Key())
 	body := doc.Body()
 
 	return key, body, nil
@@ -159,17 +159,15 @@ func (i *RepoIterator) Close() {
 	i.iter.Close()
 }
 
+// This only support ascii.
 func CollateString(key string) ([]byte, error) {
 	if key == "" {
 		return nil, nil
 	}
 
-	jsoncodec := collatejson.NewCodec()
-	buf := new(bytes.Buffer)
-	_, err := buf.Write(jsoncodec.EncodeString(key))
-	if err != nil {
-		return nil, err
-	}
+	return ([]byte)(key), nil
+}
 
-	return buf.Bytes(), nil
+func DecodeString(data []byte) string {
+	return string(data)
 }

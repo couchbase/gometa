@@ -3,8 +3,10 @@ package repository
 import (
 	"common"
 	"message"
-	"strconv"
 	"sync"
+	"fmt"
+	"strings"
+	"log"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -117,6 +119,13 @@ func (i *LogIterator) Next() (txnid common.Txnid, op common.OpCode, key string, 
 		return 0, common.OPCODE_INVALID, "", nil, err
 	}
 
+	// Since actual data is stored in the same repository, make sure
+	// we don't read them.
+	log.Printf("CommitLog.Next() : Iterator read key %s", key)
+	if !strings.HasPrefix(key, common.PREFIX_COMMIT_LOG_PATH) {
+		return 0, common.OPCODE_INVALID, "", nil,  common.NewError(common.REPO_ERROR, "Iteration for commit log done")
+	}
+
 	entry, err := unmarshall(content)
 	if err != nil {
 		return 0, common.OPCODE_INVALID, "", nil, err
@@ -140,10 +149,7 @@ func (i *LogIterator) Close() {
 
 func createLogKey(txid common.Txnid) string {
 
-	buf := []byte(common.PREFIX_COMMIT_LOG_PATH)
-	buf = strconv.AppendInt(buf, int64(txid), 10)
-
-	return string(buf)
+	return fmt.Sprintf("%s%d", common.PREFIX_COMMIT_LOG_PATH, int64(txid))
 }
 
 func unmarshall(data []byte) (*message.LogEntry, error) {

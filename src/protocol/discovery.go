@@ -1175,7 +1175,7 @@ func (l *FollowerSyncProxy) syncReceive() error {
 		}
 	
 		// write the new commit entry
-		err = l.handler.AppendLog(entry.GetTxnid(), entry.GetOpCode(), entry.GetKey(), entry.GetContent())
+		err = l.handler.AppendLog(common.Txnid(entry.GetTxnid()), entry.GetOpCode(), entry.GetKey(), entry.GetContent())
 		if err != nil {
 			return err
 		}

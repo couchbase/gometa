@@ -7,8 +7,6 @@ import (
 	"sync"
 	"common"
 	http "net/http"
-	"protocol"
-	"fmt"
 	"time"
 )
 
@@ -26,6 +24,16 @@ type RequestListener struct {
 
 type RequestReceiver struct {
 	server	*Server
+}
+
+type Request struct {
+	OpCode	string
+	Key		string
+	Value	[]byte
+}
+
+type Reply struct {
+	Result	[]byte
 }
 
 var gHandler *RequestReceiver = nil
@@ -83,26 +91,21 @@ func (s *RequestReceiver) setServer(server *Server) {
 //
 // Handle a new incoming request
 //
-func (s *RequestReceiver) NewRequest(message []byte, reply *[]byte) error {
+//func (s *RequestReceiver) NewRequest(message []byte, reply *[]byte) error {
+func (s *RequestReceiver) NewRequest(req *Request, reply *Reply) error {
 
 	if s.server.IsDone() {
 		return common.NewError(common.SERVER_ERROR, "Server is terminated. Cannot process new request.")
 	}
-	
-	req, err := s.doUnMarshall(message) 	
-	if err != nil { 
-		log.Printf("RequestReceiver.doUnMarshall() : ecounter error when unmarshalling mesasage from client.")
-		log.Printf("Error = %s. Ingore client request.", err.Error())	
-		*reply = nil 
-		return err 
-	}
 
-	// TODO: Should make the requst id as a string?
 	id := uint64(time.Now().UnixNano())
 	request := s.server.factory.CreateRequest(id,
-		req.GetOpCode(),
-		req.GetKey(),
-		req.GetContent())
+		uint32(common.GetOpCode(req.OpCode)),	
+		req.Key,
+		req.Value)
+		
+	log.Printf("RequestReceiver.NewRequest(): Receive request from client")
+	request.Print()
 
 	handle := newRequestHandle(request)
 
@@ -110,35 +113,13 @@ func (s *RequestReceiver) NewRequest(message []byte, reply *[]byte) error {
 	defer handle.condVar.L.Unlock()
 
 	// push the request to a channel
-	log.Printf("Handing new request to server. Key %s", req.GetKey())
+	log.Printf("Handing new request to server. Key %s", req.Key)
 	s.server.state.incomings <- handle
 
 	// This goroutine will wait until the request has been processed.
 	handle.condVar.Wait()
-	log.Printf("Receive Response for request. Key %s", req.GetKey())
+	log.Printf("Receive Response for request. Key %s", req.Key)
 
-	*reply = nil 
+	reply = nil 
 	return handle.err
-}
-
-//
-// Marshall client request
-//
-func (s *RequestReceiver) doUnMarshall(msg []byte) (protocol.RequestMsg, error) {
-
-	// skip the total length (first 8 bytes)
-	packet, err := common.UnMarshall(msg[8:])
-	if err != nil {
-		return nil, err
-	}
-	
-	switch request := packet.(type) {
-	case protocol.RequestMsg:
-		log.Printf("RequestReceiver.doUnMarshall() : Message decoded.  Packet = %s", request.Name())
-		request.Print()
-		return request, nil
-	default:
-		return nil, common.NewError(common.CLIENT_ERROR, 
-			fmt.Sprintf("Cannot process client reqeust of message type %s.", request.Name()))
-	}
 }

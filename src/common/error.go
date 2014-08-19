@@ -12,6 +12,7 @@ const (
 	ARG_ERROR
 	ELECTION_ERROR
 	CLIENT_ERROR
+	REPO_ERROR
 )
 
 type Error struct {

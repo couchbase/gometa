@@ -4,15 +4,23 @@ import (
 	"os"
 	"log"
 	"flag"
-	"message"
 	"fmt"
 	"net/rpc"
 	"github.com/prataprc/collatejson"
-	"common"
 	"server"
 	"bytes"
 	json "encoding/json"
 )
+
+type Request struct {
+	OpCode	string
+	Key		string
+	Value	[]byte
+}
+
+type Reply struct {
+	Result	[]byte
+}
 
 //
 // main function
@@ -95,9 +103,6 @@ func RunTestClient(path string) {
 		return
 	}	
 	
-	// create a message factory 
-	factory := message.NewConcreteMsgFactory() 
-	
 	for {
 		// read command from console 
 		var command, key, value string
@@ -108,45 +113,64 @@ func RunTestClient(path string) {
 			fmt.Printf("Error : %s", err.Error())
 			continue
 		}
-		fmt.Printf("Enter Starting Key\n")
-		_, err = fmt.Scanf("%s", &key)
-		if err != nil {
-			fmt.Printf("Error : %s", err.Error())
-			continue
-		}
-		fmt.Printf("Enter Starting Value\n")
-		_, err = fmt.Scanf("%s", &value)
-		if err != nil {
-			fmt.Printf("Error : %s", err.Error())
-			continue
-		}
-		fmt.Printf("Enter Reptition\n")
-		_, err = fmt.Scanf("%d", &repeat)
-		if err != nil {
-			fmt.Printf("Error : %s", err.Error())
-			continue
+		
+		if command == "Add" || command == "Set" {
+			fmt.Printf("Enter Starting Key\n")
+			_, err = fmt.Scanf("%s", &key)
+			if err != nil {
+				fmt.Printf("Error : %s", err.Error())
+				continue
+			}
+			fmt.Printf("Enter Starting Value\n")
+			_, err = fmt.Scanf("%s", &value)
+			if err != nil {
+				fmt.Printf("Error : %s", err.Error())
+				continue
+			}
+			fmt.Printf("Enter Reptition\n")
+			_, err = fmt.Scanf("%d", &repeat)
+			if err != nil {
+				fmt.Printf("Error : %s", err.Error())
+				continue
+			}
+		} else if command == "Delete" {
+			fmt.Printf("Enter Key\n")
+			_, err = fmt.Scanf("%s", &key)
+			if err != nil {
+				fmt.Printf("Error : %s", err.Error())
+				continue
+			}
+			value = "" 
+			repeat = 1
+		} else {
+			fmt.Printf("Error : Unknown commond %s", command) 
 		}
 
 		for i:=0; i < repeat; i++ {
-			sendKey := fmt.Sprintf("%s-%d", key, i)
-			sendValue := fmt.Sprintf("%s-%d", value, i)
+			var sendKey, sendValue string
+			var content []byte
+			
+			if repeat > 1 {
+				sendKey = fmt.Sprintf("%s-%d", key, i)
+				sendValue = fmt.Sprintf("%s-%d", value, i)
+			} else {
+				sendKey = key
+				sendValue = value 
+			}
 			
 			// convert command string to byte
-			content, err := collateString(sendValue)
-			if err != nil {
-	    		log.Printf("ClientTest() : Fail to convert content into bytes. Error %s. ", err.Error()) 
-			}		
-	
-			// create a request object and serialize it	
-			request := factory.CreateRequest(uint64(1), uint32(common.GetOpCode(command)), sendKey, content)
-			msg, err := common.Marshall(request)
-			if err != nil {
-	    		log.Printf("ClientTest() : Fail to marshall request message. Error %s. ", err.Error()) 
-			}		
-	
-			// send serialized request object to server	
-			var reply []byte 
-			err = client.Call("RequestReceiver.NewRequest", msg, &reply)
+			if sendValue != "" {
+				content, err = collateString(sendValue)
+				if err != nil {
+	    			log.Printf("ClientTest() : Fail to convert content into bytes. Error %s. ", err.Error()) 
+				}		
+			} else {
+				content = nil
+			}
+
+	    	request := &Request{OpCode : command, Key : sendKey, Value : content}
+	    	var reply *Reply
+			err = client.Call("RequestReceiver.NewRequest", request, &reply)
 			if err != nil {
 	    		log.Printf("ClientTest() : Fail to call server %s. ", err.Error()) 
 	    	}
