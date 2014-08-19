@@ -62,15 +62,13 @@ type ActionHandler interface {
 
 	GetCommitedEntries(txid1, txid2 common.Txnid) (<- chan LogEntryMsg, <- chan error, chan <- bool, error)
 
-	AppendLog(txid common.Txnid, op uint32, key string, content []byte) error
+	LogAndCommit(txid common.Txnid, op uint32, key string, content []byte, toCommit bool) error
 
 	// Set new accepted epoch as well as creating new txnid
 	NotifyNewAcceptedEpoch(uint32) error
 
 	NotifyNewCurrentEpoch(uint32) error
 	
-	NotifyNewLastCommittedTxid(common.Txnid) error
-
 	//
 	// The following API are used during normal execution
 	//

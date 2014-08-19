@@ -47,12 +47,13 @@ func (a *ServerAction) GetEnsembleSize() uint64 {
 func (a *ServerAction) Commit(p protocol.ProposalMsg) error {
 
 	// TODO: Make the whole func transactional
-	err := a.persistChange(common.OpCode(p.GetOpCode()), p)
-	if err != nil {
+	if err := a.persistChange(common.OpCode(p.GetOpCode()), p.GetKey(), p.GetContent()); err != nil {
 		return err
 	}
 	
-	a.config.SetLastCommittedTxid(common.Txnid(p.GetTxnid()))
+	if err := a.config.SetLastCommittedTxid(common.Txnid(p.GetTxnid())); err != nil {
+		return err
+	}
 
 	a.server.UpdateStateOnCommit(p)
 
@@ -134,15 +135,6 @@ func (a *ServerAction) NotifyNewCurrentEpoch(epoch uint32) error {
 	return nil
 }
 
-func (a *ServerAction) NotifyNewLastCommittedTxid(txid common.Txnid) error {
-
-	err := a.config.SetLastCommittedTxid(txid)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 ////////////////////////////////////////////////////////////////////////////
 // Function for discovery phase
 /////////////////////////////////////////////////////////////////////////////
@@ -197,29 +189,43 @@ func (a *ServerAction) startLogStreamer(startTxid common.Txnid,
 	close(errChan)
 }
 
-func (a *ServerAction) AppendLog(txid common.Txnid, op uint32, key string, content []byte) error {
+func (a *ServerAction) LogAndCommit(txid common.Txnid, op uint32, key string, content []byte, toCommit bool) error {
 
-	return a.appendCommitLog(txid, common.OpCode(op), key, content)
+	// TODO: Make this transactional
+
+	if err := a.appendCommitLog(txid, common.OpCode(op), key, content); err != nil {
+		return err
+	}
+	
+	if toCommit {
+		if err := a.persistChange(common.OpCode(op), key, content); err != nil {
+			return err
+		}
+		
+		return a.config.SetLastCommittedTxid(txid)
+	}
+	
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////
 // Private Function
 /////////////////////////////////////////////////////////////////////////////
 
-func (a *ServerAction) persistChange(op common.OpCode, p protocol.ProposalMsg) error {
+func (a *ServerAction) persistChange(op common.OpCode, key string, content []byte) error {
 
-	key := fmt.Sprintf("%s%s", common.PREFIX_DATA_PATH, p.GetKey())
+	newKey := fmt.Sprintf("%s%s", common.PREFIX_DATA_PATH, key)
 	
 	if op == common.OPCODE_ADD {
-		return a.repo.Set(key, p.GetContent())
+		return a.repo.Set(newKey, content) 
 	}
 		
 	if op == common.OPCODE_SET {
-		return a.repo.Set(key, p.GetContent())
+		return a.repo.Set(newKey, content) 
 	}
 
 	if op == common.OPCODE_DELETE {
-		return a.repo.Delete(key)
+		return a.repo.Delete(newKey)
 	}
 
 	return common.NewError(common.PROTOCOL_ERROR, fmt.Sprintf("ServerAction.persistChange() : Unknown op code %d", op))
@@ -228,12 +234,13 @@ func (a *ServerAction) persistChange(op common.OpCode, p protocol.ProposalMsg) e
 func (a *ServerAction) appendCommitLog(txnid common.Txnid, opCode common.OpCode, key string, content []byte) error {
 
 	// TODO: Make the whole func transactional
-	err := a.log.Log(txnid, opCode, key, content)
-	if err != nil {
+	if err := a.log.Log(txnid, opCode, key, content); err != nil {
 		return err
 	}
 	
-	a.config.SetLastLoggedTxid(txnid)
+	if err := a.config.SetLastLoggedTxid(txnid); err != nil {
+		return err
+	}
 	
 	return nil
 }

@@ -623,8 +623,8 @@ func (l *LeaderSyncProxy) syncWithLeader(o *observer) error {
 	startTxid := l.followerState.lastLoggedTxid
 	endTxid := l.firstTxnIdInObserver(o) // inclusive
 
-	// First, Send the header with the start txid
-	if err := l.sendHeader(startTxid); err != nil {
+	// First, Send the header with the last committed txid being seen so far.
+	if err := l.sendHeader(); err != nil {
 		return err
 	}
 
@@ -634,27 +634,39 @@ func (l *LeaderSyncProxy) syncWithLeader(o *observer) error {
 		return err
 	}
 
-	// Third, need to send the items in the observer queue to the follower
-	lastCommitted, err := l.sendEntriesInObserver(o, lastSeen)
-	if err != nil {
+	// Third, stream the trailer with the committed txid 
+	if err = l.sendTrailer(); err != nil {
 		return err
 	}
-
-	// Forth, stream the trailer with the committed txid 
-	if err = l.sendTrailer(lastCommitted); err != nil {
-		return err
+	
+	// Forth, if lastSeen matches first entry in observer, remove
+	// that entry since it has been sent.
+	packet := o.peekFirst()
+	if packet != nil {
+		txid := l.getPacketTxnId(packet)
+		if txid == lastSeen && packet.Name() != "Commit" {
+			o.getNext() // skip any entry that has been sent
+		}
 	}
 
 	return nil
 }
 
 //
-// Send the header with starting txid
+// Send the header with the last committed txid that has seen so far.
+// The last committed txid could have changed by the time we finish
+// synchronization, since the leaders can commit proposal concurrently.
+// The final commit txid would be sent by the last log entry (StreamEnd).
 //
-func (l *LeaderSyncProxy) sendHeader(startTxid common.Txnid) error {
+func (l *LeaderSyncProxy) sendHeader() error {
 
+	lastCommittedTxid, err := l.handler.GetLastCommittedTxid()
+	if err != nil {
+		return err
+	}
+	
 	msg := l.factory.CreateLogEntry(
-			uint64(startTxid), 
+			uint64(lastCommittedTxid), 
 			uint32(common.OPCODE_STREAM_BEGIN_MARKER), 
 			"StreamBegin", 
 			([]byte)("StreamBegin"))
@@ -663,14 +675,17 @@ func (l *LeaderSyncProxy) sendHeader(startTxid common.Txnid) error {
 } 
 
 //
-// Send the entries in the committed log to the follower
+// Send the entries in the committed log to the follower.  Termination condition:
+// 1) There is no more entry in commit log
+// 2) The entry in commit log matches the first entry in the observer queue
+// This function returns the txid of the last entry sent from the log. Return 0 if nothing is sent from commit log.
 //
 func (l *LeaderSyncProxy) sendEntriesInCommittedLog(startTxid, endTxid common.Txnid, o *observer) (common.Txnid, error) {
 
 	log.Printf("LeaderSyncProxy.sendEntriesInCommittedLog(): startTxid %d endTxid %d observer first txid %d",
 		startTxid, endTxid, l.firstTxnIdInObserver(o))
 	
-	var lastSeen common.Txnid = common.BOOTSTRAP_LAST_COMMITTED_TXID 
+	var lastSeen common.Txnid = common.BOOTSTRAP_LAST_LOGGED_TXID 
 
 	logChan, errChan, killch, err := l.handler.GetCommitedEntries(startTxid, endTxid)
 	if err != nil {
@@ -681,6 +696,7 @@ func (l *LeaderSyncProxy) sendEntriesInCommittedLog(startTxid, endTxid common.Tx
 		select {
 		case entry, ok := <-logChan:
 			if !ok {
+				killch <- true
 				return lastSeen, nil // no more data
 			}
 
@@ -688,13 +704,14 @@ func (l *LeaderSyncProxy) sendEntriesInCommittedLog(startTxid, endTxid common.Tx
 			err = send(entry, l.follower)
 			if err != nil {
 				// lastSeen can be 0 if there is no new entry in repo
+				killch <- true
 				return lastSeen, err
 			}
 			
 			lastSeen = common.Txnid(entry.GetTxnid())
 			
 			// we found the committed entries matches what's in observer queue
-			if l.hasSeenEntryInObserver(o, entry) {
+			if l.hasSeenEntryInObserver(o, common.Txnid(entry.GetTxnid())) {
 				killch <- true
 				return lastSeen, nil
 			}
@@ -711,58 +728,17 @@ func (l *LeaderSyncProxy) sendEntriesInCommittedLog(startTxid, endTxid common.Tx
 }
 
 //
-// Send the entries in the observer to the follower.  We only send any proposal until we see the first
-// commit message.  Other messages in the observer queue will be sent after the synchronization phase is done
-// (they will be sent as regular message).
-//
-func (l *LeaderSyncProxy) sendEntriesInObserver(o *observer, lastSeen common.Txnid) (common.Txnid, error) {
-
-	log.Printf("LeaderSyncProxy.sendEntriesInObserver(): last seen txid in commit log : %d, observer first txid %d",
-		lastSeen, l.firstTxnIdInObserver(o))
-		
-	var lastCommitted common.Txnid = common.BOOTSTRAP_LAST_COMMITTED_TXID 
-	
-	for packet := o.getNext(); packet != nil; packet = o.getNext() {
-		txid := l.getPacketTxnId(packet)
-	    log.Printf("LeaderSyncProxy.sendEntriesInObserver():  txid in observer %d type %s", txid, packet.Name())
-		
-		if txid == lastSeen && packet.Name() == "Commit" {
-			// We have stream a logEntry with this txid to the follower already but 
-			// we need to know if this is a commit message.  If so, then return the txid right here. 
-	        log.Printf("LeaderSyncProxy.sendEntriesInObserver():  first entry in observe queue is Commit. Return commit %d", txid)
-			return txid, nil		
-		} else if  txid > lastSeen {
-			// This is an packet that has not yet sent over to the follower.   This function
-			// will return a different txid than lastCommitted if the msg is a commit msg.
-			lastCommitted2, err := l.handlePacket(packet, lastCommitted)
-			if err != nil {
-				return lastCommitted2, err
-			}
-			if lastCommitted2 != lastCommitted {
-				// This is a commit message.  Just return
-	        	log.Printf("LeaderSyncProxy.sendEntriesInObserver():  See new commit %d in observer queue. Return.", txid)
-				return lastCommitted2, nil			
-			}
-		}
-	} 
-	
-	return lastCommitted, nil
-}
-
-//
 // Send the trailer with the last committed txid
 //
-func (l *LeaderSyncProxy) sendTrailer(lastCommitted common.Txnid) (err error) {
+func (l *LeaderSyncProxy) sendTrailer() (err error) {
 
-	if lastCommitted == common.BOOTSTRAP_LAST_COMMITTED_TXID {
-		lastCommitted, err = l.handler.GetLastCommittedTxid() 
-		if err != nil {
-			return err
-		}
+	lastCommittedTxid, err := l.handler.GetLastCommittedTxid()
+	if err != nil {
+		return err
 	}
 	
 	msg := l.factory.CreateLogEntry(
-		uint64(lastCommitted), 
+		uint64(lastCommittedTxid), 
 		uint32(common.OPCODE_STREAM_END_MARKER), 
 		"StreamEnd", 
 		([]byte)("StreamEnd"))
@@ -773,10 +749,10 @@ func (l *LeaderSyncProxy) sendTrailer(lastCommitted common.Txnid) (err error) {
 //
 // Check if I see the given Txnid in observer
 //
-func (l *LeaderSyncProxy) hasSeenEntryInObserver(o *observer, entry LogEntryMsg) bool {
+func (l *LeaderSyncProxy) hasSeenEntryInObserver(o *observer, lastSeen common.Txnid) bool {
 
 	txnid := l.firstTxnIdInObserver(o) 
-	return txnid != common.BOOTSTRAP_LAST_LOGGED_TXID && txnid <= common.Txnid(entry.GetTxnid())
+	return txnid != common.BOOTSTRAP_LAST_LOGGED_TXID && txnid <= lastSeen
 }
 
 //
@@ -804,32 +780,6 @@ func (l *LeaderSyncProxy) getPacketTxnId(packet common.Packet) common.Txnid {
 	} 
 	
 	return txid
-}
-
-//
-// Handle the packet.  If Proposal, forward it to the follower.  If
-// Commit, then just remember the last txid committed. 
-//
-func (l *LeaderSyncProxy) handlePacket(packet common.Packet, lastCommitted common.Txnid) (common.Txnid, error) {
-
-	if packet != nil {
-		switch request := packet.(type) {
-			case ProposalMsg:
-				msg := l.factory.CreateLogEntry(
-						request.GetTxnid(), 
-						request.GetOpCode(),
-						request.GetKey(),
-						request.GetContent())
-				err := send(msg, l.follower)
-				if err != nil {
-					return lastCommitted, err
-				}
-			case CommitMsg:
-				lastCommitted = common.Txnid(request.GetTxnid())
-		}
-	}
-	
-	return lastCommitted, nil
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -1142,6 +1092,9 @@ func (l *FollowerSyncProxy) syncReceive() error {
 
 	log.Printf("FollowerSyncProxy.syncReceive()")
 	
+	lastCommittedFromLeader := common.BOOTSTRAP_LAST_COMMITTED_TXID
+	pendingCommit 			:= make([]LogEntryMsg, 0, common.MAX_PROPOSALS)
+	
 	for {
 		packet, err := listen("LogEntry", l.leader)
 		if err != nil {
@@ -1154,30 +1107,49 @@ func (l *FollowerSyncProxy) syncReceive() error {
 		// If this is the first one, skip
 		if entry.GetOpCode() == uint32(common.OPCODE_STREAM_BEGIN_MARKER) {
 			log.Printf("LeaderSyncProxy.syncReceive(). Receive stream_begin.  Txid : %d", lastTxnid)
-			
-			// If it is the first entry, we expect the entry txid to be the same as my last logged txid
-			if lastTxnid != l.state.lastLoggedTxid {
-				return common.NewError(common.PROTOCOL_ERROR, 
-					fmt.Sprintf("Expect to receive first LogEntryMsg with txnid = %d. Get %d", l.state.lastLoggedTxid, lastTxnid))
-			}
-			
+			lastCommittedFromLeader = lastTxnid
 			continue
 		}
 		
-		// If this is the last one, then set the CommittedTxnid 
+		// If this is the last one, then flush the pending log entry as well.  The streamEnd
+		// message has a more recent lastCommitedTxid from the leader which is retreievd after
+		// the last log entry is sent.  
 		if entry.GetOpCode() == uint32(common.OPCODE_STREAM_END_MARKER) {
 			log.Printf("LeaderSyncProxy.syncReceive(). Receive stream_end.  Txid : %d", lastTxnid)
-			err = l.handler.NotifyNewLastCommittedTxid(lastTxnid)		
-			if err != nil {
-				return err
+			lastCommittedFromLeader = lastTxnid
+		
+			// write any log entry that has not been logged. 	
+			for _, entry := range pendingCommit {
+				toCommit := entry.GetTxnid() <= uint64(lastCommittedFromLeader)
+				
+				if err := l.handler.LogAndCommit(common.Txnid(entry.GetTxnid()), 
+												entry.GetOpCode(), 
+												entry.GetKey(), 
+												entry.GetContent(),
+												toCommit); err != nil {
+					return err
+				}
 			}
+
 			return nil
 		}
 	
-		// write the new commit entry
-		err = l.handler.AppendLog(common.Txnid(entry.GetTxnid()), entry.GetOpCode(), entry.GetKey(), entry.GetContent())
-		if err != nil {
-			return err
+		// write the new log entry.  If the txid is less than the last known committed txid
+		// from the leader, then commit the entry. Otherwise, keep it in a pending list. 
+		toCommit := lastTxnid <= lastCommittedFromLeader
+		if toCommit {
+			// This call needs to be atomic to ensure that the commit log and the data store 
+			// are updated transactionally.  This ensures that if the follower crashes, the
+			// repository as a while remains in a consistent state.
+			if err := l.handler.LogAndCommit(common.Txnid(entry.GetTxnid()), 
+									entry.GetOpCode(), 
+									entry.GetKey(), 
+									entry.GetContent(),
+									true); err != nil {
+				return err
+			}
+		} else {
+			pendingCommit = append(pendingCommit, entry)
 		}
 	}
 
