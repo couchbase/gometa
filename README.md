@@ -7,7 +7,9 @@ Gometa is a GO implementation of a distributed metadata store. Gometa uses zooke
 Zookeeper is battle tested consensus protocol, being used in big deployment such as linked-in and Netflix.  Papers regarding zookeeper:
 
 http://www.tcs.hut.fi/Studies/T-79.5001/reports/2012-deSouzaMedeiros.pdf
+
 https://www.usenix.org/legacy/event/usenix10/tech/full_papers/Hunt.pdf
+
 http://web.stanford.edu/class/cs347/reading/zab.pdf
 
 II) BUILD
