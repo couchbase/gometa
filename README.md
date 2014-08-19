@@ -3,6 +3,7 @@ I) INTRODUCTION
 ---------------
 
 Gometa is a GO implementation of a distributed metadata store. Gometa uses zookeeper Zab protocol for leader election and quorum write.  
+
 Zookeeper is battle tested consensus protocol, being used in big deployment such as linked-in and Netflix.  Papers regarding zookeeper:
 
 http://www.tcs.hut.fi/Studies/T-79.5001/reports/2012-deSouzaMedeiros.pdf
@@ -22,26 +23,43 @@ A) Run As Server
 ----------------
 
 To run as server, you will need a ensemble of processes.   Each process requires 3 ports:
+
 1) a UDP port for leader election
+
 2) a TCP port to send messages with the leader of the ensemble
+
 3) a TCP port to receive request from client
 
 For each process, you can specify the ports of the ensemble as a configuration file.  The configuration file has 2 main sections:
+
 1) Host - This section specify the 3 ports used by the server process.
+
 2) Peer - This section specify the UDP (election) port and the TCP (message) port for the other processes in the ensemble.  
 
 {
+
     "Host" : {
+
 	       	"ElectionAddr" : "localhost:5001",
+
 	        "MessageAddr"  : "localhost:5002",
+
 	        "RequestAddr"  : "localhost:5003"
+
 		    },
+
     "Peer" : [
+
 	        {"ElectionAddr" : "localhost:6001",
+
 	         "MessageAddr"  : "localhost:6002"},
+
             {"ElectionAddr" : "localhost:7001",
+
 		     "MessageAddr"  : "localhost:7002}
+
      ]
+
 }
 
 You can then start the process as follow
@@ -57,11 +75,17 @@ B) Run As Client
 To run the manual test client, you will also need to specify the configuration file which specify the request port of the processes in the ensemble:
 
 {
+
     "Peer" : [
+
 	       	{"RequestAddr" : "localhost:5003"},
+
 		    {"RequestAddr" : "localhost:6003"},
+
 		    {"RequestAddr" : "localhost:7003"}
+
     ]
+
 }
 
 You can start the test client as follows:
@@ -81,9 +105,14 @@ IV) KEY BACKLOG
 ----------------
 
 1) Support CAS
+
 2) Suport learner
+
 3) Support ns-server
+
 4) Dynamic Configuration (add or remove node)
+
 5) Compaction on commit log
+
 6) Rolling upgrade
 
