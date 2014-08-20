@@ -449,6 +449,19 @@ func (l *Leader) NewProposal(proposal ProposalMsg) error {
 	// Send the proposal to follower
 	l.sendProposal(proposal)
 	
+	// check if proposal has quorum (if ensembleSize <= 2).  Make sure that this 
+	// is after sendProposal() so that we can still send proposal to follower BEFORE 
+	// we send the commit message.
+	if l.hasQuorum(common.Txnid(proposal.GetTxnid())) {
+		// proposal has quorum. Now commit. If cannot commit, then return error
+		// which will cause the leader to re-election.  Just to handle 
+		// case where there is hardware failure or repository corruption.
+		err := l.commit(common.Txnid(proposal.GetTxnid()))
+		if err != nil {
+			return err
+		}
+	}
+	
 	return nil
 }
 

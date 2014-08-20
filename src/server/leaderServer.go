@@ -137,6 +137,17 @@ func (l *LeaderServer) listenFollower(listenerState *ListenerState) {
 		// It should not happen unless the listener is closed
 		return
 	}
+
+	// if there is a single server, then we don't need to wait for follower	
+	// for the server to be ready to process request.
+	if l.handler.GetEnsembleSize() == 1 {
+		if err := l.incrementEpoch(); err != nil {
+			log.Printf("LeaderServer.listenFollower(): Error when boostraping leader with ensembleSize=1. Error = %s", err)
+			return 
+		}
+		
+		l.notifyReady()	
+	}
 	
 	for {
 		select {
@@ -238,6 +249,30 @@ func newLeaderState(ss *ServerState) *LeaderState {
 							proxies : make(map[string](chan bool))}
 
 	return state
+}
+
+//
+// Increment the epoch.  Only call this method if the ensemble size is 1 (single server).
+// This function can panic if the epoch reaches its limit.
+//
+func (l *LeaderServer) incrementEpoch() error {
+
+	epoch, err := l.handler.GetCurrentEpoch()
+	if err != nil {
+		return err
+	}
+	
+	epoch = common.CompareAndIncrementEpoch(epoch, epoch)
+	
+	if err := l.handler.NotifyNewAcceptedEpoch(epoch); err != nil {
+		return err
+	}
+	
+	if err := l.handler.NotifyNewCurrentEpoch(epoch); err != nil {
+		return err
+	}
+	
+	return nil
 }
 
 /////////////////////////////////////////////////////////////////////////////

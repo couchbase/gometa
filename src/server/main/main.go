@@ -168,7 +168,7 @@ func RunTestClient(path string) {
 	    	var reply *Reply
 			err = client.Call("RequestReceiver.NewRequest", request, &reply)
 			if err != nil {
-	    		log.Printf("ClientTest() : Fail to call server %s. ", err.Error()) 
+	    		log.Printf("ClientTest() : Error from server : %s. ", err.Error()) 
 	    	}
 	    	
 	    	if reply != nil  && reply.Result != nil {

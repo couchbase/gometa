@@ -34,6 +34,9 @@ func (o *observer) send(msg common.Packet) {
 
 	defer common.SafeRun("observer.Send()",
 		func() {
+			//TODO: handle the case when the channel is full.
+			// We don't want send() to block since the caller
+			// can be holding mutex.	
 			o.packets <- msg	
 		})
 }
