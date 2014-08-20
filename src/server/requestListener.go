@@ -118,6 +118,10 @@ func (s *RequestReceiver) NewRequest(req *Request, reply **Reply) error {
 			opCode == common.OPCODE_SET || 
 			opCode == common.OPCODE_DELETE {
 			
+		if req.Value == nil {
+			req.Value = ([]byte)("")		
+		}
+			
 		id := uint64(time.Now().UnixNano())
 		request := s.server.factory.CreateRequest(id,
 			uint32(common.GetOpCode(req.OpCode)),	
