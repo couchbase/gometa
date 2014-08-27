@@ -40,6 +40,23 @@ type Reply struct {
 var gHandler *RequestReceiver = nil
 
 /////////////////////////////////////////////////
+// Client Function
+/////////////////////////////////////////////////
+
+//
+// This is the API for client that is co-located withe gometa server
+// in the same process.
+//
+func NewClientRequest(req *Request, reply **Reply) error {
+
+	if gHandler == nil {
+		return common.NewError(common.SERVER_ERROR, "Server is not ready to receive new request.")
+	}
+
+	return gHandler.NewRequest(req, reply)	
+}
+
+/////////////////////////////////////////////////
 // Public Function
 /////////////////////////////////////////////////
 

@@ -292,6 +292,8 @@ func (l *messageListener) start() {
 			case req, ok := <-reqch:
 				if ok {
 					n := &notification{fid : l.fid, payload : req}
+					// TODO:  Let's say send is blocked because l.notifications is full, will it becomes unblock
+					// when leader.notifications is unblock.
 					l.leader.notifications <- n 
 				} else {
 					// The channel is closed.  Need to shutdown the listener.
@@ -391,6 +393,7 @@ func (l *Leader) handleMessage(msg common.Packet, follower string) (err error) {
 	case AcceptMsg:
 		err = l.handleAccept(request)
 	default:
+		// TODO: Should throw exception.  There is a possiblity that there is another leader.   
 		log.Printf("Leader.handleMessage(): Leader unable to process message of type %s. Ignore message.", request.Name())
 	}
 	return err 
