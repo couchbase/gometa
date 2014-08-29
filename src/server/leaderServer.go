@@ -22,7 +22,7 @@ type LeaderServer struct {
 }
 
 type LeaderState struct {
-	serverState 	*ServerState
+	requestMgr 		RequestMgr
 
 	// mutex protected variable
 	mutex   		sync.Mutex
@@ -48,7 +48,7 @@ type ListenerState struct {
 //
 func RunLeaderServer(naddr string,
 	listener *common.PeerListener,
-	ss *ServerState,
+	ss RequestMgr,
 	handler protocol.ActionHandler,
 	factory protocol.MsgFactory,
 	killch <- chan bool) (err error) {
@@ -242,8 +242,8 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 //
 // Create a new LeaderState
 //
-func newLeaderState(ss *ServerState) *LeaderState {
-	state := &LeaderState{serverState: ss,
+func newLeaderState(ss RequestMgr) *LeaderState {
+	state := &LeaderState{requestMgr: ss,
 							ready: false,
 							readych : make(chan bool, 1), // buffered so sender won't wait
 							proxies : make(map[string](chan bool))}
@@ -316,12 +316,13 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 	ensembleSize := s.handler.GetEnsembleSize()
 	
 	// notify the request processor to start processing new request
+	incomings := s.state.requestMgr.GetRequestChannel()
 	for {
 		select {
-		case handle, ok := <-s.state.serverState.incomings:
+		case handle, ok := <- incomings:
 			if ok {
 				// de-queue the request
-				s.addPendingRequest(handle)
+				s.state.requestMgr.AddPendingRequest(handle)
 
 				// create the proposal and forward to the leader
 				s.leader.CreateProposal(s.leader.GetFollowerId(), handle.request)
@@ -397,17 +398,6 @@ func (s *LeaderServer) isReady() bool {
 	defer s.state.mutex.Unlock()
 	
 	return s.state.ready
-}
-
-//
-// Add Pending Request
-//
-func (s *LeaderServer) addPendingRequest(handle *RequestHandle) {
-	s.state.serverState.mutex.Lock()
-	defer s.state.serverState.mutex.Unlock()
-
-	// remember the request
-	s.state.serverState.pendings[handle.request.GetReqId()] = handle
 }
 
 /////////////////////////////////////////////////////////////////////////////

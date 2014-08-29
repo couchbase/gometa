@@ -52,6 +52,11 @@ type ServerCallback interface {
 	UpdateWinningEpoch(epoch uint32)
 }
 
+type RequestMgr interface {
+	GetRequestChannel() (<-chan *RequestHandle)
+	AddPendingRequest(handle *RequestHandle)
+}
+
 var gServer *Server = nil
 
 /////////////////////////////////////////////////////////////////////////////
@@ -392,6 +397,20 @@ func (s *ServerState) setStatus(status protocol.PeerStatus) {
 	s.status = status
 }
 
+func (s *ServerState) AddPendingRequest(handle *RequestHandle) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	// remember the request
+	s.pendings[handle.request.GetReqId()] = handle
+}
+
+func (s *ServerState) GetRequestChannel() (<-chan *RequestHandle) {
+
+	return (<-chan *RequestHandle)(s.incomings)
+}
+
+	
 /////////////////////////////////////////////////////////////////////////////
 // Request Handle 
 /////////////////////////////////////////////////////////////////////////////

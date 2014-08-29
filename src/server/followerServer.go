@@ -18,7 +18,7 @@ type FollowerServer struct {
 }
 
 type FollowerState struct {
-	serverState *ServerState
+	requestMgr 	RequestMgr 
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -33,7 +33,7 @@ type FollowerState struct {
 //
 func RunFollowerServer(naddr string,
 	leader string,
-	ss *ServerState,
+	ss RequestMgr,
 	handler protocol.ActionHandler,
 	factory protocol.MsgFactory,
 	killch <- chan bool) (err error) {
@@ -121,7 +121,7 @@ func syncWithLeader(naddr string,
 // Run Follower Protocol
 //
 func runFollower(pipe *common.PeerPipe,
-	ss *ServerState,
+	ss RequestMgr,
 	handler protocol.ActionHandler,
 	factory protocol.MsgFactory,
 	killch <- chan bool) {
@@ -151,13 +151,14 @@ func (s *FollowerServer) processRequest(handler protocol.ActionHandler,
 	donech <-chan bool) {
 	
 	log.Printf("FollowerServer.processRequest(): Ready to process request")
-	
+
+	incomings := s.state.requestMgr.GetRequestChannel()	
 	for {
 		select {
-		case handle, ok := <-s.state.serverState.incomings:
+		case handle, ok := <- incomings:
 			if ok {
 				// move request to pending queue (waiting for proposal)
-				s.addPendingRequest(handle)
+				s.state.requestMgr.AddPendingRequest(handle)
 
 				// forward the request to the leader
 				if !s.follower.ForwardRequest(handle.request) {
@@ -183,24 +184,8 @@ func (s *FollowerServer) processRequest(handler protocol.ActionHandler,
 //
 // Create a new FollowerState
 //
-func newFollowerState(ss *ServerState) *FollowerState {
+func newFollowerState(ss RequestMgr) *FollowerState {
 
-	state := &FollowerState{serverState: ss}
+	state := &FollowerState{requestMgr: ss}
 	return state
-}
-
-/////////////////////////////////////////////////////////////////////////////
-// Private Function for protecting shared state
-/////////////////////////////////////////////////////////////////////////////
-
-//
-// Add Pending Request
-//
-func (s *FollowerServer) addPendingRequest(handle *RequestHandle) {
-	s.state.serverState.mutex.Lock()
-	defer s.state.serverState.mutex.Unlock()
-
-	// remember the request
-	//log.Printf("FollowerServer.addPendingRequest(): Request Id %d.", handle.request.GetReqId())
-	s.state.serverState.pendings[handle.request.GetReqId()] = handle
 }
