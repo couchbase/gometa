@@ -688,7 +688,7 @@ func (l *LeaderSyncProxy) sendEntriesInCommittedLog(startTxid, endTxid common.Tx
 	var lastSeen common.Txnid = common.BOOTSTRAP_LAST_LOGGED_TXID 
 
 	logChan, errChan, killch, err := l.handler.GetCommitedEntries(startTxid, endTxid)
-	if err != nil {
+	if logChan == nil || errChan == nil || err != nil {
 		return lastSeen, err
 	}
 
