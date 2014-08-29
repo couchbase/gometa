@@ -17,7 +17,11 @@ II) BUILD
 
 Build the main.go
 
-	go build -o bin/main src/server/main/main.go
+	cd $GOPATH
+	mkdir -r github.com/jliang00
+	cd github.com/jliang00
+	git clone git@github.com:jliang00/gometa.git
+	go build -o $GOPATH/bin/main gometa/src/server/main/main.go
 
 You can then run bin/main as either a client or server. 
 
