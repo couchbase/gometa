@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"common"
+	"sync"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -190,4 +191,20 @@ type LogEntryMsg interface {
 	GetOpCode() uint32
 	GetKey() string
 	GetContent() []byte
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// Request Management
+/////////////////////////////////////////////////////////////////////////////
+
+type RequestHandle struct {
+	Request 		RequestMsg
+	Err     		error
+	Mutex   		sync.Mutex
+	CondVar 		*sync.Cond
+}
+
+type RequestMgr interface {
+	GetRequestChannel() (<-chan *RequestHandle)
+	AddPendingRequest(handle *RequestHandle)
 }

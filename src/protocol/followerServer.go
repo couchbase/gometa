@@ -1,9 +1,8 @@
- package server
+ package protocol 
 
 import (
 	"common"
 	"net"
-	"protocol"
 	"log"
 	"fmt"
 )
@@ -13,7 +12,7 @@ import (
 /////////////////////////////////////////////////////////////////////////////
 
 type FollowerServer struct {
-	follower *protocol.Follower
+	follower *Follower
 	state    *FollowerState
 }
 
@@ -34,8 +33,8 @@ type FollowerState struct {
 func RunFollowerServer(naddr string,
 	leader string,
 	ss RequestMgr,
-	handler protocol.ActionHandler,
-	factory protocol.MsgFactory,
+	handler ActionHandler,
+	factory MsgFactory,
 	killch <- chan bool) (err error) {
 
 	// Catch panic at the main entry point for FollowerServer
@@ -88,13 +87,13 @@ func RunFollowerServer(naddr string,
 //
 func syncWithLeader(naddr string,
     pipe *common.PeerPipe,
-	handler protocol.ActionHandler,
-	factory protocol.MsgFactory,
+	handler ActionHandler,
+	factory MsgFactory,
 	killch <- chan bool) bool {
 	
 	log.Printf("FollowerServer.syncWithLeader(): Follower %s start synchronization with leader (TCP %s)", 
 			naddr, pipe.GetAddr())
-	proxy := protocol.NewFollowerSyncProxy(pipe, handler, factory)
+	proxy := NewFollowerSyncProxy(pipe, handler, factory)
 	donech := proxy.GetDoneChannel()
 	go proxy.Start()
 	defer proxy.Terminate() 
@@ -122,8 +121,8 @@ func syncWithLeader(naddr string,
 //
 func runFollower(pipe *common.PeerPipe,
 	ss RequestMgr,
-	handler protocol.ActionHandler,
-	factory protocol.MsgFactory,
+	handler ActionHandler,
+	factory MsgFactory,
 	killch <- chan bool) {
 
 	// create the server
@@ -134,7 +133,7 @@ func runFollower(pipe *common.PeerPipe,
 
 	// Create a follower.  The follower will start a go-rountine, listening to messages coming from leader.
 	log.Printf("FollowerServer.runFollower(): Start Follower Protocol")
-	server.follower = protocol.NewFollower(protocol.FOLLOWER, pipe, handler, factory)
+	server.follower = NewFollower(FOLLOWER, pipe, handler, factory)
 	donech := server.follower.Start()
 	defer server.follower.Terminate()
 	
@@ -145,8 +144,8 @@ func runFollower(pipe *common.PeerPipe,
 //
 // main processing loop
 //
-func (s *FollowerServer) processRequest(handler protocol.ActionHandler,
-	factory protocol.MsgFactory,
+func (s *FollowerServer) processRequest(handler ActionHandler,
+	factory MsgFactory,
 	killch <-chan bool,
 	donech <-chan bool) {
 	
@@ -161,7 +160,7 @@ func (s *FollowerServer) processRequest(handler protocol.ActionHandler,
 				s.state.requestMgr.AddPendingRequest(handle)
 
 				// forward the request to the leader
-				if !s.follower.ForwardRequest(handle.request) {
+				if !s.follower.ForwardRequest(handle.Request) {
 					log.Printf("FollowerServer.processRequest(): fail to send client request to leader. Terminate.")
 					return
 				}

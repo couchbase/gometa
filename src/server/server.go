@@ -28,21 +28,14 @@ type Server struct {
 }
 
 type ServerState struct {
-	incomings 		chan *RequestHandle
+	incomings 		chan *protocol.RequestHandle
 
 	// mutex protected variables
 	mutex     		sync.Mutex
 	done      		bool
 	status    		protocol.PeerStatus
-	pendings  		map[uint64]*RequestHandle // key : request id
-	proposals 		map[uint64]*RequestHandle // key : txnid
-}
-
-type RequestHandle struct {
-	request 		protocol.RequestMsg
-	err     		error
-	mutex   		sync.Mutex
-	condVar 		*sync.Cond
+	pendings  		map[uint64]*protocol.RequestHandle // key : request id
+	proposals 		map[uint64]*protocol.RequestHandle // key : txnid
 }
 
 type ServerCallback interface {
@@ -50,11 +43,6 @@ type ServerCallback interface {
 	UpdateStateOnNewProposal(proposal protocol.ProposalMsg)
 	UpdateStateOnCommit(proposal protocol.ProposalMsg)
 	UpdateWinningEpoch(epoch uint32)
-}
-
-type RequestMgr interface {
-	GetRequestChannel() (<-chan *RequestHandle)
-	AddPendingRequest(handle *RequestHandle)
 }
 
 var gServer *Server = nil
@@ -190,7 +178,7 @@ func (s *Server) runServer(leader string) (err error) {
 	if leader == host {
 		log.Printf("Server.runServer() : Local Server %s is elected as leader. Leading ...", leader)
 		s.state.setStatus(protocol.LEADING)
-		err = RunLeaderServer(GetHostTCPAddr(), s.listener, s.state, s.handler, s.factory, s.skillch)
+		err = protocol.RunLeaderServer(GetHostTCPAddr(), s.listener, s.state, s.handler, s.factory, s.skillch)
 	} else {
 		log.Printf("Server.runServer() : Remote Server %s is elected as leader. Following ...", leader)
 		s.state.setStatus(protocol.FOLLOWING)
@@ -198,7 +186,7 @@ func (s *Server) runServer(leader string) (err error) {
 		if len(leaderAddr) == 0 {
 			return common.NewError(common.SERVER_ERROR, "Cannot find matching TCP addr for leader " + leader)
 		}
-		err = RunFollowerServer(GetHostTCPAddr(), leaderAddr, s.state, s.handler, s.factory, s.skillch)
+		err = protocol.RunFollowerServer(GetHostTCPAddr(), leaderAddr, s.state, s.handler, s.factory, s.skillch)
 	}
 
 	return err
@@ -273,35 +261,35 @@ func (s *Server) cleanupState() {
 		
 	for len(s.state.incomings) > 0 {
 		request := <-s.state.incomings
-		request.err = common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
+		request.Err = common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
 
 		common.SafeRun("Server.cleanupState()",
 			func() {
-				request.condVar.L.Lock()
-				defer request.condVar.L.Unlock()
-				request.condVar.Signal()
+				request.CondVar.L.Lock()
+				defer request.CondVar.L.Unlock()
+				request.CondVar.Signal()
 			})
 	}
 
 	for _, request := range s.state.pendings {
-		request.err = common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
+		request.Err = common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
 
 		common.SafeRun("Server.cleanupState()",
 			func() {
-				request.condVar.L.Lock()
-				defer request.condVar.L.Unlock()
-				request.condVar.Signal()
+				request.CondVar.L.Lock()
+				defer request.CondVar.L.Unlock()
+				request.CondVar.Signal()
 			})
 	}
 
 	for _, request := range s.state.proposals {
-		request.err = common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
+		request.Err = common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
 
 		common.SafeRun("Server.cleanupState()",
 			func() {
-				request.condVar.L.Lock()
-				defer request.condVar.L.Unlock()
-				request.condVar.Signal()
+				request.CondVar.L.Lock()
+				defer request.CondVar.L.Unlock()
+				request.CondVar.Signal()
 			})
 	}
 }
@@ -371,9 +359,9 @@ func RunOnce() (int) {
 //
 func newServerState() *ServerState {
 
-	incomings := make(chan *RequestHandle, common.MAX_PROPOSALS)
-	pendings := make(map[uint64]*RequestHandle)
-	proposals := make(map[uint64]*RequestHandle)
+	incomings := make(chan *protocol.RequestHandle, common.MAX_PROPOSALS)
+	pendings := make(map[uint64]*protocol.RequestHandle)
+	proposals := make(map[uint64]*protocol.RequestHandle)
 	state := &ServerState{incomings: incomings,
 		pendings:  pendings,
 		proposals: proposals,
@@ -397,17 +385,17 @@ func (s *ServerState) setStatus(status protocol.PeerStatus) {
 	s.status = status
 }
 
-func (s *ServerState) AddPendingRequest(handle *RequestHandle) {
+func (s *ServerState) AddPendingRequest(handle *protocol.RequestHandle) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
 	// remember the request
-	s.pendings[handle.request.GetReqId()] = handle
+	s.pendings[handle.Request.GetReqId()] = handle
 }
 
-func (s *ServerState) GetRequestChannel() (<-chan *RequestHandle) {
+func (s *ServerState) GetRequestChannel() (<-chan *protocol.RequestHandle) {
 
-	return (<-chan *RequestHandle)(s.incomings)
+	return (<-chan *protocol.RequestHandle)(s.incomings)
 }
 
 	
@@ -418,9 +406,9 @@ func (s *ServerState) GetRequestChannel() (<-chan *RequestHandle) {
 //
 // Create a new request handle
 //
-func newRequestHandle(req protocol.RequestMsg) *RequestHandle {
-	handle := &RequestHandle{request: req, err: nil}
-	handle.condVar = sync.NewCond(&handle.mutex)
+func newRequestHandle(req protocol.RequestMsg) *protocol.RequestHandle {
+	handle := &protocol.RequestHandle{Request: req, Err: nil}
+	handle.CondVar = sync.NewCond(&handle.Mutex)
 	return handle
 }
 
@@ -473,10 +461,10 @@ func (s *Server) UpdateStateOnCommit(proposal protocol.ProposalMsg) {
 		
 		delete(s.state.proposals, txnid)
 
-		handle.condVar.L.Lock()
-		defer handle.condVar.L.Unlock()
+		handle.CondVar.L.Lock()
+		defer handle.CondVar.L.Unlock()
 
-		handle.condVar.Signal()
+		handle.CondVar.Signal()
 	} 
 }
 

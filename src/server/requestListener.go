@@ -147,19 +147,19 @@ func (s *RequestReceiver) NewRequest(req *Request, reply **Reply) error {
 		
 		handle := newRequestHandle(request)
 
-		handle.condVar.L.Lock()
-		defer handle.condVar.L.Unlock()
+		handle.CondVar.L.Lock()
+		defer handle.CondVar.L.Unlock()
 
 		// push the request to a channel
 		log.Printf("Handing new request to server. Key %s", req.Key)
 		s.server.state.incomings <- handle
 
 		// This goroutine will wait until the request has been processed.
-		handle.condVar.Wait()
+		handle.CondVar.Wait()
 		log.Printf("Receive Response for request. Key %s", req.Key)
 
 		*reply = &Reply{Result : nil}
-		return handle.err
+		return handle.Err
 		
 	} else {
 		return common.NewError(common.CLIENT_ERROR, fmt.Sprintf("Invalid Op code %s", req.OpCode))

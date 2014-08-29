@@ -1,8 +1,7 @@
-package server
+package protocol 
 
 import (
 	"common"
-	"protocol"
 	"sync"
 	"log"
 	"time"
@@ -13,12 +12,12 @@ import (
 /////////////////////////////////////////////////////////////////////////////
 
 type LeaderServer struct {
-	leader       	*protocol.Leader
+	leader       	*Leader
 	listener     	*common.PeerListener
-	consentState 	*protocol.ConsentState
+	consentState 	*ConsentState
 	state        	*LeaderState
-	handler 	 	 protocol.ActionHandler
-	factory 	 	 protocol.MsgFactory
+	handler 	 	 ActionHandler
+	factory 	 	 MsgFactory
 }
 
 type LeaderState struct {
@@ -49,8 +48,8 @@ type ListenerState struct {
 func RunLeaderServer(naddr string,
 	listener *common.PeerListener,
 	ss RequestMgr,
-	handler protocol.ActionHandler,
-	factory protocol.MsgFactory,
+	handler ActionHandler,
+	factory MsgFactory,
 	killch <- chan bool) (err error) {
 
 	log.Printf("LeaderServer.RunLeaderServer(): start leader server %s", naddr)
@@ -64,7 +63,7 @@ func RunLeaderServer(naddr string,
 	}()
 		
 	// create a leader
-	leader, err := protocol.NewLeader(naddr, handler, factory)
+	leader, err := NewLeader(naddr, handler, factory)
 	if err != nil {
 		return err
 	}
@@ -76,7 +75,7 @@ func RunLeaderServer(naddr string,
 		return err 
 	}
 	ensembleSize := handler.GetEnsembleSize()
-	consentState := protocol.NewConsentState(naddr, epoch, ensembleSize)
+	consentState := NewConsentState(naddr, epoch, ensembleSize)
 	defer consentState.Terminate()
 
 	// create the leader state
@@ -192,13 +191,13 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 	
 	// create a proxy that will sycnhronize with the peer.   
 	log.Printf("LeaderServer.startProxy(): Start synchronization with follower. Peer TCP connection (%s)", peer.GetAddr())
-	proxy := protocol.NewLeaderSyncProxy(l.leader, l.consentState, peer, l.handler, l.factory)
+	proxy := NewLeaderSyncProxy(l.leader, l.consentState, peer, l.handler, l.factory)
 	donech := proxy.GetDoneChannel()
 	
 	// Create an observer for the leader.  The leader will put on-going proposal msg and commit msg
 	// onto the observer queue.  This ensure that we can won't miss those mutations as the leader is
 	// sync'ign withe follower.  The messages in observer queue will eventually route to follower. 
-	o := protocol.NewObserver()
+	o := NewObserver()
 	l.leader.AddObserver(peer.GetAddr(), o)
 	defer l.leader.RemoveObserver(peer.GetAddr())
 
@@ -325,7 +324,7 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 				s.state.requestMgr.AddPendingRequest(handle)
 
 				// create the proposal and forward to the leader
-				s.leader.CreateProposal(s.leader.GetFollowerId(), handle.request)
+				s.leader.CreateProposal(s.leader.GetFollowerId(), handle.Request)
 			} else {
 				// server shutdown.
 				log.Printf("LeaderServer.processRequest(): channel for receiving client request is closed. Terminate.")				
