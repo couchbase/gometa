@@ -4,7 +4,7 @@ import (
 	"net"
 	"strings"
 	"os"
-	"common"
+	"github.com/jliang00/gometa/src/common"
 	"bytes"
 	"log"
 	json "encoding/json"

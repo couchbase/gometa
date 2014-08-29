@@ -1,7 +1,7 @@
 package repository
 
 import (
-	"common"
+	"github.com/jliang00/gometa/src/common"
 	"log"
 	fdb "github.com/couchbaselabs/goforestdb"
 	"sync"

@@ -1,10 +1,10 @@
 package server
 
 import (
-	"common"
-	"protocol"
+	"github.com/jliang00/gometa/src/common"
+	"github.com/jliang00/gometa/src/protocol"
 	"fmt"
-	repo "repository"
+	repo "github.com/jliang00/gometa/src/repository"
 )
 
 ////////////////////////////////////////////////////////////////////////////

@@ -5,7 +5,7 @@ import (
 	"net"
 	rpc "net/rpc"
 	"sync"
-	"common"
+	"github.com/jliang00/gometa/src/common"
 	http "net/http"
 	"time"
 	"fmt"

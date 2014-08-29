@@ -1,7 +1,7 @@
 package protocol
 
 import (
-	"common"
+	"github.com/jliang00/gometa/src/common"
 	"sync"
 	"log"
 	"fmt"
@@ -16,20 +16,18 @@ import (
 //    received requests.  Due to (1), it expects the proposal to be
 //    arrived at each follower in the same order.
 // 3) Each follower processes the proposal in the same sequential order
-//    Therefore, the ack is returned in the same order as the proposal.
+//    Therefore, the ack/accept is returned in the same order as the proposal.
 // 4) In the follower, proposal and commit can be processed out-of-order.
 //    These 2 messages go through different queues on the follower side.
-// 5) The leader calls the LearnerHandler (a separate go-routine) to
-//    send/recieve proposal/commit for a specific follower.  If that
-//    fails,  it will close the socket.  This, in turn, will terminate
-//    both the sending and recieving threads of the LearnerHandler and
-//    force the LearnerHandler to shutdown.  In  doing so, the leader will
-//    also remove the follower.  The leader will listen to any new socket
-//    connection to re-estabilish communication with the follower.
-// 6) When the follower fails to send a Ack to the leader, it will close the socket.
-//    This, in turn, will shutdown the follower.  The thread (QuorumPeer) will
-//    continue to run in "looking" state.  While at "looking" state, it will execute
-//    the leader election algorithm to find the new leader.
+// 5) The leader has a dedicated go-routine (2 threads in ZK) to send/recieve 
+//    proposal/commit for a specific follower.  If messaging err-out,  
+//    it will close the socket.  This, in turn, will terminate both the sending 
+//    and recieving threads and force the go-routine to shutdown.  
+//    In  doing so, the leader will also remove the follower.  The leader will 
+//    listen to any new socket connection to re-estabilish communication with the follower.
+// 6) When the follower fails to send a Ack/Accept to the leader, it will close the socket.
+//    This, in turn, will shutdown the follower.  The main thread will be back to
+//    election (QuorumPeer in "looking" state).
 // 7) When the follower re-connect to the leader, the leader will go through the following:
 //    a) open the commit log and re-send {proposals, committed messages} to the follower.
 //       The leader will hold the read lock on the commit log as to avoid any concurrent

@@ -6,7 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"net/rpc"
-	"server"
+	"github.com/jliang00/gometa/src/server"
 	"bytes"
 	json "encoding/json"
 )

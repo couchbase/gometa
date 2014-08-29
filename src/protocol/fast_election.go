@@ -1,7 +1,7 @@
 package protocol
 
 import (
-	"common"
+	"github.com/jliang00/gometa/src/common"
 	"net"
 	"sync"
 	"time"

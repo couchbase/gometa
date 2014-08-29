@@ -1,10 +1,10 @@
 package server
 
 import (
-	"common"
-	"message"
-	"protocol"
-	r "repository"
+	"github.com/jliang00/gometa/src/common"
+	"github.com/jliang00/gometa/src/message"
+	"github.com/jliang00/gometa/src/protocol"
+	r "github.com/jliang00/gometa/src/repository"
 	"sync"
 	"time"
 	"log"
