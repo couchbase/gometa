@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 	"log"
+	"runtime/debug"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -35,13 +36,13 @@ type ServerState struct {
 	done      		bool
 	status    		protocol.PeerStatus
 	pendings  		map[uint64]*protocol.RequestHandle // key : request id
-	proposals 		map[uint64]*protocol.RequestHandle // key : txnid
+	proposals 		map[common.Txnid]*protocol.RequestHandle // key : txnid
 }
 
 type ServerCallback interface {
-	GetState() *ServerState
+	GetStatus() protocol.PeerStatus 
 	UpdateStateOnNewProposal(proposal protocol.ProposalMsg)
-	UpdateStateOnCommit(proposal protocol.ProposalMsg)
+	UpdateStateOnCommit(txnid common.Txnid, key string)
 	UpdateWinningEpoch(epoch uint32)
 }
 
@@ -77,7 +78,7 @@ func RunServer(config string) error {
 
 func (s *Server) GetValue(key string) ([]byte, error) {
 
-	return s.handler.get(key)
+	return s.handler.Get(key)
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -113,7 +114,7 @@ func (s *Server) bootstrap() (err error) {
 	// Initialize various callback facility for leader election and
 	// voting protocol.
 	s.factory = message.NewConcreteMsgFactory()
-	s.handler = NewServerAction(s)
+	s.handler = NewServerAction(s.repo, s.log, s.srvConfig, s, s.factory, s)
 	s.skillch = make(chan bool, 1) // make it buffered to unblock sender
 	s.site = nil
 	
@@ -152,12 +153,16 @@ func (s *Server) runElection() (leader string, err error) {
 		log.Printf("	peer : %s", peer)
 	}
 	
-	s.site, err = protocol.CreateElectionSite(host, peers, s.factory, s.handler)
+	s.site, err = protocol.CreateElectionSite(host, peers, s.factory, s.handler, false)
 	if err != nil {
 		return "", err
 	}
 
 	resultCh := s.site.StartElection()
+	if resultCh == nil {
+		return "", common.NewError(common.SERVER_ERROR, "Election Site is in progress or is closed.") 
+	}
+	
 	leader, ok := <-resultCh // blocked until leader is elected
 	if !ok {
 		return "", common.NewError(common.SERVER_ERROR, "Election Fails") 
@@ -308,6 +313,9 @@ func RunOnce() (int) {
 		if r := recover(); r != nil {
 			log.Printf("panic in Server.runOnce() : %s\n", r)
 		}
+		
+		log.Printf("RunOnce() terminates : Diagnostic Stack ...")
+		log.Printf("%s", debug.Stack())		
 	
 		common.SafeRun("Server.cleanupState()",
 			func() {
@@ -349,6 +357,14 @@ func RunOnce() (int) {
 }
 
 
+/////////////////////////////////////////////////////////////////////////////
+// QuorumVerifier 
+/////////////////////////////////////////////////////////////////////////////
+
+func (s *Server) HasQuorum(count int) bool {
+	ensembleSz := s.handler.GetEnsembleSize()
+	return count > int(ensembleSz / 2)
+}
 
 /////////////////////////////////////////////////////////////////////////////
 // ServerState
@@ -361,7 +377,7 @@ func newServerState() *ServerState {
 
 	incomings := make(chan *protocol.RequestHandle, common.MAX_PROPOSALS)
 	pendings := make(map[uint64]*protocol.RequestHandle)
-	proposals := make(map[uint64]*protocol.RequestHandle)
+	proposals := make(map[common.Txnid]*protocol.RequestHandle)
 	state := &ServerState{incomings: incomings,
 		pendings:  pendings,
 		proposals: proposals,
@@ -435,7 +451,7 @@ func (s *Server) UpdateStateOnNewProposal(proposal protocol.ProposalMsg) {
 		handle, ok := s.state.pendings[reqId]
 		if ok {
 			delete(s.state.pendings, reqId)
-			s.state.proposals[txnid] = handle
+			s.state.proposals[common.Txnid(txnid)] = handle
 		}
 	}
 }
@@ -443,10 +459,9 @@ func (s *Server) UpdateStateOnNewProposal(proposal protocol.ProposalMsg) {
 //
 // Callback when a commit arrives
 //
-func (s *Server) UpdateStateOnCommit(proposal protocol.ProposalMsg) {
+func (s *Server) UpdateStateOnCommit(txnid common.Txnid, key string) {
 
-	log.Printf("Server.UpdateStateOnCommit(): Committing proposal %d, key = %s.", proposal.GetTxnid(), proposal.GetKey())
-	txnid := proposal.GetTxnid()
+	log.Printf("Server.UpdateStateOnCommit(): Committing proposal %d.", txnid, key)
 
 	s.state.mutex.Lock()
 	defer s.state.mutex.Unlock()
@@ -457,7 +472,7 @@ func (s *Server) UpdateStateOnCommit(proposal protocol.ProposalMsg) {
 	handle, ok := s.state.proposals[txnid]
 	
 	if ok {
-		log.Printf("Server.UpdateStateOnCommit(): Notify client for proposal %d", proposal.GetTxnid())
+		log.Printf("Server.UpdateStateOnCommit(): Notify client for proposal %d", txnid)
 		
 		delete(s.state.proposals, txnid)
 
@@ -468,8 +483,8 @@ func (s *Server) UpdateStateOnCommit(proposal protocol.ProposalMsg) {
 	} 
 }
 
-func (s *Server) GetState() *ServerState {
-	return s.state
+func (s *Server) GetStatus() protocol.PeerStatus {
+	return s.state.getStatus()
 }
 
 func (s *Server) UpdateWinningEpoch(epoch uint32) {

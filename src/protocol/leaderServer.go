@@ -5,6 +5,7 @@ import (
 	"sync"
 	"log"
 	"time"
+	"runtime/debug"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -60,6 +61,9 @@ func RunLeaderServer(naddr string,
 			log.Printf("panic in RunLeaderServer() : %s\n", r)
 			err = r.(error)
 		}
+		
+		log.Printf("RunLeaderServer terminates : Diagnostic Stack ...")
+		log.Printf("%s", debug.Stack())	
 	}()
 		
 	// create a leader
@@ -119,6 +123,9 @@ func (l *LeaderServer) listenFollower(listenerState *ListenerState) {
 		if r := recover(); r != nil {
 			log.Printf("panic in LeaderServer.listenFollower() : %s\n", r)
 		}
+		
+		log.Printf("LeaderServer.listenFollower() terminates : Diagnostic Stack ...")
+		log.Printf("%s", debug.Stack())	
 		
 		common.SafeRun("LeaderServer.listenFollower()",
 			func() {
@@ -183,6 +190,8 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in LeaderServer.startProxy() : %s\n", r)
+			log.Printf("LeaderServer.startProxy() : Diagnostic Stack ...")
+			log.Printf("%s", debug.Stack())	
 		}
 		
 		// deregister the proxy with the leader Server upon exit
@@ -222,13 +231,19 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 				// tell the leader to add this follower for processing request.  If there is a follower running already,
 				// AddFollower() will terminate the existing follower instance, and then create a new one.
 	    		fid := proxy.GetFid()
-				l.leader.AddFollower(fid, peer, o)
-	    		log.Printf("LeaderServer.startProxy(): Synchronization with follower %s done (TCP conn = %s).  Add follower.", 
+	    		if proxy.CanFollowerVote() {
+					l.leader.AddFollower(fid, peer, o)
+	    			log.Printf("LeaderServer.startProxy(): Synchronization with follower %s done (TCP conn = %s).  Add follower.", 
 	    				fid, peer.GetAddr())
 
-				// At this point, the follower has voted this server as the leader.
-				// Notify the request processor to start processing new request for this host
-				l.notifyReady()
+					// At this point, the follower has voted this server as the leader.
+					// Notify the request processor to start processing new request for this host
+					l.notifyReady()
+				} else {
+					l.leader.AddWatcher(fid, peer, o)
+	    			log.Printf("LeaderServer.startProxy(): Sync with watcher done.  Add Watcher %s (TCP conn = %s)", 
+	    				fid, peer.GetAddr())
+				}
 			} else {
 				log.Printf("LeaderServer:startProxy(): Leader Fail to synchronization with follower (TCP conn = %s)", peer.GetAddr())
 			}
@@ -286,8 +301,11 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in LeaderServer.startProxy() : %s\n", r)
+			log.Printf("panic in LeaderServer.processRequest() : %s\n", r)
 			err = r.(error)
+			
+			log.Printf("LeaderServer.processRequest() : Diagnostic Stack ...")
+			log.Printf("%s", debug.Stack())	
 		}
 		
 		common.SafeRun("LeaderServer.processRequest()",

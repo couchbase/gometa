@@ -6,6 +6,7 @@ import (
 	"log"
 	"fmt"
 	"time"
+	"runtime/debug"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -56,9 +57,10 @@ type ConsentState struct {
 }
 
 type followerState struct {
-	currentEpoch   uint32
-	lastLoggedTxid common.Txnid 
-	fid 		   string
+	currentEpoch   	uint32
+	lastLoggedTxid 	common.Txnid 
+	fid 		   	string
+	voting			bool
 }
 
 type LeaderStageCode uint16
@@ -129,7 +131,7 @@ func NewConsentState(sid string, epoch uint32, ensemble uint64) *ConsentState {
 	return state
 }
 
-func (s *ConsentState) voteAcceptedEpoch(voter string, newEpoch uint32) (uint32, bool) {
+func (s *ConsentState) voteAcceptedEpoch(voter string, newEpoch uint32, voting bool) (uint32, bool) {
 	s.acceptedEpochCond.L.Lock()
 	defer s.acceptedEpochCond.L.Unlock()
 
@@ -137,16 +139,18 @@ func (s *ConsentState) voteAcceptedEpoch(voter string, newEpoch uint32) (uint32,
 	if len(s.acceptedEpochSet) > int(s.ensembleSize/2) {
 		return s.acceptedEpoch, true
 	}
+	
+	if voting {
+		s.acceptedEpochSet[voter] = newEpoch
 
-	s.acceptedEpochSet[voter] = newEpoch
+		// This function can panic if we exceed epoch limit	
+		s.acceptedEpoch = common.CompareAndIncrementEpoch(newEpoch, s.acceptedEpoch)
 
-	// This function can panic if we exceed epoch limit	
-	s.acceptedEpoch = common.CompareAndIncrementEpoch(newEpoch, s.acceptedEpoch)
-
-	if len(s.acceptedEpochSet) > int(s.ensembleSize/2) {
-		// reach quorum. Notify
-		s.acceptedEpochCond.Broadcast()
-		return s.acceptedEpoch, true
+		if len(s.acceptedEpochSet) > int(s.ensembleSize/2) {
+			// reach quorum. Notify
+			s.acceptedEpochCond.Broadcast()
+			return s.acceptedEpoch, true
+		}
 	}
 
 	// wait for quorum to be reached.  It is possible
@@ -166,7 +170,7 @@ func (s *ConsentState) removeAcceptedEpoch(voter string) {
 	delete(s.acceptedEpochSet, voter)
 }
 
-func (s *ConsentState) voteEpochAck(voter string) (bool) {
+func (s *ConsentState) voteEpochAck(voter string, voting bool) (bool) {
 	s.ackEpochCond.L.Lock()
 	defer s.ackEpochCond.L.Unlock()
 
@@ -174,13 +178,15 @@ func (s *ConsentState) voteEpochAck(voter string) (bool) {
 	if len(s.ackEpochSet) > int(s.ensembleSize/2) {
 		return true
 	}
+	
+	if voting {
+		s.ackEpochSet[voter] = voter
 
-	s.ackEpochSet[voter] = voter
-
-	if len(s.ackEpochSet) > int(s.ensembleSize/2) {
-		// reach quorum. Notify
-		s.ackEpochCond.Broadcast()
-		return true
+		if len(s.ackEpochSet) > int(s.ensembleSize/2) {
+			// reach quorum. Notify
+			s.ackEpochCond.Broadcast()
+			return true
+		}
 	}
 
 	// wait for quorum to be reached.  It is possible
@@ -200,7 +206,7 @@ func (s *ConsentState) removeEpochAck(voter string) {
 	delete(s.ackEpochSet, voter)
 }
 
-func (s *ConsentState) voteNewLeaderAck(voter string) (bool) {
+func (s *ConsentState) voteNewLeaderAck(voter string, voting bool) (bool) {
 	s.newLeaderAckCond.L.Lock()
 	defer s.newLeaderAckCond.L.Unlock()
 
@@ -208,13 +214,15 @@ func (s *ConsentState) voteNewLeaderAck(voter string) (bool) {
 	if len(s.newLeaderAckSet) > int(s.ensembleSize/2) {
 		return true
 	}
+	
+	if voting {
+		s.newLeaderAckSet[voter] = voter
 
-	s.newLeaderAckSet[voter] = voter
-
-	if len(s.newLeaderAckSet) > int(s.ensembleSize/2) {
-		// reach quorum. Notify
-		s.newLeaderAckCond.Broadcast()
-		return true
+		if len(s.newLeaderAckSet) > int(s.ensembleSize/2) {
+			// reach quorum. Notify
+			s.newLeaderAckCond.Broadcast()
+			return true
+		}
 	}
 
 	// wait for quorum to be reached.  It is possible
@@ -271,6 +279,7 @@ func NewLeaderSyncProxy(leader *Leader,
 	factory MsgFactory) *LeaderSyncProxy {
 
 	sync := &LeaderSyncProxy{
+		followerState : nil,
 		leader : leader,
 		state: state,
 		follower: follower,
@@ -305,6 +314,9 @@ func (l *LeaderSyncProxy) Start(o *observer) bool {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in LeaderSyncProxy.Start() : %s\n", r)
+			log.Printf("LeaderSyncProxy.Start() terminates : Diagnostic Stack ...")
+			log.Printf("%s", debug.Stack())	
+			
 			l.abort()  // ensure proper cleanup and unblock caller
 		} 
 		
@@ -368,7 +380,21 @@ func (l *LeaderSyncProxy) GetDoneChannel() <-chan bool {
 // Return the fid (follower id) 
 //
 func (l *LeaderSyncProxy) GetFid() string {
-	return l.followerState.fid
+	if l.followerState != nil  {
+		return l.followerState.fid
+	}
+	return ""
+}
+
+//
+// Can the follower vote? 
+//
+func (l *LeaderSyncProxy) CanFollowerVote() bool {
+	if l.followerState != nil  {
+		return l.followerState.voting
+	}
+	
+	return false
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -425,6 +451,9 @@ func (l *LeaderSyncProxy) execute(donech chan bool, o *observer) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in LeaderSyncProxy.execute() : %s\n", r)
+			log.Printf("LeaderSyncProxy.execute() terminates : Diagnostic Stack ...")
+			log.Printf("%s", debug.Stack())	
+			
 			donech <- false // unblock caller
 		}
 	}()
@@ -504,12 +533,13 @@ func (l *LeaderSyncProxy) updateAcceptedEpochAfterQuorum() error {
 	info := packet.(FollowerInfoMsg)
 	epoch := info.GetAcceptedEpoch()
 	fid := info.GetFid()
+	voting := info.GetVoting()
 
 	// initialize the follower state
-	l.followerState = &followerState{lastLoggedTxid: 0, currentEpoch: 0, fid : fid}
+	l.followerState = &followerState{lastLoggedTxid: 0, currentEpoch: 0, fid : fid, voting : voting}
 	
 	// update my vote and wait for epoch to reach quorum
-	newEpoch, ok := l.state.voteAcceptedEpoch(l.GetFid(), epoch)
+	newEpoch, ok := l.state.voteAcceptedEpoch(l.GetFid(), epoch, l.followerState.voting)
 	if !ok {
 		return common.NewError(common.ELECTION_ERROR, 
 			"LeaderSyncProxy.updateAcceptedEpochAfterQuorum(): Fail to reach quorum on accepted epoch (FollowerInfo)")
@@ -554,7 +584,7 @@ func (l *LeaderSyncProxy) updateCurrentEpochAfterQuorum() error {
 	l.followerState.lastLoggedTxid = common.Txnid(info.GetLastLoggedTxid())
 
 	// update my vote and wait for quorum of ack from followers
-	ok := l.state.voteEpochAck(l.GetFid())
+	ok := l.state.voteEpochAck(l.GetFid(), l.followerState.voting)
 	if !ok {
 		return common.NewError(common.ELECTION_ERROR, 
 			"LeaderSyncProxy.updateCurrentEpochAfterQuorum(): Fail to reach quorum on current epoch (EpochAck)")
@@ -601,7 +631,7 @@ func (l *LeaderSyncProxy) declareNewLeaderAfterQuorum() error {
 	ack = ack // TODO : just to get around compile error
 
 	// update my vote and wait for quorum of ack from followers
-	ok := l.state.voteNewLeaderAck(l.GetFid())
+	ok := l.state.voteNewLeaderAck(l.GetFid(), l.followerState.voting)
 	if !ok {
 		return common.NewError(common.ELECTION_ERROR, 
 			"LeaderSyncProxy.declareNewLeaderAfterQuorum(): Fail to reach quorum on NewLeaderAck")
@@ -794,16 +824,21 @@ func (l *LeaderSyncProxy) getPacketTxnId(packet common.Packet) common.Txnid {
 //
 func NewFollowerSyncProxy(leader *common.PeerPipe,
 	handler ActionHandler,
-	factory MsgFactory) *FollowerSyncProxy {
+	factory MsgFactory,
+	voting bool) *FollowerSyncProxy {
 
 	sync := &FollowerSyncProxy{leader: leader,
 		handler: handler,
 		factory: factory,
-		state:   nil,
 		donech : make(chan bool, 1), // donech should not be closed
 		killch : make(chan bool, 1), // donech should not be closed
 		isClosed: false}
 
+	sync.state = &followerState{
+					lastLoggedTxid : common.BOOTSTRAP_LAST_LOGGED_TXID,
+					currentEpoch : common.BOOTSTRAP_CURRENT_EPOCH,
+					voting : voting}
+					
 	return sync
 }
 
@@ -829,6 +864,9 @@ func (f *FollowerSyncProxy) Start() bool {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in FollowerSyncProxy.Start() : %s\n", r)
+			log.Printf("FollowerSyncProxy.Start() terminates : Diagnostic Stack ...")
+			log.Printf("%s", debug.Stack())	
+			
 			f.abort()  // ensure proper cleanup and unblock caller
 		} 
 		
@@ -923,6 +961,9 @@ func (l *FollowerSyncProxy) execute(donech chan bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in FollowerSyncProxy.execute() : %s\n", r)
+			log.Printf("FollowerSyncProxy.execute() terminates : Diagnostic Stack ...")
+			log.Printf("%s", debug.Stack())	
+			
 			donech <- false // unblock caller
 		}
 	}()
@@ -986,7 +1027,7 @@ func (l *FollowerSyncProxy) sendFollowerInfo() error {
 	if err != nil {
 		return err
 	}
-	packet := l.factory.CreateFollowerInfo(epoch, l.handler.GetFollowerId())
+	packet := l.factory.CreateFollowerInfo(epoch, l.handler.GetFollowerId(), l.state.voting)
 	return send(packet, l.leader)
 }
 
@@ -1046,7 +1087,10 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 	if err != nil {
 		return err
 	}
-	l.state = &followerState{lastLoggedTxid: common.Txnid(txid), currentEpoch: currentEpoch}
+
+	l.state.lastLoggedTxid = common.Txnid(txid)
+	l.state.currentEpoch = currentEpoch	
+	
 	packet = l.factory.CreateEpochAck(uint64(txid), currentEpoch)
 	return send(packet, l.leader)
 }

@@ -158,6 +158,7 @@ type Vote struct {
 	CndId             *string `protobuf:"bytes,5,req,name=cndId" json:"cndId,omitempty"`
 	CndLoggedTxnId    *uint64 `protobuf:"varint,6,req,name=cndLoggedTxnId" json:"cndLoggedTxnId,omitempty"`
 	CndCommittedTxnId *uint64 `protobuf:"varint,7,req,name=cndCommittedTxnId" json:"cndCommittedTxnId,omitempty"`
+	Solicit           *bool   `protobuf:"varint,8,req,name=solicit" json:"solicit,omitempty"`
 	XXX_unrecognized  []byte  `json:"-"`
 }
 
@@ -214,10 +215,18 @@ func (m *Vote) GetCndCommittedTxnId() uint64 {
 	return 0
 }
 
+func (m *Vote) GetSolicit() bool {
+	if m != nil && m.Solicit != nil {
+		return *m.Solicit
+	}
+	return false
+}
+
 type FollowerInfo struct {
 	Version          *uint32 `protobuf:"varint,1,req,name=version" json:"version,omitempty"`
 	AcceptedEpoch    *uint32 `protobuf:"varint,2,req,name=acceptedEpoch" json:"acceptedEpoch,omitempty"`
 	Fid              *string `protobuf:"bytes,3,req,name=fid" json:"fid,omitempty"`
+	Voting           *bool   `protobuf:"varint,4,req,name=voting" json:"voting,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
@@ -244,6 +253,13 @@ func (m *FollowerInfo) GetFid() string {
 		return *m.Fid
 	}
 	return ""
+}
+
+func (m *FollowerInfo) GetVoting() bool {
+	if m != nil && m.Voting != nil {
+		return *m.Voting
+	}
+	return false
 }
 
 type EpochAck struct {

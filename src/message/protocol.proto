@@ -29,12 +29,14 @@ message Vote {
    	required string          cndId     			= 5; // proposed candidate Id
    	required uint64          cndLoggedTxnId  	= 6; // proposed candidate last logged TxnId
    	required uint64          cndCommittedTxnId  = 7; // proposed candidate last committed TxnId
+   	required bool            solicit            = 8; // is the vote coming from a participant who is just watching?
 }
 
 message FollowerInfo {
     required uint32          version   		= 1; // protocol version TBD
    	required uint32          acceptedEpoch  = 2; 
    	required string          fid       		= 3; 
+   	required bool            voting         = 4;
 }
 
 message EpochAck {

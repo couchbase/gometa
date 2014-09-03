@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"runtime/debug"
 )
 
 /////////////////////////////////////////////////
@@ -80,6 +81,8 @@ func (l *PeerListener) Close() bool {
 		l.isClosed = true
 		
 		log.Printf("PeerListener.Close(): local address %s", l.naddr)
+		log.Printf("PeerListener.Close() : Diagnostic Stack ...")
+		log.Printf("%s", debug.Stack())
 
 		SafeRun("PeerListener.Close()",
 			func() {

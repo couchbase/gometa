@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"runtime/debug"
 )
 
 /////////////////////////////////////////////////
@@ -74,7 +75,10 @@ func (p *PeerPipe) Close() bool {
 	defer p.mutex.Unlock()
 	
 	if !p.isClosed {
+	
 		log.Printf("PeerPipe.Close(): Remote Address %s", p.GetAddr())
+		log.Printf("PeerPipe.Close() : Diagnostic Stack ...")
+		log.Printf("%s", debug.Stack())
 
 		p.isClosed = true
 

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 	"log"
+	"runtime/debug"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -24,6 +25,7 @@ type ElectionSite struct {
 	master       *ballotMaster
 	worker       *pollWorker
 	
+	solicitOnly  bool
 	ensemble     []net.Addr
 	fullEnsemble []string
 	factory      MsgFactory
@@ -41,8 +43,8 @@ type ballotResult struct {
 }
 
 type Ballot struct {
-	result   *ballotResult
-	resultch chan bool // should only be closed by pollWorker
+	result   	*ballotResult
+	resultch 	chan bool // should only be closed by pollWorker
 }
 
 type ballotMaster struct {
@@ -85,7 +87,8 @@ var gElectionRound uint64 = 0
 func CreateElectionSite(laddr string,
 	peers []string,
 	factory MsgFactory,
-	handler ActionHandler) (election *ElectionSite, err error) {
+	handler ActionHandler,
+	solicitOnly bool) (election *ElectionSite, err error) {
 
 	// create a full ensemble (including the local host)	
     en, fullEn, err := cloneEnsemble(peers, laddr)
@@ -97,7 +100,8 @@ func CreateElectionSite(laddr string,
 		factory:  factory,
 		handler:  handler,
 		ensemble: en,
-		fullEnsemble: fullEn}
+		fullEnsemble: fullEn,
+		solicitOnly : solicitOnly}
 
 	// Create a new messenger
 	election.messenger, err = newMessenger(laddr)
@@ -145,6 +149,9 @@ func (e *ElectionSite) Close() {
 	defer e.mutex.Unlock()
 
 	if !e.isClosed {
+		log.Printf("ElectionSite.Close() : Diagnostic Stack ...")
+		log.Printf("%s", debug.Stack())	
+
 		e.isClosed = true
 
 		e.messenger.Close()
@@ -218,7 +225,8 @@ func (s *ElectionSite) createVoteFromCurState() VoteMsg {
 		epoch,
 		s.messenger.GetLocalAddr(), // this is localhost UDP port
 		uint64(lastLoggedTxid),
-		uint64(lastCommittedTxid))
+		uint64(lastCommittedTxid),
+		s.solicitOnly)
 
 	return vote
 }
@@ -287,6 +295,10 @@ func (b *ballotMaster) castBallot(winnerch chan string) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in ballotMaster.castBallot() : %s\n", r)
+	    	common.SafeRun("ballotMaster.castBallot()",
+				func() {
+					b.site.Close()
+				})
 		}
 		
 		common.SafeRun("ballotMaster.castBallot()",
@@ -416,7 +428,8 @@ func (b *ballotMaster) cloneWinningVote() VoteMsg {
 			b.winner.winningEpoch,
 			b.winner.proposed.GetCndId(),
 			b.winner.proposed.GetCndLoggedTxnId(),
-			b.winner.proposed.GetCndCommittedTxnId())
+			b.winner.proposed.GetCndCommittedTxnId(),
+			b.site.solicitOnly)
 	}
 
 	return nil
@@ -605,8 +618,10 @@ func (w *pollWorker) listen() {
 			{
 				// Before listening to any vote, see if we reach quorum already.
 				// This should only happen if there is only one server in the 
-				// ensemble.
-				if w.checkQuorum(w.ballot.result.receivedVotes, w.ballot.result.proposed) {
+				// ensemble.  If this election is for solicit purpose, then 
+				// run election all the time.
+				if !w.site.solicitOnly &&
+				   w.checkQuorum(w.ballot.result.receivedVotes, w.ballot.result.proposed) {
 					w.site.master.setWinner(w.ballot.result)
 					w.ballot.resultch <- true
 					w.ballot = nil
@@ -628,6 +643,22 @@ func (w *pollWorker) listen() {
 				var obj interface{} = msg.Content
 				vote := obj.(VoteMsg)
 				voter := msg.Peer
+			
+				// If I am receiving a vote that just for soliciting my response,
+				// then respond with my winning vote only after I am confirmed as
+				// either a leader or follower.  This ensure that the watcher will
+				// only find a leader from a stable ensemble.  This also ensures
+				// that the watcher will only count the votes from active participant,
+				// therefore, it will not count from other watcher as well as its
+				// own vote (code path for handling votes from electing member will 
+				// never called for watcher).
+				if vote.GetSolicit() {
+					status := w.site.handler.GetStatus()
+					if  status == LEADING || status == FOLLOWING {
+						w.respondInquiry(voter, vote)
+					}
+				 	continue	
+				}
 
 				// Check if the voter is in the ensemble
 				if !w.site.inEnsemble(voter) {
@@ -635,7 +666,8 @@ func (w *pollWorker) listen() {
 				}
 
 				if w.ballot == nil {
-					// If there is no ballot, then just need to respond.
+					// If there is no ballot or the vote is from a watcher, 
+					// then just need to respond if I have a winner.
 					w.respondInquiry(voter, vote)
 
 				} else if w.handleVote(voter, vote) {
@@ -680,15 +712,13 @@ func (w *pollWorker) listen() {
 func (w *pollWorker) respondInquiry(voter net.Addr, vote VoteMsg) {
 
 	if PeerStatus(vote.GetStatus()) == ELECTING {
+		// Make sure that we only send this when there is a winning vote, such
+		// that the vote has a majority support. 
 		msg := w.site.master.cloneWinningVote()
 		if msg != nil {
 			// send the winning vote if there is no error
 			w.site.messenger.Send(msg, voter)
 		}
-		// If there is no winner at the moment and this node is not
-		// in election, could have send a vote based on the current state
-		// (lastLoggedZxid).  But it is expected that a new election will be
-		// started for this node soon, so don't have to send it now.
 	}
 }
 
@@ -953,8 +983,8 @@ func (w *pollWorker) checkQuorum(votes map[string]VoteMsg, candidate VoteMsg) bo
 			count++
 		}
 	}
-
-	return count > (len(w.site.fullEnsemble) / 2)
+	
+	return w.site.handler.GetQuorumVerifier().HasQuorum(count)
 }
 
 //
@@ -970,7 +1000,8 @@ func (w *pollWorker) cloneProposedVote() VoteMsg {
 		uint32(w.ballot.result.proposed.GetEpoch()),
 		w.ballot.result.proposed.GetCndId(),
 		w.ballot.result.proposed.GetCndLoggedTxnId(),
-		w.ballot.result.proposed.GetCndCommittedTxnId())
+		w.ballot.result.proposed.GetCndCommittedTxnId(),
+		w.site.solicitOnly)
 }
 
 //

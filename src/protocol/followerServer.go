@@ -5,6 +5,7 @@ import (
 	"net"
 	"log"
 	"fmt"
+	"runtime/debug"
 )
 
 //////////////////////////////////////////////////////////////////////////////
@@ -43,6 +44,9 @@ func RunFollowerServer(naddr string,
 			log.Printf("panic in RunFollowerServer() : %s\n", r)
 			err = r.(error)
 		}
+		
+		log.Printf("RunFollowerServer terminates : Diagnostic Stack ...")
+		log.Printf("%s", debug.Stack())	
 	}()
 
 	// create connection to leader
@@ -93,7 +97,7 @@ func syncWithLeader(naddr string,
 	
 	log.Printf("FollowerServer.syncWithLeader(): Follower %s start synchronization with leader (TCP %s)", 
 			naddr, pipe.GetAddr())
-	proxy := NewFollowerSyncProxy(pipe, handler, factory)
+	proxy := NewFollowerSyncProxy(pipe, handler, factory, true)
 	donech := proxy.GetDoneChannel()
 	go proxy.Start()
 	defer proxy.Terminate() 

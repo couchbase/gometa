@@ -14,7 +14,7 @@ type PeerRole byte
 const (
 	LEADER PeerRole = iota
 	FOLLOWER
-	OBSERVER
+	WATCHER
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -27,7 +27,7 @@ const (
 	ELECTING PeerStatus = iota
 	LEADING
 	FOLLOWING
-	OBSERVING
+	WATCHING	
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -49,6 +49,8 @@ type ActionHandler interface {
 	GetLastCommittedTxid() (common.Txnid, error)
 	
 	GetStatus() PeerStatus
+	
+	GetQuorumVerifier() QuorumVerifier
 
 	// Current Epoch is set during leader/followr discovery phase.
 	// It is the current epoch (term) of the leader.
@@ -77,7 +79,16 @@ type ActionHandler interface {
 	
 	LogProposal(proposal ProposalMsg) error
 
-	Commit(proposal ProposalMsg) error
+	Commit(txid common.Txnid) error
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// QuorumVerifier 
+/////////////////////////////////////////////////////////////////////////////
+
+type QuorumVerifier interface {
+
+	HasQuorum(count int) bool
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -91,9 +102,10 @@ type MsgFactory interface {
 
 	CreateCommit(txnid uint64) CommitMsg
 
-	CreateVote(round uint64, status uint32, epoch uint32, cndId string, cndLoggedTxnId uint64, cndCommittedTxnId uint64) VoteMsg
+	CreateVote(round uint64, status uint32, epoch uint32, cndId string, cndLoggedTxnId uint64, 
+				cndCommittedTxnId uint64, solicit bool) VoteMsg
 
-	CreateFollowerInfo(epoch uint32, fid string) FollowerInfoMsg
+	CreateFollowerInfo(epoch uint32, fid string, voting bool) FollowerInfoMsg
 
 	CreateEpochAck(lastLoggedTxid uint64, epoch uint32) EpochAckMsg
 
@@ -153,6 +165,7 @@ type VoteMsg interface {
 	GetCndId() string
 	GetCndLoggedTxnId() uint64
 	GetCndCommittedTxnId() uint64
+	GetSolicit() bool
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -163,6 +176,7 @@ type FollowerInfoMsg interface {
 	common.Packet
 	GetAcceptedEpoch() uint32
 	GetFid() string 
+	GetVoting() bool
 }
 
 type LeaderInfoMsg interface {

@@ -5,6 +5,7 @@ import (
 	"log"
 	"sync"
 	"fmt"
+	"runtime/debug"
 )
 
 /////////////////////////////////////////////////
@@ -75,9 +76,14 @@ func (f *Follower) GetFollowerId() string {
 // Forward the request to the leader
 //
 func (f *Follower) ForwardRequest(request RequestMsg) bool {
-	log.Printf("Follower.ForwardRequest(): Follower %s forward request to leader (TCP %s)",
-		f.GetFollowerId(), f.pipe.GetAddr())
-	return f.pipe.Send(request)
+	if f.kind == FOLLOWER {
+		log.Printf("Follower.ForwardRequest(): Follower %s forward request to leader (TCP %s)",
+			f.GetFollowerId(), f.pipe.GetAddr())
+		return f.pipe.Send(request)
+	}
+	
+	// do not process request if I am a watcher 
+	return false
 }
 
 //
@@ -113,6 +119,9 @@ func (f *Follower) startListener() {
 		if r := recover(); r != nil {
 			log.Printf("panic in Follower.startListener() : %s\n", r)
 		}
+		
+		log.Printf("Follower.startListener() terminates : Diagnostic Stack ...")
+		log.Printf("%s", debug.Stack())	
 		
 	    common.SafeRun("Follower.startListener()",
 			func() {
@@ -185,8 +194,12 @@ func (f *Follower) handleProposal(msg ProposalMsg) error {
 	// Add to pending list
 	f.pendings = append(f.pendings, msg)
 
-	// Send Accept Message
-	return f.sendAccept(common.Txnid(msg.GetTxnid()), f.GetFollowerId())
+	// Send Accept Message only if I am a follower (not watcher)
+	if f.kind == FOLLOWER {
+		return f.sendAccept(common.Txnid(msg.GetTxnid()), f.GetFollowerId())
+	}
+	
+	return nil
 }
 
 //
@@ -194,25 +207,27 @@ func (f *Follower) handleProposal(msg ProposalMsg) error {
 //
 func (f *Follower) handleCommit(msg CommitMsg) error {
 
-	// If there is nothing pending, ignore this commit.
-	if len(f.pendings) == 0 {
-		return nil
-	}
+	// If there is pending propsoal in memory, then make sure 
+	// that the commit are processed in order.  If there is no
+	// pending proposal, we may still receive commit since commit
+	// can be sent by the leader/peer after synchronization. 
+	if len(f.pendings) != 0 {
 
-	// Check if the commit is the first one in the pending list.
-	// All commits are processed sequentially to ensure serializability.
-	p := f.pendings[0]
-	if p == nil || p.GetTxnid() != msg.GetTxnid() {
-		return common.NewError(common.PROTOCOL_ERROR, 
-			fmt.Sprintf("Proposal must committed in sequential order for the same leader term. " +
-			"Found out-of-order commit. Last proposal txid %d, commit msg %d", p.GetTxnid(), msg.GetTxnid()))
-	}
+		// Check if the commit is the first one in the pending list.
+		// All commits are processed sequentially to ensure serializability.
+		p := f.pendings[0]
+		if p == nil || p.GetTxnid() != msg.GetTxnid() {
+			return common.NewError(common.PROTOCOL_ERROR, 
+				fmt.Sprintf("Proposal must committed in sequential order for the same leader term. " +
+				"Found out-of-order commit. Last proposal txid %d, commit msg %d", p.GetTxnid(), msg.GetTxnid()))
+		}
 
-	// remove proposal from pendings
-	f.pendings = f.pendings[1:]
+		// remove proposal from pendings
+		f.pendings = f.pendings[1:]
+	}
 
 	// commit
-	err := f.handler.Commit(p)
+	err := f.handler.Commit(common.Txnid(msg.GetTxnid()))
 	if err != nil {
 		return err
 	}

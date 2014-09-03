@@ -3,6 +3,7 @@ package message
 import (
 	"code.google.com/p/goprotobuf/proto"
 	"log"
+	"strconv"
 )
 
 //
@@ -93,6 +94,7 @@ func (req *Vote) Print() {
 	log.Printf("	Candidate Id    : %s", req.GetCndId())
 	log.Printf("	Logged TxnId    : %d", req.GetCndLoggedTxnId())
 	log.Printf("	Committed TxnId : %d", req.GetCndCommittedTxnId())
+	log.Printf("	SolicitOnly     : %s", strconv.FormatBool(req.GetSolicit()))
 }
 
 //
@@ -135,6 +137,7 @@ func (req *FollowerInfo) Decode(data []byte) (err error) {
 func (req *FollowerInfo) Print() {
 	log.Printf("FollowerInfo Message:")
 	log.Printf("	AcceptedEpoch : %d", req.GetAcceptedEpoch())
+	log.Printf("	Voting        : %s", strconv.FormatBool(req.GetVoting()))
 }
    	
 //

@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"log"
-	"flag"
 	"fmt"
 	"net/rpc"
 	"github.com/jliang00/gometa/src/server"
@@ -21,32 +20,7 @@ type Reply struct {
 	Result	[]byte
 }
 
-//
-// main function
-//
-func main() {
-
-	var isClient string
-	var config string
-	flag.StringVar(&isClient, "client", "false", "run as test client")
-	flag.StringVar(&config, "config", "", "path for configuration file")
-	flag.Parse()
-	
-	if isClient == "true" {
-		RunTestClient(config)
-		os.Exit(0)
-	}
-
-	err := server.RunServer(config)
-	if err != nil {
-		log.Printf("Encounter Error = %s. Terminate server", err.Error())	
-		os.Exit(1)
-	}
-
-	os.Exit(0) 
-}
-
-func RunTestClient(path string) {
+func runTestClient(path string) {
 
 	// connect to the server
 	var host string

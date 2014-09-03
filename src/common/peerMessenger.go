@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"runtime/debug"
 )
 
 /////////////////////////////////////////////////
@@ -110,9 +111,12 @@ func (p *PeerMessenger) GetLocalAddr() string {
 func (p *PeerMessenger) Close() bool {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-
+	
 	if !p.isClosed {
+	
 		log.Printf("PeerMessenger.Close() : Local Addr %s", p.GetLocalAddr())	
+		log.Printf("PeerMessenger.Close() : Diagnostic Stack ...")
+		log.Printf("%s", debug.Stack())
 		
 		p.isClosed = true
 
@@ -250,7 +254,7 @@ func (p *PeerMessenger) doReceive() {
 		if r := recover(); r != nil {
 			log.Printf("panic in PeerMessenger.doReceive() : %s\n", r)
 		}
-
+		
 		// This will close the Send and Receive channel
 		p.Close()
 	}()

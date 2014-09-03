@@ -5,6 +5,7 @@ import (
 	"sync"
 	"log"
 	"fmt"
+	"runtime/debug"
 )
 
 /////////////////////////////////////////////////
@@ -57,6 +58,7 @@ type Leader struct {
 	// mutex protected variable
 	mutex     		sync.Mutex
 	followers 		map[string]*messageListener
+	watchers 		map[string]*common.PeerPipe
 	observers       map[string]*observer
 	isClosed  		bool
 	changech        chan bool  	// notify membership of active followers have changed
@@ -88,6 +90,7 @@ func NewLeader(naddr string,
 
 	leader = &Leader{naddr: naddr,
 		followers:     	make(map[string]*messageListener),
+		watchers:     	make(map[string]*common.PeerPipe),
 		observers:     	make(map[string]*observer),
 		quorums:       	make(map[common.Txnid][]string),
 		proposals:    	make(map[common.Txnid]ProposalMsg),
@@ -163,6 +166,46 @@ func (l *Leader) GetActiveEnsembleSize() int {
 	defer l.mutex.Unlock()
 	
 	return len(l.followers) + 1
+}
+
+//
+// Add a watcher. If the leader is terminated, the pipe between leader
+// and watcher will also be closed.
+//
+func (l *Leader) AddWatcher(fid string, 
+							peer *common.PeerPipe,
+							o *observer) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	// AddWatcher requires holding the mutex such that the leader thread
+	// will not be sending new proposal or commit (see sendProposal() and
+	// sendCommit()) to watchers.  This allow this function to copy the
+	// proposals and commits from the observer queue into the pipe, before
+	// the leader has a chance to send new messages.
+    for packet := o.getNext(); packet != nil; packet = o.getNext() {		
+   
+    	switch request := packet.(type) {
+			case ProposalMsg:
+				txid := common.Txnid(request.GetTxnid())
+				log.Printf("Leader.AddWatcher() : send observer's packet %s, txid %d", packet.Name(), txid) 
+			case CommitMsg:
+				txid := common.Txnid(request.GetTxnid())
+				log.Printf("Leader.AddWatcher() : send observer's packet %s, txid %d", packet.Name(), txid) 
+		}
+		
+		peer.Send(packet)    	
+    }
+    
+    // Rememeber the old message listener and start a new one.
+	oldPipe , ok := l.watchers[fid]
+	l.watchers[fid] = peer 
+
+	// kill the old PeerPipe 
+	if ok && oldPipe != nil {
+		log.Printf("Leader.AddWatcher() : old PeerPipe found for watcher %s.  Closing old PeerPipe.", fid)
+		oldPipe.Close()
+	}
 }
 
 //
@@ -271,6 +314,9 @@ func (l *messageListener) start() {
 			log.Printf("panic in messageListener.start() : %s\n", r)
 		}
 		
+		log.Printf("leader's messageListener.start() terminates : Diagnostic Stack ...")
+		log.Printf("%s", debug.Stack())		
+		
 	    common.SafeRun("messageListener.start()",
 			func() {
 				l.leader.removeListener(l)
@@ -341,6 +387,9 @@ func (l *Leader) listen() {
 		if r := recover(); r != nil {
 			log.Printf("panic in Leader.listen() : %s\n", r)
 		}
+		
+		log.Printf("Leader.listen() terminates : Diagnostic Stack ...")
+		log.Printf("%s", debug.Stack())		
 		
 	    common.SafeRun("Leader.listen()",
 			func() {
@@ -501,6 +550,10 @@ func (l *Leader) sendProposal(proposal ProposalMsg) {
 	for _, f := range l.followers {
 		f.pipe.Send(msg)
 	}
+
+	for _, w := range l.watchers {
+		w.Send(msg)
+	}
 	
 	for _, o := range l.observers {
 		o.send(msg)
@@ -611,14 +664,14 @@ func (l *Leader) commit(txid common.Txnid) error {
 			"Found out-of-order commit. Leader last committed txid %d, commit msg %d", l.lastCommitted, txid))
 	}
 	
-	p, ok := l.proposals[txid]
+	_, ok := l.proposals[txid]
 	if !ok {
 		return common.NewError(common.SERVER_ERROR, 
 			fmt.Sprintf("Cannot find a proposal for the txid %d. Fail to commit the proposal.", txid))
 	}
 
 	// marking the proposal as committed.  Always do this first before sending to followers. 
-	err := l.handler.Commit(p)
+	err := l.handler.Commit(txid)
 	if err != nil {
 		return err
 	}
@@ -655,6 +708,11 @@ func (l *Leader) sendCommit(txnid common.Txnid) error {
 		f.pipe.Send(msg)
 	}
 
+	// send message to watchers
+	for _, w := range l.watchers {
+		w.Send(msg)
+	}
+	
 	// Send the message to the observer
 	for _, o := range l.observers {
 		o.send(msg)
