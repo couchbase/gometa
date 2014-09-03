@@ -19,17 +19,18 @@ import (
 // channel such that if the goroutine running RunWatcherServer goes
 // away, the sender won't get blocked. 
 //
-func RunWatcherServer(host string,
-					peerUDP []string,
-					peerTCP []string,
-					handler ActionHandler,
-					factory MsgFactory,
-					killch <- chan bool) {
+func RunWatcherServer(	host string,
+					 	leader string, 
+						peerUDP []string,
+						peerTCP []string,
+						handler ActionHandler,
+						factory MsgFactory,
+						killch <- chan bool) {
 
 	backoff := common.RETRY_BACKOFF
 	retry := true 
 	for retry {					
-		peer, err := findPeerToConnect(host, peerUDP, peerTCP, factory,  handler, killch) 
+		peer, err := findPeerToConnect(host, leader, peerUDP, peerTCP, factory,  handler, killch) 
 		if err == nil { 
 			if peer != "" {
 				if err = runOnce(host, peer, handler, factory, killch); err == nil {
@@ -194,12 +195,18 @@ func runTillEnd(
 //
 // Find which peer to connect to
 //
-func findPeerToConnect(host    	string,
-					  peerUDP 	[]string,
-					  peerTCP 	[]string,
-					  factory 	MsgFactory,
-					  handler 	ActionHandler,
-					  killch 	<- chan bool) (string, error) {
+func findPeerToConnect(	host   		string,
+						leader		string,
+					  	peerUDP 	[]string,
+					  	peerTCP 	[]string,
+					  	factory 	MsgFactory,
+					  	handler 	ActionHandler,
+					  	killch 	<- chan bool) (string, error) {
+					  	
+	// If there is a known leader
+	if leader != "" {
+		return leader, nil
+	}
 					  
 	// Run master election to figure out who is the leader.  Only connect to leader for now.
 	site, err := CreateElectionSite(host, peerUDP, factory, handler, true)
