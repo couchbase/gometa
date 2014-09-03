@@ -11,8 +11,6 @@ import (
 
 type fakeServer struct {
 	repo      		*repo.Repository
-	log       		*repo.CommitLog
-	srvConfig 		*repo.ServerConfig
 	factory   		protocol.MsgFactory
 	handler   		*server.ServerAction	
 	killch			chan bool
@@ -85,11 +83,9 @@ func (s *fakeServer) bootstrap() (err error) {
 	if err != nil {
 		return err
 	}
-	s.log = repo.NewCommitLog(s.repo)
-	s.srvConfig = repo.NewServerConfig(s.repo)
 	
 	s.factory = message.NewConcreteMsgFactory()
-	s.handler = server.NewServerAction(s.repo, s.log, s.srvConfig, s, s.factory, s)
+	s.handler = server.NewDefaultServerAction(s.repo, s)
 	s.killch = make(chan bool, 1) // make it buffered to unblock sender
 	s.status = protocol.ELECTING
 	

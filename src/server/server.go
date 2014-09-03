@@ -39,13 +39,6 @@ type ServerState struct {
 	proposals 		map[common.Txnid]*protocol.RequestHandle // key : txnid
 }
 
-type ServerCallback interface {
-	GetStatus() protocol.PeerStatus 
-	UpdateStateOnNewProposal(proposal protocol.ProposalMsg)
-	UpdateStateOnCommit(txnid common.Txnid, key string)
-	UpdateWinningEpoch(epoch uint32)
-}
-
 var gServer *Server = nil
 
 /////////////////////////////////////////////////////////////////////////////

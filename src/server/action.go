@@ -2,6 +2,7 @@ package server
 
 import (
 	"github.com/jliang00/gometa/src/common"
+	"github.com/jliang00/gometa/src/message"
 	"github.com/jliang00/gometa/src/protocol"
 	"fmt"
 	repo "github.com/jliang00/gometa/src/repository"
@@ -10,6 +11,18 @@ import (
 ////////////////////////////////////////////////////////////////////////////
 // Type Declaration
 /////////////////////////////////////////////////////////////////////////////
+
+type ServerCallback interface {
+	GetStatus() protocol.PeerStatus 
+	UpdateStateOnNewProposal(proposal protocol.ProposalMsg)
+	UpdateStateOnCommit(txnid common.Txnid, key string)
+	UpdateWinningEpoch(epoch uint32)
+}
+
+type DefaultServerCallback interface {
+	protocol.QuorumVerifier
+	ServerCallback
+}
 
 type ServerAction struct {
 	repo    	*repo.Repository
@@ -23,6 +36,22 @@ type ServerAction struct {
 ////////////////////////////////////////////////////////////////////////////
 // Public Function
 /////////////////////////////////////////////////////////////////////////////
+
+func NewDefaultServerAction(repository	*repo.Repository,
+							server		DefaultServerCallback) *ServerAction {
+
+	log := repo.NewCommitLog(repository)
+	config := repo.NewServerConfig(repository)
+	factory := message.NewConcreteMsgFactory()							
+	
+	return &ServerAction{
+		repo: 		repository,
+		log:     	log,
+		config:  	config,
+		server:  	server,
+		factory: 	factory,
+		verifier: 	server}
+}
 
 func NewServerAction(repo 		*repo.Repository,
 					 log 		*repo.CommitLog,
