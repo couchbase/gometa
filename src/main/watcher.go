@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/jliang00/gometa/src/action"
 	"github.com/jliang00/gometa/src/server"
 	"github.com/jliang00/gometa/src/message"
 	"github.com/jliang00/gometa/src/protocol"
@@ -12,7 +13,7 @@ import (
 type fakeServer struct {
 	repo      		*repo.Repository
 	factory   		protocol.MsgFactory
-	handler   		*server.ServerAction	
+	handler   		*action.ServerAction	
 	killch			chan bool
 	status 			protocol.PeerStatus
 }
@@ -37,15 +38,19 @@ func runWatcher(path string) {
 	fs := new(fakeServer)
 	fs.bootstrap()
 	
-	go protocol.RunWatcherServer(	
+	readych := make(chan bool) // blocking
+	
+	go protocol.RunWatcherServerWithElection(	
 		server.GetHostUDPAddr(),
-		"",
 		server.GetPeerUDPAddr(),
 		server.GetPeerTCPAddr(),
 		fs.handler,
 		fs.factory,		
-		fs.killch)
-		
+		fs.killch,
+		readych)
+	
+	<- readych
+				
 	runConsole(fs)
 }
 
@@ -85,7 +90,7 @@ func (s *fakeServer) bootstrap() (err error) {
 	}
 	
 	s.factory = message.NewConcreteMsgFactory()
-	s.handler = server.NewDefaultServerAction(s.repo, s)
+	s.handler = action.NewDefaultServerAction(s.repo, s)
 	s.killch = make(chan bool, 1) // make it buffered to unblock sender
 	s.status = protocol.ELECTING
 	
@@ -107,6 +112,14 @@ func (s *fakeServer) GetStatus() protocol.PeerStatus {
 }
 
 func (s *fakeServer) UpdateWinningEpoch(epoch uint32) {
+}
+
+func (s *fakeServer) GetPeerUDPAddr() []string {
+	return server.GetPeerUDPAddr() 
+}
+
+func (s *fakeServer) GetHostTCPAddr() string {
+	return server.GetHostTCPAddr()
 }
 
 /////////////////////////////////////////////////////////////////////////////

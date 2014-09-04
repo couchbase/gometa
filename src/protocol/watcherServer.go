@@ -4,7 +4,6 @@ import (
 	"github.com/jliang00/gometa/src/common"
 	"net"
 	"log"
-	"fmt"
 	"time"
 	"runtime/debug"
 )
@@ -19,32 +18,17 @@ import (
 // channel such that if the goroutine running RunWatcherServer goes
 // away, the sender won't get blocked. 
 //
-func RunWatcherServer(	host string,
-					 	leader string, 
-						peerUDP []string,
-						peerTCP []string,
+func RunWatcherServer( leader string, 
 						handler ActionHandler,
 						factory MsgFactory,
-						killch <- chan bool) {
-
+						killch <- chan bool,
+						readych chan <- bool) {
+						
 	backoff := common.RETRY_BACKOFF
 	retry := true 
 	for retry {					
-		peer, err := findPeerToConnect(host, leader, peerUDP, peerTCP, factory,  handler, killch) 
-		if err == nil { 
-			if peer != "" {
-				if err = runOnce(host, peer, handler, factory, killch); err == nil {
-					// if runOnce() terminates without an error, it is killed.  So return.
-					retry = false
-				} else {
-					log.Printf("WatcherServer.RunWatcherServer() : got error = %s.  Retry.", err)
-				}
-			} else {
-				// if there is no peer found, return.  
-				retry = false
-			}
-		} else {
-			log.Printf("WatcherServer.RunWatcherServer() : got error = %s.  Retry.", err)
+		if runOnce(leader, handler, factory, killch, readych) {
+			retry = false
 		}
 		
 		if retry {
@@ -58,79 +42,113 @@ func RunWatcherServer(	host string,
 		}
 	}
 }
+
+//
+// Create a new WatcherServer. This is a blocking call until
+// the WatcherServer terminates. Make sure the kilch is a buffered
+// channel such that if the goroutine running RunWatcherServer goes
+// away, the sender won't get blocked. 
+//
+func RunWatcherServerWithElection(	host string,
+									peerUDP []string,
+									peerTCP []string,
+									handler ActionHandler,
+									factory MsgFactory,
+									killch <- chan bool,
+									readych chan <- bool) {
+
+	backoff := common.RETRY_BACKOFF
+	retry := true 
+	for retry {					
+		peer, isKilled := findPeerToConnect(host, peerUDP, peerTCP, factory,  handler, killch) 
+		if isKilled {
+			return 
+		}	
+		
+		if peer != "" && runOnce(peer, handler, factory, killch, readych) {
+			retry = false
+		} 
+		
+		if retry {
+			timer := time.NewTimer(backoff * time.Millisecond)
+			<-timer.C
+			
+			backoff += backoff
+			if backoff > common.MAX_RETRY_BACKOFF {
+				backoff = common.MAX_RETRY_BACKOFF
+			}
+		}
+	}
+}
 	
-func runOnce(naddr string,
-			peer string,
+/////////////////////////////////////////////////////////////////////////////
+// WatcherServer - Execution Loop
+/////////////////////////////////////////////////////////////////////////////
+
+func runOnce(peer string,
 			handler ActionHandler,
 			factory MsgFactory,
-			killch <- chan bool) (err error) {
+			killch <- chan bool, 
+			readych chan <- bool) (isKilled bool) {
 
 	// Catch panic at the main entry point for WatcherServer
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in RunWatcherServer() : %s\n", r)
-			log.Printf("RunWatcherServer() terminates : Diagnostic Stack ...")
+			log.Printf("panic in WatcherServer.runOnce() : %s\n", r)
+			log.Printf("WatcherServer.runOnce() terminates : Diagnostic Stack ...")
 			log.Printf("%s", debug.Stack())	
-			
-			err = r.(error)
 		}
 	}()
 
 	// create connection with a peer 
 	conn, err := net.Dial("tcp", peer)
 	if err != nil {
-		return err
+		log.Printf("WatcherServer.runOnce() error : %s", err)
+		return false 
 	}
 	pipe := common.NewPeerPipe(conn)
-	log.Printf("WatcherServer.RunWatcherServer() : Watcher %s successfully created TCP connection to peer %s", naddr, peer)
+	log.Printf("WatcherServer.runOnce() : Watcher successfully created TCP connection to peer %s", peer)
 
 	// close the connection to the peer. If connection is closed,
 	// sync proxy and watcher will also terminate by err-ing out.  
 	// If sync proxy and watcher terminates the pipe upon termination, 
 	// it is ok to close it again here.
-	defer common.SafeRun("WatcherServer.runWatcherServer()",
+	defer common.SafeRun("WatcherServer.runOnce()",
 		func() {
 			pipe.Close()
 		})
 
 	// start syncrhorniziing with the metadata server 
-	success, isKilled := syncWithPeer(naddr, pipe, handler, factory, killch)
+	success, isKilled := syncWithPeer(pipe, handler, factory, killch)
 
 	// run watcher after synchronization
 	if success {
-		isKilled = runWatcher(pipe, handler, factory, killch)
-		log.Printf("WatcherServer.RunWatcherServer() : Watcher Server %s terminate", naddr)
-		
-		if !isKilled {
-			err = common.NewError(common.SERVER_ERROR, fmt.Sprintf("Watcher %s terminated unexpectedly.", naddr))
-			return err
+		if !runWatcher(pipe, handler, factory, killch, readych) {
+			log.Printf("WatcherServer.runOnce() : Watcher terminated unexpectedly.")
+			return false
 		}
-		return nil
 		
 	} else if !isKilled {
-		err = common.NewError(common.SERVER_ERROR, fmt.Sprintf("Watcher %s fail to synchronized with peer %s", 
-				naddr, peer))
-		return err
-	} else {
-		return nil
-	}
+		log.Printf("WatcherServer.runOnce() : Watcher fail to synchronized with peer %s", peer)
+		return false
+	} 
+	
+	return true 
 }
 
 /////////////////////////////////////////////////////////////////////////////
-// WatcherServer - Private Function
+// WatcherServer - Election and Synchronization 
 /////////////////////////////////////////////////////////////////////////////
 
 //
 // Synchronize with the leader.  
 //
-func syncWithPeer(naddr string,
-    pipe *common.PeerPipe,
-	handler ActionHandler,
-	factory MsgFactory,
-	killch <- chan bool) (bool, bool) {
+func syncWithPeer( 	pipe *common.PeerPipe,
+					handler ActionHandler,
+					factory MsgFactory,
+					killch <- chan bool) (success bool, isKilled bool) {
 	
-	log.Printf("WatcherServer.syncWithPeer(): Watcher %s start synchronization with peer (TCP %s)", 
-			naddr, pipe.GetAddr())
+	log.Printf("WatcherServer.syncWithPeer(): Watcher start synchronization with peer (TCP %s)", pipe.GetAddr())
 	proxy := NewFollowerSyncProxy(pipe, handler, factory, false)
 	donech := proxy.GetDoneChannel()
 	go proxy.Start()
@@ -138,10 +156,9 @@ func syncWithPeer(naddr string,
 
 	// This will block until NewWatcherSyncProxy has sychronized with the peer (a bool is pushed to donech)
 	select {
-	case success := <-donech:
+	case success = <-donech:
 		if success {
-			log.Printf("WatcherServer.syncWithPeer(): Watcher %s done synchronization with peer (TCP %s)", 
-					naddr, pipe.GetAddr())
+			log.Printf("WatcherServer.syncWithPeer(): Watcher done synchronization with peer (TCP %s)", pipe.GetAddr())
 		}
 		return success, false
 	case <-killch:
@@ -154,64 +171,28 @@ func syncWithPeer(naddr string,
 }
 
 //
-// Run Watcher Protocol
-//
-func runWatcher(pipe *common.PeerPipe,
-	handler ActionHandler,
-	factory MsgFactory,
-	killch <- chan bool) bool {
-
-	// Create a watcher.  The watcher will start a go-rountine, listening to messages coming from peer.
-	log.Printf("WatcherServer.runWatcher(): Start Watcher Protocol")
-	watcher := NewFollower(WATCHER, pipe, handler, factory)
-	donech := watcher.Start()
-	defer watcher.Terminate()
-	
-	//start main processing loop
-	return runTillEnd(killch, donech)
-}
-
-//
-// main processing loop
-//
-func runTillEnd(
-	killch <-chan bool,
-	donech <-chan bool) bool {
-	
-	log.Printf("WatcherServer.runTillEnd()")
-
-	select {
-		case <-killch:
-			// server is being explicitly terminated.  Terminate the watcher go-rountine as well.
-			log.Printf("WatcherServer.runTillEnd(): receive kill signal. Terminate.")
-			return true 
-		case <-donech:
-			// watcher is done.  Just return.
-			log.Printf("WatcherServer.runTillEnd(): Watcher go-routine terminates. Terminate.")
-			return false
-	}
-}
-
-//
 // Find which peer to connect to
 //
 func findPeerToConnect(	host   		string,
-						leader		string,
 					  	peerUDP 	[]string,
 					  	peerTCP 	[]string,
 					  	factory 	MsgFactory,
 					  	handler 	ActionHandler,
-					  	killch 	<- chan bool) (string, error) {
+					  	killch 	<- chan bool) (leader string, isKilled bool) {
 					  	
-	// If there is a known leader
-	if leader != "" {
-		return leader, nil
-	}
-					  
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in findPeerToConnect() : %s\n", r)
+			log.Printf("findPeerToConnect() terminates : Diagnostic Stack ...")
+			log.Printf("%s", debug.Stack())	
+		}
+	}()
+	
 	// Run master election to figure out who is the leader.  Only connect to leader for now.
 	site, err := CreateElectionSite(host, peerUDP, factory, handler, true)
 	if err != nil {
-		return "", err
+		log.Printf("WatcherServer.findPeerToConnect() error : %s", err)
+		return "", false
 	}
 	
 	defer func() {
@@ -223,25 +204,61 @@ func findPeerToConnect(	host   		string,
 
 	resultCh := site.StartElection()
 	if resultCh == nil {
-		return "", common.NewError(common.PROTOCOL_ERROR, "WatcherServer.findPeerToConnect: Election Site is in progress or is closed.") 
+		log.Printf("WatcherServer.findPeerToConnect: Election Site is in progress or is closed.")
+		return "", false 
 	}
 		
 	select {
 		case leader, ok := <-resultCh : 
 			if !ok {
-				return "", common.NewError(common.PROTOCOL_ERROR, "WatcherServer.findPeerToConnect: Election Fails") 
+				log.Printf("WatcherServer.findPeerToConnect: Election Fails")
+				return "", false 
 			}
 			
 			for i, peer := range peerUDP {
 				if peer == leader {
-					return peerTCP[i],	nil
+					return peerTCP[i],	false
 				}
 			}
 
-			return "", common.NewError(common.PROTOCOL_ERROR, 
-						"WatcherServer.findPeerToConnect : Cannot find matching port for peer. Peer UPD port = " + leader) 
+			log.Printf("WatcherServer.findPeerToConnect : Cannot find matching port for peer. Peer UPD port = %s", leader) 
+			return "", false 
 					
 		case <- killch :
-			return "", nil
+			return "", true
+	}
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// WatcherServer - Watcher Protocol 
+/////////////////////////////////////////////////////////////////////////////
+
+//
+// Run Watcher Protocol
+//
+func runWatcher(pipe *common.PeerPipe,
+	handler ActionHandler,
+	factory MsgFactory,
+	killch <- chan bool, 
+	readych chan <- bool) (isKilled bool) {
+
+	// Create a watcher.  The watcher will start a go-rountine, listening to messages coming from peer.
+	log.Printf("WatcherServer.runWatcher(): Start Watcher Protocol")
+	watcher := NewFollower(WATCHER, pipe, handler, factory)
+	donech := watcher.Start()
+	defer watcher.Terminate()
+	
+	// notify that the watcher is starting to run
+	readych <- true
+	
+	select {
+		case <-killch:
+			// server is being explicitly terminated.  Terminate the watcher go-rountine as well.
+			log.Printf("WatcherServer.runTillEnd(): receive kill signal. Terminate.")
+			return true 
+		case <-donech:
+			// watcher is done.  Just return.
+			log.Printf("WatcherServer.runTillEnd(): Watcher go-routine terminates. Terminate.")
+			return false
 	}
 }

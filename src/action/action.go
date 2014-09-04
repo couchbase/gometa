@@ -1,4 +1,4 @@
-package server
+package action 
 
 import (
 	"github.com/jliang00/gometa/src/common"
@@ -17,6 +17,8 @@ type ServerCallback interface {
 	UpdateStateOnNewProposal(proposal protocol.ProposalMsg)
 	UpdateStateOnCommit(txnid common.Txnid, key string)
 	UpdateWinningEpoch(epoch uint32)
+	GetPeerUDPAddr() []string
+	GetHostTCPAddr() string
 }
 
 type DefaultServerCallback interface {
@@ -74,7 +76,7 @@ func NewServerAction(repo 		*repo.Repository,
 /////////////////////////////////////////////////////////////////////////////
 
 func (a *ServerAction) GetEnsembleSize() uint64 {
-	return uint64(len(GetPeerUDPAddr())) + 1  // including myself 
+	return uint64(len(a.server.GetPeerUDPAddr())) + 1  // including myself 
 }
 
 func (a *ServerAction) GetQuorumVerifier() protocol.QuorumVerifier {
@@ -119,7 +121,7 @@ func (a *ServerAction) LogProposal(p protocol.ProposalMsg) error {
 }
 
 func (a *ServerAction) GetFollowerId() string {
-	return GetHostTCPAddr() 
+	return a.server.GetHostTCPAddr() 
 }
 
 ////////////////////////////////////////////////////////////////////////////

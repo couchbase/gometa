@@ -4,6 +4,7 @@ import (
 	"github.com/jliang00/gometa/src/common"
 	"github.com/jliang00/gometa/src/message"
 	"github.com/jliang00/gometa/src/protocol"
+	"github.com/jliang00/gometa/src/action"
 	r "github.com/jliang00/gometa/src/repository"
 	"sync"
 	"time"
@@ -22,7 +23,7 @@ type Server struct {
 	state     		*ServerState
 	site      		*protocol.ElectionSite
 	factory   		protocol.MsgFactory
-	handler   		*ServerAction	
+	handler   		*action.ServerAction	
 	listener  		*common.PeerListener
 	reqListener 	*RequestListener
 	skillch   		chan bool
@@ -107,7 +108,7 @@ func (s *Server) bootstrap() (err error) {
 	// Initialize various callback facility for leader election and
 	// voting protocol.
 	s.factory = message.NewConcreteMsgFactory()
-	s.handler = NewServerAction(s.repo, s.log, s.srvConfig, s, s.factory, s)
+	s.handler = action.NewServerAction(s.repo, s.log, s.srvConfig, s, s.factory, s)
 	s.skillch = make(chan bool, 1) // make it buffered to unblock sender
 	s.site = nil
 	
@@ -488,4 +489,12 @@ func (s *Server) UpdateWinningEpoch(epoch uint32) {
 	
 	// any new tnxid from now on will use the new epoch
 	common.SetEpoch(epoch)
+}
+
+func (s *Server) GetPeerUDPAddr() []string {
+	return GetPeerUDPAddr() 
+}
+
+func (s *Server) GetHostTCPAddr() string {
+	return GetHostTCPAddr()
 }
