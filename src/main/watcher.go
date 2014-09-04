@@ -18,9 +18,6 @@ type fakeServer struct {
 	status 			protocol.PeerStatus
 }
 
-func test() {
-}
-
 func runWatcher(path string) {
 
 	if path == "" {

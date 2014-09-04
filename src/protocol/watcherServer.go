@@ -5,6 +5,7 @@ import (
 	"net"
 	"log"
 	"time"
+	"sync"
 	"runtime/debug"
 )
 
@@ -23,11 +24,12 @@ func RunWatcherServer( leader string,
 						factory MsgFactory,
 						killch <- chan bool,
 						readych chan <- bool) {
-						
+					
+	var once sync.Once	
 	backoff := common.RETRY_BACKOFF
 	retry := true 
 	for retry {					
-		if runOnce(leader, handler, factory, killch, readych) {
+		if runOnce(leader, handler, factory, killch, readych, once) {
 			retry = false
 		}
 		
@@ -57,6 +59,7 @@ func RunWatcherServerWithElection(	host string,
 									killch <- chan bool,
 									readych chan <- bool) {
 
+	var once sync.Once	
 	backoff := common.RETRY_BACKOFF
 	retry := true 
 	for retry {					
@@ -65,7 +68,7 @@ func RunWatcherServerWithElection(	host string,
 			return 
 		}	
 		
-		if peer != "" && runOnce(peer, handler, factory, killch, readych) {
+		if peer != "" && runOnce(peer, handler, factory, killch, readych, once) {
 			retry = false
 		} 
 		
@@ -89,7 +92,8 @@ func runOnce(peer string,
 			handler ActionHandler,
 			factory MsgFactory,
 			killch <- chan bool, 
-			readych chan <- bool) (isKilled bool) {
+			readych chan <- bool,
+			once sync.Once) (isKilled bool) {
 
 	// Catch panic at the main entry point for WatcherServer
 	defer func() {
@@ -123,7 +127,7 @@ func runOnce(peer string,
 
 	// run watcher after synchronization
 	if success {
-		if !runWatcher(pipe, handler, factory, killch, readych) {
+		if !runWatcher(pipe, handler, factory, killch, readych, once) {
 			log.Printf("WatcherServer.runOnce() : Watcher terminated unexpectedly.")
 			return false
 		}
@@ -240,7 +244,8 @@ func runWatcher(pipe *common.PeerPipe,
 	handler ActionHandler,
 	factory MsgFactory,
 	killch <- chan bool, 
-	readych chan <- bool) (isKilled bool) {
+	readych chan <- bool,
+	once sync.Once) (isKilled bool) {
 
 	// Create a watcher.  The watcher will start a go-rountine, listening to messages coming from peer.
 	log.Printf("WatcherServer.runWatcher(): Start Watcher Protocol")
@@ -248,8 +253,8 @@ func runWatcher(pipe *common.PeerPipe,
 	donech := watcher.Start()
 	defer watcher.Terminate()
 	
-	// notify that the watcher is starting to run
-	readych <- true
+	// notify that the watcher is starting to run.  Only do this once.
+	once.Do(func() {readych <- true})
 	
 	select {
 		case <-killch:
