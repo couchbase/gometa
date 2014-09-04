@@ -111,12 +111,12 @@ func (s *fakeServer) GetStatus() protocol.PeerStatus {
 func (s *fakeServer) UpdateWinningEpoch(epoch uint32) {
 }
 
-func (s *fakeServer) GetPeerUDPAddr() []string {
-	return server.GetPeerUDPAddr() 
+func (s *fakeServer) GetEnsembleSize() uint64 {
+	return uint64(len(server.GetPeerUDPAddr())) + 1  // including myself 
 }
 
-func (s *fakeServer) GetHostTCPAddr() string {
-	return server.GetHostTCPAddr()
+func (s *fakeServer) GetFollowerId() string {
+	return server.GetHostTCPAddr() 
 }
 
 /////////////////////////////////////////////////////////////////////////////

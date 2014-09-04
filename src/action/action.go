@@ -17,8 +17,8 @@ type ServerCallback interface {
 	UpdateStateOnNewProposal(proposal protocol.ProposalMsg)
 	UpdateStateOnCommit(txnid common.Txnid, key string)
 	UpdateWinningEpoch(epoch uint32)
-	GetPeerUDPAddr() []string
-	GetHostTCPAddr() string
+	GetEnsembleSize() uint64 
+	GetFollowerId() string
 }
 
 type DefaultServerCallback interface {
@@ -76,7 +76,7 @@ func NewServerAction(repo 		*repo.Repository,
 /////////////////////////////////////////////////////////////////////////////
 
 func (a *ServerAction) GetEnsembleSize() uint64 {
-	return uint64(len(a.server.GetPeerUDPAddr())) + 1  // including myself 
+	return a.server.GetEnsembleSize()
 }
 
 func (a *ServerAction) GetQuorumVerifier() protocol.QuorumVerifier {
@@ -121,7 +121,7 @@ func (a *ServerAction) LogProposal(p protocol.ProposalMsg) error {
 }
 
 func (a *ServerAction) GetFollowerId() string {
-	return a.server.GetHostTCPAddr() 
+	return a.server.GetFollowerId()
 }
 
 ////////////////////////////////////////////////////////////////////////////

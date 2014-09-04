@@ -455,7 +455,7 @@ func (s *Server) UpdateStateOnNewProposal(proposal protocol.ProposalMsg) {
 //
 func (s *Server) UpdateStateOnCommit(txnid common.Txnid, key string) {
 
-	log.Printf("Server.UpdateStateOnCommit(): Committing proposal %d.", txnid, key)
+	log.Printf("Server.UpdateStateOnCommit(): Committing proposal %d key %s.", txnid, key)
 
 	s.state.mutex.Lock()
 	defer s.state.mutex.Unlock()
@@ -497,4 +497,12 @@ func (s *Server) GetPeerUDPAddr() []string {
 
 func (s *Server) GetHostTCPAddr() string {
 	return GetHostTCPAddr()
+}
+
+func (s *Server) GetEnsembleSize() uint64 {
+	return uint64(len(GetPeerUDPAddr())) + 1  // including myself 
+}
+
+func (s *Server) GetFollowerId() string {
+	return GetHostTCPAddr() 
 }
