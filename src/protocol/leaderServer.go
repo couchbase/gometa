@@ -278,6 +278,8 @@ func (l *LeaderServer) incrementEpoch() error {
 	
 	epoch = common.CompareAndIncrementEpoch(epoch, epoch)
 	
+	log.Printf("LeaderServer.incrementEpoch(): new epoch %d", epoch)
+	
 	if err := l.handler.NotifyNewAcceptedEpoch(epoch); err != nil {
 		return err
 	}
