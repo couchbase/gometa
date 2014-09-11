@@ -2,8 +2,8 @@ package message
 
 import (
 	"code.google.com/p/goprotobuf/proto"
-	"github.com/jliang00/gometa/src/common"
-	"github.com/jliang00/gometa/src/protocol"
+	"github.com/couchbase/gometa/common"
+	"github.com/couchbase/gometa/protocol"
 )
 
 /////////////////////////////////////////////////////////////////////////////

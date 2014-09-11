@@ -5,7 +5,7 @@ import (
 	"log"
 	"fmt"
 	"net/rpc"
-	"github.com/jliang00/gometa/src/server"
+	"github.com/couchbase/gometa/server"
 	"bytes"
 	json "encoding/json"
 )

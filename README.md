@@ -18,10 +18,10 @@ II) BUILD
 Build the main.go
 
 	cd $GOPATH
-	mkdir -r github.com/jliang00
-	cd github.com/jliang00
-	git clone git@github.com:jliang00/gometa.git
-	go build -o $GOPATH/bin/main gometa/src/server/main/main.go
+	mkdir -r github.com/couchbase
+	cd github.com/couchbase
+	git clone git@github.com:couchbase/gometa.git
+	go build -o $GOPATH/bin/main gometa/server/main/main.go
 
 You can then run bin/main as either a client or server. 
 
@@ -70,7 +70,7 @@ For each process, you can specify the ports of the ensemble as a configuration f
 
 You can then start the process as follow
 
-	./main -config="<config file path>"
+	$GOPATh/bin/main -config="<config file path>"
 
 Once you start this process, it will run leader election and try to connect to the other processes (localhost:6001 and localhost:7001).  The leader
 election will select the leader from this ensemble.   The other 2 processes will act as followers.

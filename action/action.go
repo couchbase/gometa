@@ -1,11 +1,11 @@
 package action 
 
 import (
-	"github.com/jliang00/gometa/src/common"
-	"github.com/jliang00/gometa/src/message"
-	"github.com/jliang00/gometa/src/protocol"
+	"github.com/couchbase/gometa/common"
+	"github.com/couchbase/gometa/message"
+	"github.com/couchbase/gometa/protocol"
 	"fmt"
-	repo "github.com/jliang00/gometa/src/repository"
+	repo "github.com/couchbase/gometa/repository"
 )
 
 ////////////////////////////////////////////////////////////////////////////

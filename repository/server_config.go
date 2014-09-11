@@ -1,7 +1,7 @@
 package repository
 
 import (
-	"github.com/jliang00/gometa/src/common"
+	"github.com/couchbase/gometa/common"
 	"strconv"
 )
 

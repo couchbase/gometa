@@ -5,7 +5,7 @@ import (
 	"net"
 	rpc "net/rpc"
 	"sync"
-	"github.com/jliang00/gometa/src/common"
+	"github.com/couchbase/gometa/common"
 	http "net/http"
 	"time"
 	"fmt"

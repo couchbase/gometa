@@ -4,7 +4,7 @@ import (
 	"net"
 	"strings"
 	"os"
-	"github.com/jliang00/gometa/src/common"
+	"github.com/couchbase/gometa/common"
 	"bytes"
 	"log"
 	json "encoding/json"

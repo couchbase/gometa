@@ -4,7 +4,7 @@ import (
 	"os"
 	"log"
 	"flag"
-	"github.com/jliang00/gometa/src/server"
+	"github.com/couchbase/gometa/server"
 )
 
 //

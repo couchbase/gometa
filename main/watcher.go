@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/jliang00/gometa/src/action"
-	"github.com/jliang00/gometa/src/server"
-	"github.com/jliang00/gometa/src/message"
-	"github.com/jliang00/gometa/src/protocol"
-	"github.com/jliang00/gometa/src/common"
-	repo "github.com/jliang00/gometa/src/repository"
+	"github.com/couchbase/gometa/action"
+	"github.com/couchbase/gometa/server"
+	"github.com/couchbase/gometa/message"
+	"github.com/couchbase/gometa/protocol"
+	"github.com/couchbase/gometa/common"
+	repo "github.com/couchbase/gometa/repository"
 )
 
 type fakeServer struct {

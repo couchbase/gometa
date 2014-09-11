@@ -1,11 +1,11 @@
 package server
 
 import (
-	"github.com/jliang00/gometa/src/common"
-	"github.com/jliang00/gometa/src/message"
-	"github.com/jliang00/gometa/src/protocol"
-	"github.com/jliang00/gometa/src/action"
-	r "github.com/jliang00/gometa/src/repository"
+	"github.com/couchbase/gometa/common"
+	"github.com/couchbase/gometa/message"
+	"github.com/couchbase/gometa/protocol"
+	"github.com/couchbase/gometa/action"
+	r "github.com/couchbase/gometa/repository"
 	"sync"
 	"time"
 	"log"

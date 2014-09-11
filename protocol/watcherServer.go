@@ -1,7 +1,7 @@
  package protocol 
 
 import (
-	"github.com/jliang00/gometa/src/common"
+	"github.com/couchbase/gometa/common"
 	"net"
 	"log"
 	"time"
