@@ -2,7 +2,6 @@
 
 import (
 	"github.com/couchbase/gometa/common"
-	"net"
 	"log"
 	"time"
 	"sync"
@@ -105,7 +104,7 @@ func runOnce(peer string,
 	}()
 
 	// create connection with a peer 
-	conn, err := net.Dial("tcp", peer)
+	conn, err := createConnection(peer)
 	if err != nil {
 		log.Printf("WatcherServer.runOnce() error : %s", err)
 		return false 

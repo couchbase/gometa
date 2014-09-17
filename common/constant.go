@@ -40,4 +40,5 @@ var BOOTSTRAP_LAST_COMMITTED_TXID Txnid = Txnid(0)                   // Boostrap
 var BOOTSTRAP_LAST_LOGGED_TXID Txnid = Txnid(0)                      // Boostrap value of last logged txid
 var BOOTSTRAP_CURRENT_EPOCH uint32 = 0                      		 // Boostrap value of current epoch 
 var BOOTSTRAP_ACCEPTED_EPOCH uint32 = 0                      		 // Boostrap value of accepted epoch 
+var TCP_KEEP_ALIVE_PERIOD time.Duration = 100 * time.Millisecond	 // TCP keep alive period
 

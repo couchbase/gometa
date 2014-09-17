@@ -50,10 +50,11 @@ func RunFollowerServer(naddr string,
 	}()
 
 	// create connection to leader
-	conn, err := net.Dial("tcp", leader)
+	conn, err := createConnection(leader)
 	if err != nil {
 		return err
 	}
+	
 	pipe := common.NewPeerPipe(conn)
 	log.Printf("FollowerServer.RunFollowerServer() : Follower %s successfully created TCP connection to leader %s", naddr, leader)
 
@@ -192,3 +193,24 @@ func newFollowerState(ss RequestMgr) *FollowerState {
 	state := &FollowerState{requestMgr: ss}
 	return state
 }
+
+//
+// Create a connection
+//
+func createConnection(leader string) (net.Conn, error) {
+
+	leaderAddr, err := net.ResolveTCPAddr("tcp", leader)
+	if err != nil {
+		return nil, err
+	}
+	
+	conn, err := net.DialTCP("tcp", nil, leaderAddr)
+	if err != nil {
+		return nil, err
+	}
+	
+	conn.SetKeepAlive(true)
+	conn.SetKeepAlivePeriod(common.TCP_KEEP_ALIVE_PERIOD)
+	
+	return conn, nil
+} 
