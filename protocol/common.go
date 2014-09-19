@@ -27,7 +27,7 @@ const (
 	ELECTING PeerStatus = iota
 	LEADING
 	FOLLOWING
-	WATCHING	
+	WATCHING
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -37,33 +37,33 @@ const (
 type ActionHandler interface {
 
 	//
-	// Environment API 
+	// Environment API
 	//
 	GetEnsembleSize() uint64
-	
+
 	//
 	// The following API are used during election
 	//
 	GetLastLoggedTxid() (common.Txnid, error)
-	
+
 	GetLastCommittedTxid() (common.Txnid, error)
-	
+
 	GetStatus() PeerStatus
-	
+
 	GetQuorumVerifier() QuorumVerifier
 
 	// Current Epoch is set during leader/followr discovery phase.
 	// It is the current epoch (term) of the leader.
 	GetCurrentEpoch() (uint32, error)
-	
+
 	// This is the Epoch that leader/follower agrees during discovery/sync phase.
 	GetAcceptedEpoch() (uint32, error)
-	
+
 	//
 	// The following API are used during discovery/sync
 	//
 
-	GetCommitedEntries(txid1, txid2 common.Txnid) (<- chan LogEntryMsg, <- chan error, chan <- bool, error)
+	GetCommitedEntries(txid1, txid2 common.Txnid) (<-chan LogEntryMsg, <-chan error, chan<- bool, error)
 
 	LogAndCommit(txid common.Txnid, op uint32, key string, content []byte, toCommit bool) error
 
@@ -71,23 +71,22 @@ type ActionHandler interface {
 	NotifyNewAcceptedEpoch(uint32) error
 
 	NotifyNewCurrentEpoch(uint32) error
-	
+
 	//
 	// The following API are used during normal execution
 	//
 	GetFollowerId() string
-	
+
 	LogProposal(proposal ProposalMsg) error
 
 	Commit(txid common.Txnid) error
 }
 
 /////////////////////////////////////////////////////////////////////////////
-// QuorumVerifier 
+// QuorumVerifier
 /////////////////////////////////////////////////////////////////////////////
 
 type QuorumVerifier interface {
-
 	HasQuorum(count int) bool
 }
 
@@ -102,8 +101,8 @@ type MsgFactory interface {
 
 	CreateCommit(txnid uint64) CommitMsg
 
-	CreateVote(round uint64, status uint32, epoch uint32, cndId string, cndLoggedTxnId uint64, 
-				cndCommittedTxnId uint64, solicit bool) VoteMsg
+	CreateVote(round uint64, status uint32, epoch uint32, cndId string, cndLoggedTxnId uint64,
+		cndCommittedTxnId uint64, solicit bool) VoteMsg
 
 	CreateFollowerInfo(epoch uint32, fid string, voting bool) FollowerInfoMsg
 
@@ -175,7 +174,7 @@ type VoteMsg interface {
 type FollowerInfoMsg interface {
 	common.Packet
 	GetAcceptedEpoch() uint32
-	GetFid() string 
+	GetFid() string
 	GetVoting() bool
 }
 
@@ -212,13 +211,13 @@ type LogEntryMsg interface {
 /////////////////////////////////////////////////////////////////////////////
 
 type RequestHandle struct {
-	Request 		RequestMsg
-	Err     		error
-	Mutex   		sync.Mutex
-	CondVar 		*sync.Cond
+	Request RequestMsg
+	Err     error
+	Mutex   sync.Mutex
+	CondVar *sync.Cond
 }
 
 type RequestMgr interface {
-	GetRequestChannel() (<-chan *RequestHandle)
+	GetRequestChannel() <-chan *RequestHandle
 	AddPendingRequest(handle *RequestHandle)
 }

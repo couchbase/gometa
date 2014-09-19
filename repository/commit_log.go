@@ -1,12 +1,12 @@
 package repository
 
 import (
+	"fmt"
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/message"
-	"sync"
-	"fmt"
-	"strings"
 	"log"
+	"strings"
+	"sync"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -14,14 +14,14 @@ import (
 /////////////////////////////////////////////////////////////////////////////
 
 type CommitLog struct {
-	repo            *Repository
-	factory         *message.ConcreteMsgFactory
-	mutex           sync.Mutex
+	repo    *Repository
+	factory *message.ConcreteMsgFactory
+	mutex   sync.Mutex
 }
 
 type LogIterator struct {
-	repo    *Repository
-	iter    *RepoIterator
+	repo *Repository
+	iter *RepoIterator
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -32,8 +32,8 @@ type LogIterator struct {
 // Create a new commit log
 //
 func NewCommitLog(repo *Repository) *CommitLog {
-	return &CommitLog{repo: repo, 
-	                  factory: message.NewConcreteMsgFactory()}
+	return &CommitLog{repo: repo,
+		factory: message.NewConcreteMsgFactory()}
 }
 
 //
@@ -93,20 +93,20 @@ func (r *CommitLog) Delete(txid common.Txnid) error {
 func (r *CommitLog) NewIterator(txid1, txid2 common.Txnid) (*LogIterator, error) {
 
 	startKey := createLogKey(txid1)
-	endKey := "" 		// get everything until the commit log is exhausted
-	if txid2 != 0 { 	// if txid2 is not the bootstrap value
-		endKey = createLogKey(txid2) 
+	endKey := ""    // get everything until the commit log is exhausted
+	if txid2 != 0 { // if txid2 is not the bootstrap value
+		endKey = createLogKey(txid2)
 	}
-	 
+
 	iter, err := r.repo.NewIterator(startKey, endKey)
 	if err != nil {
 		return nil, err
 	}
 
 	result := &LogIterator{
-					iter: 		iter,
-					repo:    	r.repo}
-		
+		iter: iter,
+		repo: r.repo}
+
 	return result, nil
 }
 
@@ -123,7 +123,7 @@ func (i *LogIterator) Next() (txnid common.Txnid, op common.OpCode, key string, 
 	// we don't read them.
 	log.Printf("CommitLog.Next() : Iterator read key %s", key)
 	if !strings.HasPrefix(key, common.PREFIX_COMMIT_LOG_PATH) {
-		return 0, common.OPCODE_INVALID, "", nil,  common.NewError(common.REPO_ERROR, "Iteration for commit log done")
+		return 0, common.OPCODE_INVALID, "", nil, common.NewError(common.REPO_ERROR, "Iteration for commit log done")
 	}
 
 	entry, err := unmarshall(content)

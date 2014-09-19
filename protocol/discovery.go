@@ -1,12 +1,12 @@
 package protocol
 
 import (
-	"github.com/couchbase/gometa/common"
-	"sync"
-	"log"
 	"fmt"
-	"time"
+	"github.com/couchbase/gometa/common"
+	"log"
 	"runtime/debug"
+	"sync"
+	"time"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -16,51 +16,51 @@ import (
 type LeaderSyncProxy struct {
 	state         *ConsentState
 	follower      *common.PeerPipe
-	handler        ActionHandler
-	factory        MsgFactory
+	handler       ActionHandler
+	factory       MsgFactory
 	followerState *followerState
 	leader        *Leader
-	
-	mutex          sync.Mutex
-	isClosed       bool
-	donech         chan bool  
-	killch         chan bool
+
+	mutex    sync.Mutex
+	isClosed bool
+	donech   chan bool
+	killch   chan bool
 }
 
 type FollowerSyncProxy struct {
 	leader  *common.PeerPipe
-	handler  ActionHandler
-	factory  MsgFactory
+	handler ActionHandler
+	factory MsgFactory
 	state   *followerState
-	
-	mutex          sync.Mutex
-	isClosed       bool
-	donech         chan bool
-	killch         chan bool
+
+	mutex    sync.Mutex
+	isClosed bool
+	donech   chan bool
+	killch   chan bool
 }
 
 type ConsentState struct {
-	acceptedEpoch       uint32
-	acceptedEpochSet    map[string]uint32
+	acceptedEpoch      uint32
+	acceptedEpochSet   map[string]uint32
 	acceptedEpochCond  *sync.Cond
-	acceptedEpochMutex  sync.Mutex
+	acceptedEpochMutex sync.Mutex
 
-	ackEpochSet   		 map[string]string
-	ackEpochCond  		*sync.Cond
-	ackEpochMutex 		 sync.Mutex
+	ackEpochSet   map[string]string
+	ackEpochCond  *sync.Cond
+	ackEpochMutex sync.Mutex
 
-	newLeaderAckSet   	 map[string]string
-	newLeaderAckCond  	*sync.Cond
-	newLeaderAckMutex  	 sync.Mutex
+	newLeaderAckSet   map[string]string
+	newLeaderAckCond  *sync.Cond
+	newLeaderAckMutex sync.Mutex
 
-	ensembleSize 		 uint64
+	ensembleSize uint64
 }
 
 type followerState struct {
-	currentEpoch   	uint32
-	lastLoggedTxid 	common.Txnid 
-	fid 		   	string
-	voting			bool
+	currentEpoch   uint32
+	lastLoggedTxid common.Txnid
+	fid            string
+	voting         bool
 }
 
 type LeaderStageCode uint16
@@ -89,12 +89,12 @@ const (
 /////////////////////////////////////////////////////////////////////////////
 
 //
-// Create a new ConsentState for synchronization.   The leader must proceed in 
+// Create a new ConsentState for synchronization.   The leader must proceed in
 // 4 stages:
 // 1) Reach quourm of followers for sending its persisted acceptedEpoch to the leader.
 //    The leader uses followers acceptedEpoch to determine the next epoch.
-// 2) Reach quorum of followers to accept the new epoch.   
-// 3) Synchronizes the commit log between leader and each follower 
+// 2) Reach quorum of followers to accept the new epoch.
+// 3) Synchronizes the commit log between leader and each follower
 // 4) Reach quorum of followers to accepts this leader (NewLeaderAck)
 //
 // The ConsentState is used for keep that state for stages (1), (2) and (4) where
@@ -102,22 +102,22 @@ const (
 //
 // The ConsentState is using the physical host (actual port) which is different for each TCP connection.  This requires
 // the ConsentState to be cleaned up if synchronization with a particular follower aborts.   After synchronization
-// with a follower succeeds, the follower's vote will stay in the ConsentState, since the main purpose of the 
+// with a follower succeeds, the follower's vote will stay in the ConsentState, since the main purpose of the
 // ConsentState is for voting on a new epoch, as well as establishing that a majority of followers are going
 // to follower the leader.   A node can only establish leadership until stage 4 passes.  Once leadership is
-// established, if the node looses majority of followers, the server should abort and go through re-election again 
+// established, if the node looses majority of followers, the server should abort and go through re-election again
 // with a new ConsentState.
 //
 func NewConsentState(sid string, epoch uint32, ensemble uint64) *ConsentState {
 
 	epoch = common.CompareAndIncrementEpoch(epoch, 0) // increment epoch to next value
-	
+
 	state := &ConsentState{
-		acceptedEpoch: 		epoch,
-		acceptedEpochSet: 	make(map[string]uint32),
-		ackEpochSet:      	make(map[string]string),
-		newLeaderAckSet:  	make(map[string]string),
-		ensembleSize:     	ensemble}
+		acceptedEpoch:    epoch,
+		acceptedEpochSet: make(map[string]uint32),
+		ackEpochSet:      make(map[string]string),
+		newLeaderAckSet:  make(map[string]string),
+		ensembleSize:     ensemble}
 
 	state.acceptedEpochCond = sync.NewCond(&state.acceptedEpochMutex)
 	state.ackEpochCond = sync.NewCond(&state.ackEpochMutex)
@@ -139,11 +139,11 @@ func (s *ConsentState) voteAcceptedEpoch(voter string, newEpoch uint32, voting b
 	if len(s.acceptedEpochSet) > int(s.ensembleSize/2) {
 		return s.acceptedEpoch, true
 	}
-	
+
 	if voting {
 		s.acceptedEpochSet[voter] = newEpoch
 
-		// This function can panic if we exceed epoch limit	
+		// This function can panic if we exceed epoch limit
 		s.acceptedEpoch = common.CompareAndIncrementEpoch(newEpoch, s.acceptedEpoch)
 
 		if len(s.acceptedEpochSet) > int(s.ensembleSize/2) {
@@ -158,7 +158,7 @@ func (s *ConsentState) voteAcceptedEpoch(voter string, newEpoch uint32, voting b
 	// reached (if Terminate() is called).   It is
 	// also possible that a concurrent go-routine has
 	// remove the voter after reaching quorum.  In these
-	// cases, return false. 
+	// cases, return false.
 	s.acceptedEpochCond.Wait()
 	return s.acceptedEpoch, len(s.acceptedEpochSet) > int(s.ensembleSize/2)
 }
@@ -166,11 +166,11 @@ func (s *ConsentState) voteAcceptedEpoch(voter string, newEpoch uint32, voting b
 func (s *ConsentState) removeAcceptedEpoch(voter string) {
 	s.acceptedEpochCond.L.Lock()
 	defer s.acceptedEpochCond.L.Unlock()
-	
+
 	delete(s.acceptedEpochSet, voter)
 }
 
-func (s *ConsentState) voteEpochAck(voter string, voting bool) (bool) {
+func (s *ConsentState) voteEpochAck(voter string, voting bool) bool {
 	s.ackEpochCond.L.Lock()
 	defer s.ackEpochCond.L.Unlock()
 
@@ -178,7 +178,7 @@ func (s *ConsentState) voteEpochAck(voter string, voting bool) (bool) {
 	if len(s.ackEpochSet) > int(s.ensembleSize/2) {
 		return true
 	}
-	
+
 	if voting {
 		s.ackEpochSet[voter] = voter
 
@@ -194,7 +194,7 @@ func (s *ConsentState) voteEpochAck(voter string, voting bool) (bool) {
 	// reached (if Terminate() is called).   It is
 	// also possible that a concurrent go-routine has
 	// remove the voter after reaching quorum.  In these
-	// cases, return false. 
+	// cases, return false.
 	s.ackEpochCond.Wait()
 	return len(s.ackEpochSet) > int(s.ensembleSize/2)
 }
@@ -202,11 +202,11 @@ func (s *ConsentState) voteEpochAck(voter string, voting bool) (bool) {
 func (s *ConsentState) removeEpochAck(voter string) {
 	s.ackEpochCond.L.Lock()
 	defer s.ackEpochCond.L.Unlock()
-	
+
 	delete(s.ackEpochSet, voter)
 }
 
-func (s *ConsentState) voteNewLeaderAck(voter string, voting bool) (bool) {
+func (s *ConsentState) voteNewLeaderAck(voter string, voting bool) bool {
 	s.newLeaderAckCond.L.Lock()
 	defer s.newLeaderAckCond.L.Unlock()
 
@@ -214,7 +214,7 @@ func (s *ConsentState) voteNewLeaderAck(voter string, voting bool) (bool) {
 	if len(s.newLeaderAckSet) > int(s.ensembleSize/2) {
 		return true
 	}
-	
+
 	if voting {
 		s.newLeaderAckSet[voter] = voter
 
@@ -230,7 +230,7 @@ func (s *ConsentState) voteNewLeaderAck(voter string, voting bool) (bool) {
 	// reached (if Terminate() is called).   It is
 	// also possible that a concurrent go-routine has
 	// remove the voter after reaching quorum.  In these
-	// cases, return false. 
+	// cases, return false.
 	s.newLeaderAckCond.Wait()
 	return len(s.newLeaderAckSet) > int(s.ensembleSize/2)
 }
@@ -238,7 +238,7 @@ func (s *ConsentState) voteNewLeaderAck(voter string, voting bool) (bool) {
 func (s *ConsentState) removeNewLeaderAck(voter string) {
 	s.newLeaderAckCond.L.Lock()
 	defer s.newLeaderAckCond.L.Unlock()
-	
+
 	delete(s.newLeaderAckSet, voter)
 }
 
@@ -246,11 +246,11 @@ func (s *ConsentState) Terminate() {
 	s.acceptedEpochCond.L.Lock()
 	s.acceptedEpochCond.Broadcast()
 	s.acceptedEpochCond.L.Unlock()
-	
+
 	s.ackEpochCond.L.Lock()
 	s.ackEpochCond.Broadcast()
 	s.ackEpochCond.L.Unlock()
-	
+
 	s.newLeaderAckCond.L.Lock()
 	s.newLeaderAckCond.Broadcast()
 	s.newLeaderAckCond.L.Unlock()
@@ -261,9 +261,9 @@ func (s *ConsentState) Terminate() {
 /////////////////////////////////////////////////////////////////////////////
 
 //
-// Create a LeaderSyncProxy to synchronize with a follower.  The proxy 
+// Create a LeaderSyncProxy to synchronize with a follower.  The proxy
 // requires 2 stateful variables to be provided as inputs:
-// 1) ConsentState:  The LeaderSyncProxy requires a quorum of followers 
+// 1) ConsentState:  The LeaderSyncProxy requires a quorum of followers
 //    to follow before leader can process client request.  The consentState
 //    is a shared state (shared among multiple LeaderSyncProxy) to keep track of
 //    the followers following this leader during synchronziation. Note
@@ -279,29 +279,29 @@ func NewLeaderSyncProxy(leader *Leader,
 	factory MsgFactory) *LeaderSyncProxy {
 
 	sync := &LeaderSyncProxy{
-		followerState : nil,
-		leader : leader,
-		state: state,
-		follower: follower,
-		handler:  handler,
-		factory:  factory,
-		donech : make(chan bool, 1), // donech should not be closed
-		killch : make(chan bool, 1), // donech should not be closed
-		isClosed: false}
+		followerState: nil,
+		leader:        leader,
+		state:         state,
+		follower:      follower,
+		handler:       handler,
+		factory:       factory,
+		donech:        make(chan bool, 1), // donech should not be closed
+		killch:        make(chan bool, 1), // donech should not be closed
+		isClosed:      false}
 
 	return sync
 }
 
 //
 // Start synchronization with a speicfic follower.   This function
-// can be run as regular function or go-routine.   If the caller runs this 
+// can be run as regular function or go-routine.   If the caller runs this
 // as a go-routine, the caller should use GetDoneChannel()
 // to tell when this function completes.
 //
 // There are 3 cases when this function sends "false" to donech:
 // 1) When there is an error during synchronization
 // 2) When synchronization timeout
-// 3) Terminate() is called 
+// 3) Terminate() is called
 //
 // When a failure (false) result is sent to the donech, this function
 // will also close the PeerPipe to the follower.  This will force
@@ -315,11 +315,11 @@ func (l *LeaderSyncProxy) Start(o *observer) bool {
 		if r := recover(); r != nil {
 			log.Printf("panic in LeaderSyncProxy.Start() : %s\n", r)
 			log.Printf("LeaderSyncProxy.Start() terminates : Diagnostic Stack ...")
-			log.Printf("%s", debug.Stack())	
-			
-			l.abort()  // ensure proper cleanup and unblock caller
-		} 
-		
+			log.Printf("%s", debug.Stack())
+
+			l.abort() // ensure proper cleanup and unblock caller
+		}
+
 		l.close()
 	}()
 
@@ -330,36 +330,36 @@ func (l *LeaderSyncProxy) Start(o *observer) bool {
 	// buffered channel since this go-routine may go away before execute() does.
 	donech2 := make(chan bool, 1)
 	go l.execute(donech2, o)
-	
+
 	select {
-		case success, ok := <- donech2:
-			if !ok {
-				// channel is not going to close but just to be safe ... 
-				success = false
-			}
-			l.donech <- success
-			return success
-		case <- timeout:
-			log.Printf("LeaderSyncProxy.Start(): Synchronization timeout for peer (TCP %s). Terminate.", l.follower.GetAddr())
-			l.abort()
-		case <- l.killch:
-			log.Printf("LeaderSyncProxy.Start(): Receive kill signal for peer (TCP %s).  Terminate.", l.follower.GetAddr())
-			l.abort()
+	case success, ok := <-donech2:
+		if !ok {
+			// channel is not going to close but just to be safe ...
+			success = false
+		}
+		l.donech <- success
+		return success
+	case <-timeout:
+		log.Printf("LeaderSyncProxy.Start(): Synchronization timeout for peer (TCP %s). Terminate.", l.follower.GetAddr())
+		l.abort()
+	case <-l.killch:
+		log.Printf("LeaderSyncProxy.Start(): Receive kill signal for peer (TCP %s).  Terminate.", l.follower.GetAddr())
+		l.abort()
 	}
-	
+
 	return false
 }
 
 //
 // Terminate the syncrhonization with this follower.  Upon temrination, the follower
 // will enter into election again.    This function cannot guarantee that the go-routine
-// will terminate until the given ConsentState is terminated as well. 
+// will terminate until the given ConsentState is terminated as well.
 // This function is an no-op if the LeaderSyncProxy already completes successfully.
 //
 func (l *LeaderSyncProxy) Terminate() {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-	
+
 	if !l.isClosed {
 		l.isClosed = true
 		l.killch <- true
@@ -367,33 +367,33 @@ func (l *LeaderSyncProxy) Terminate() {
 }
 
 //
-// Return a channel that tells when the syncrhonization is done.  
+// Return a channel that tells when the syncrhonization is done.
 // This is unbuffered channel such that LeaderSyncProxy will not be blocked
 // upon completion of synchronization (whether successful or not).
 //
 func (l *LeaderSyncProxy) GetDoneChannel() <-chan bool {
 	// do not return nil (can cause caller block forever)
 	return (<-chan bool)(l.donech)
-} 
+}
 
 //
-// Return the fid (follower id) 
+// Return the fid (follower id)
 //
 func (l *LeaderSyncProxy) GetFid() string {
-	if l.followerState != nil  {
+	if l.followerState != nil {
 		return l.followerState.fid
 	}
 	return ""
 }
 
 //
-// Can the follower vote? 
+// Can the follower vote?
 //
 func (l *LeaderSyncProxy) CanFollowerVote() bool {
-	if l.followerState != nil  {
+	if l.followerState != nil {
 		return l.followerState.voting
 	}
-	
+
 	return false
 }
 
@@ -402,7 +402,7 @@ func (l *LeaderSyncProxy) CanFollowerVote() bool {
 /////////////////////////////////////////////////////////////////////////////
 
 //
-// Abort the LeaderSyncProxy. 
+// Abort the LeaderSyncProxy.
 //
 func (l *LeaderSyncProxy) abort() {
 
@@ -418,15 +418,15 @@ func (l *LeaderSyncProxy) abort() {
 	common.SafeRun("LeaderSyncProxy.abort()",
 		func() {
 			// clean up the ConsentState
-            l.state.removeAcceptedEpoch(voter) 
-            l.state.removeEpochAck(voter) 
-            l.state.removeNewLeaderAck(voter) 
+			l.state.removeAcceptedEpoch(voter)
+			l.state.removeEpochAck(voter)
+			l.state.removeNewLeaderAck(voter)
 		})
-		
+
 	// donech should never be closed.  But just to be safe ...
 	common.SafeRun("LeaderSyncProxy.abort()",
 		func() {
-			l.donech <- false 
+			l.donech <- false
 		})
 }
 
@@ -436,13 +436,13 @@ func (l *LeaderSyncProxy) abort() {
 func (l *LeaderSyncProxy) close() {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-	
+
 	l.isClosed = true
 }
 
 //
 // Main go-routine for handling sycnrhonization with a follower.  Note that
-// this go-routine may be blocked by a non-interuptable condition variable, 
+// this go-routine may be blocked by a non-interuptable condition variable,
 // in which the caller may have aborted.  donech must be a buffered channel
 // to ensure that this go-routine will not get blocked if the caller dies first.
 //
@@ -452,12 +452,12 @@ func (l *LeaderSyncProxy) execute(donech chan bool, o *observer) {
 		if r := recover(); r != nil {
 			log.Printf("panic in LeaderSyncProxy.execute() : %s\n", r)
 			log.Printf("LeaderSyncProxy.execute() terminates : Diagnostic Stack ...")
-			log.Printf("%s", debug.Stack())	
-			
+			log.Printf("%s", debug.Stack())
+
 			donech <- false // unblock caller
 		}
 	}()
-	
+
 	var stage LeaderStageCode = UPDATE_ACCEPTED_EPOCH_AFTER_QUORUM
 
 	for stage != LEADER_SYNC_DONE {
@@ -474,7 +474,7 @@ func (l *LeaderSyncProxy) execute(donech chan bool, o *observer) {
 			}
 		case NOTIFY_NEW_EPOCH:
 			{
-				err := l.notifyNewEpoch() 
+				err := l.notifyNewEpoch()
 				if err != nil {
 					log.Printf("LeaderSyncProxy.notifyNewEpoch(): Error encountered = %s", err.Error())
 					safeSend("LeaderSyncProxy:execute()", donech, false)
@@ -484,7 +484,7 @@ func (l *LeaderSyncProxy) execute(donech chan bool, o *observer) {
 			}
 		case UPDATE_CURRENT_EPOCH_AFTER_QUORUM:
 			{
-				err := l.updateCurrentEpochAfterQuorum() 
+				err := l.updateCurrentEpochAfterQuorum()
 				if err != nil {
 					log.Printf("LeaderSyncProxy.updateCurrentEpochAfterQuorum(): Error encountered = %s", err.Error())
 					safeSend("LeaderSyncProxy:execute()", donech, false)
@@ -494,7 +494,7 @@ func (l *LeaderSyncProxy) execute(donech chan bool, o *observer) {
 			}
 		case SYNC_SEND:
 			{
-				err := l.syncWithLeader(o) 
+				err := l.syncWithLeader(o)
 				if err != nil {
 					log.Printf("LeaderSyncProxy.syncWithLeader(): Error encountered = %s", err.Error())
 					safeSend("LeaderSyncProxy:execute()", donech, false)
@@ -504,7 +504,7 @@ func (l *LeaderSyncProxy) execute(donech chan bool, o *observer) {
 			}
 		case DECLARE_NEW_LEADER_AFTER_QUORUM:
 			{
-				err := l.declareNewLeaderAfterQuorum() 
+				err := l.declareNewLeaderAfterQuorum()
 				if err != nil {
 					log.Printf("LeaderSyncProxy.declareNewLeaderAfterQuorum(): Error encountered = %s", err.Error())
 					safeSend("LeaderSyncProxy:execute()", donech, false)
@@ -515,7 +515,7 @@ func (l *LeaderSyncProxy) execute(donech chan bool, o *observer) {
 		}
 	}
 
-	// Use SafeReturn just to be sure, even though donech should not be closed 
+	// Use SafeReturn just to be sure, even though donech should not be closed
 	safeSend("LeaderSyncProxy:execute()", donech, true)
 }
 
@@ -536,12 +536,12 @@ func (l *LeaderSyncProxy) updateAcceptedEpochAfterQuorum() error {
 	voting := info.GetVoting()
 
 	// initialize the follower state
-	l.followerState = &followerState{lastLoggedTxid: 0, currentEpoch: 0, fid : fid, voting : voting}
-	
+	l.followerState = &followerState{lastLoggedTxid: 0, currentEpoch: 0, fid: fid, voting: voting}
+
 	// update my vote and wait for epoch to reach quorum
 	newEpoch, ok := l.state.voteAcceptedEpoch(l.GetFid(), epoch, l.followerState.voting)
 	if !ok {
-		return common.NewError(common.ELECTION_ERROR, 
+		return common.NewError(common.ELECTION_ERROR,
 			"LeaderSyncProxy.updateAcceptedEpochAfterQuorum(): Fail to reach quorum on accepted epoch (FollowerInfo)")
 	}
 
@@ -558,7 +558,7 @@ func (l *LeaderSyncProxy) updateAcceptedEpochAfterQuorum() error {
 func (l *LeaderSyncProxy) notifyNewEpoch() error {
 
 	log.Printf("LeaderSyncProxy.notifyNewEpoch()")
-	
+
 	epoch, err := l.handler.GetAcceptedEpoch()
 	if err != nil {
 		return err
@@ -570,7 +570,7 @@ func (l *LeaderSyncProxy) notifyNewEpoch() error {
 func (l *LeaderSyncProxy) updateCurrentEpochAfterQuorum() error {
 
 	log.Printf("LeaderSyncProxy.updateCurrentEpochAfterQuorum()")
-	
+
 	// Get my follower's vote for the epoch ack
 	packet, err := listen("EpochAck", l.follower)
 	if err != nil {
@@ -586,7 +586,7 @@ func (l *LeaderSyncProxy) updateCurrentEpochAfterQuorum() error {
 	// update my vote and wait for quorum of ack from followers
 	ok := l.state.voteEpochAck(l.GetFid(), l.followerState.voting)
 	if !ok {
-		return common.NewError(common.ELECTION_ERROR, 
+		return common.NewError(common.ELECTION_ERROR,
 			"LeaderSyncProxy.updateCurrentEpochAfterQuorum(): Fail to reach quorum on current epoch (EpochAck)")
 	}
 
@@ -595,7 +595,7 @@ func (l *LeaderSyncProxy) updateCurrentEpochAfterQuorum() error {
 	if err != nil {
 		return err
 	}
-	
+
 	// update the current epoch based on the quorum result.   This function
 	// will perform update only if the new epoch is larger than existing value.
 	err = l.handler.NotifyNewCurrentEpoch(epoch)
@@ -609,7 +609,7 @@ func (l *LeaderSyncProxy) updateCurrentEpochAfterQuorum() error {
 func (l *LeaderSyncProxy) declareNewLeaderAfterQuorum() error {
 
 	log.Printf("LeaderSyncProxy.declareNewLeaderAfterQuorum()")
-	
+
 	// return the new epoch to the follower
 	epoch, err := l.handler.GetCurrentEpoch()
 	if err != nil {
@@ -633,7 +633,7 @@ func (l *LeaderSyncProxy) declareNewLeaderAfterQuorum() error {
 	// update my vote and wait for quorum of ack from followers
 	ok := l.state.voteNewLeaderAck(l.GetFid(), l.followerState.voting)
 	if !ok {
-		return common.NewError(common.ELECTION_ERROR, 
+		return common.NewError(common.ELECTION_ERROR,
 			"LeaderSyncProxy.declareNewLeaderAfterQuorum(): Fail to reach quorum on NewLeaderAck")
 	}
 
@@ -664,11 +664,11 @@ func (l *LeaderSyncProxy) syncWithLeader(o *observer) error {
 		return err
 	}
 
-	// Third, stream the trailer with the committed txid 
+	// Third, stream the trailer with the committed txid
 	if err = l.sendTrailer(); err != nil {
 		return err
 	}
-	
+
 	// Forth, if lastSeen matches first entry in observer, remove
 	// that entry since it has been sent.
 	packet := o.peekFirst()
@@ -694,15 +694,15 @@ func (l *LeaderSyncProxy) sendHeader() error {
 	if err != nil {
 		return err
 	}
-	
+
 	msg := l.factory.CreateLogEntry(
-			uint64(lastCommittedTxid), 
-			uint32(common.OPCODE_STREAM_BEGIN_MARKER), 
-			"StreamBegin", 
-			([]byte)("StreamBegin"))
-			
+		uint64(lastCommittedTxid),
+		uint32(common.OPCODE_STREAM_BEGIN_MARKER),
+		"StreamBegin",
+		([]byte)("StreamBegin"))
+
 	return send(msg, l.follower)
-} 
+}
 
 //
 // Send the entries in the committed log to the follower.  Termination condition:
@@ -714,8 +714,8 @@ func (l *LeaderSyncProxy) sendEntriesInCommittedLog(startTxid, endTxid common.Tx
 
 	log.Printf("LeaderSyncProxy.sendEntriesInCommittedLog(): startTxid %d endTxid %d observer first txid %d",
 		startTxid, endTxid, l.firstTxnIdInObserver(o))
-	
-	var lastSeen common.Txnid = common.BOOTSTRAP_LAST_LOGGED_TXID 
+
+	var lastSeen common.Txnid = common.BOOTSTRAP_LAST_LOGGED_TXID
 
 	logChan, errChan, killch, err := l.handler.GetCommitedEntries(startTxid, endTxid)
 	if logChan == nil || errChan == nil || err != nil {
@@ -737,15 +737,15 @@ func (l *LeaderSyncProxy) sendEntriesInCommittedLog(startTxid, endTxid common.Tx
 				killch <- true
 				return lastSeen, err
 			}
-			
+
 			lastSeen = common.Txnid(entry.GetTxnid())
-			
+
 			// we found the committed entries matches what's in observer queue
 			if l.hasSeenEntryInObserver(o, common.Txnid(entry.GetTxnid())) {
 				killch <- true
 				return lastSeen, nil
 			}
-		
+
 		case err := <-errChan:
 			if err != nil {
 				return lastSeen, err
@@ -753,7 +753,7 @@ func (l *LeaderSyncProxy) sendEntriesInCommittedLog(startTxid, endTxid common.Tx
 			break
 		}
 	}
-	
+
 	return lastSeen, nil
 }
 
@@ -766,13 +766,13 @@ func (l *LeaderSyncProxy) sendTrailer() (err error) {
 	if err != nil {
 		return err
 	}
-	
+
 	msg := l.factory.CreateLogEntry(
-		uint64(lastCommittedTxid), 
-		uint32(common.OPCODE_STREAM_END_MARKER), 
-		"StreamEnd", 
+		uint64(lastCommittedTxid),
+		uint32(common.OPCODE_STREAM_END_MARKER),
+		"StreamEnd",
 		([]byte)("StreamEnd"))
-		
+
 	return send(msg, l.follower)
 }
 
@@ -781,7 +781,7 @@ func (l *LeaderSyncProxy) sendTrailer() (err error) {
 //
 func (l *LeaderSyncProxy) hasSeenEntryInObserver(o *observer, lastSeen common.Txnid) bool {
 
-	txnid := l.firstTxnIdInObserver(o) 
+	txnid := l.firstTxnIdInObserver(o)
 	return txnid != common.BOOTSTRAP_LAST_LOGGED_TXID && txnid <= lastSeen
 }
 
@@ -799,16 +799,16 @@ func (l *LeaderSyncProxy) firstTxnIdInObserver(o *observer) common.Txnid {
 //
 func (l *LeaderSyncProxy) getPacketTxnId(packet common.Packet) common.Txnid {
 
-	txid := common.BOOTSTRAP_LAST_LOGGED_TXID 
+	txid := common.BOOTSTRAP_LAST_LOGGED_TXID
 	if packet != nil {
 		switch request := packet.(type) {
-			case ProposalMsg:
-				txid = common.Txnid(request.GetTxnid())
-			case CommitMsg:
-				txid = common.Txnid(request.GetTxnid())
+		case ProposalMsg:
+			txid = common.Txnid(request.GetTxnid())
+		case CommitMsg:
+			txid = common.Txnid(request.GetTxnid())
 		}
-	} 
-	
+	}
+
 	return txid
 }
 
@@ -817,7 +817,7 @@ func (l *LeaderSyncProxy) getPacketTxnId(packet common.Packet) common.Txnid {
 /////////////////////////////////////////////////////////////////////////////
 
 //
-// Create a FollowerSyncProxy to synchronize with a leader.  The proxy 
+// Create a FollowerSyncProxy to synchronize with a leader.  The proxy
 // requires 1 stateful variables to be provided as inputs:
 // 1) Leader : The leader is a PeerPipe (TCP connection).    This is
 //    used to exchange messages with the leader node.
@@ -828,34 +828,34 @@ func NewFollowerSyncProxy(leader *common.PeerPipe,
 	voting bool) *FollowerSyncProxy {
 
 	sync := &FollowerSyncProxy{leader: leader,
-		handler: handler,
-		factory: factory,
-		donech : make(chan bool, 1), // donech should not be closed
-		killch : make(chan bool, 1), // donech should not be closed
+		handler:  handler,
+		factory:  factory,
+		donech:   make(chan bool, 1), // donech should not be closed
+		killch:   make(chan bool, 1), // donech should not be closed
 		isClosed: false}
 
 	sync.state = &followerState{
-					lastLoggedTxid : common.BOOTSTRAP_LAST_LOGGED_TXID,
-					currentEpoch : common.BOOTSTRAP_CURRENT_EPOCH,
-					voting : voting}
-					
+		lastLoggedTxid: common.BOOTSTRAP_LAST_LOGGED_TXID,
+		currentEpoch:   common.BOOTSTRAP_CURRENT_EPOCH,
+		voting:         voting}
+
 	return sync
 }
 
 //
 // Start synchronization with a speicfic leader.   This function
-// can be run as regular function or go-routine.   If the caller runs this 
+// can be run as regular function or go-routine.   If the caller runs this
 // as a go-routine, the caller should use GetDoneChannel()
 // to tell when this function completes.
 //
 // There are 3 cases when this function sends "false" to donech:
 // 1) When there is an error during synchronization
 // 2) When synchronization timeout
-// 3) Terminate() is called 
+// 3) Terminate() is called
 //
 // When a failure (false) result is sent to the donech, this function
 // will also close the PeerPipe to the leader.  This will force
-// the leader to skip this follower. 
+// the leader to skip this follower.
 //
 // This function will catch panic.
 //
@@ -865,49 +865,49 @@ func (f *FollowerSyncProxy) Start() bool {
 		if r := recover(); r != nil {
 			log.Printf("panic in FollowerSyncProxy.Start() : %s\n", r)
 			log.Printf("FollowerSyncProxy.Start() terminates : Diagnostic Stack ...")
-			log.Printf("%s", debug.Stack())	
-			
-			f.abort()  // ensure proper cleanup and unblock caller
-		} 
-		
+			log.Printf("%s", debug.Stack())
+
+			f.abort() // ensure proper cleanup and unblock caller
+		}
+
 		f.close()
 	}()
-	
+
 	timeout := time.After(common.SYNC_TIMEOUT * time.Millisecond)
-	
+
 	// spawn a go-routine to perform synchronziation.  Do not close donech2, just
 	// let it garbage collect when the go-routine is done.	 Make sure using
 	// buffered channel since this go-routine may go away before execute() does.
-	donech2 := make(chan bool, 1) 
+	donech2 := make(chan bool, 1)
 	go f.execute(donech2)
-	
+
 	select {
-		case success, ok := <- donech2:
-			if !ok {
-				success = false
-			}
-			f.donech <- success
-			return success
-		case <- timeout:
-			log.Printf("FollowerSyncProxy.Start(): Synchronization timeout for peer %s. Terminate.", f.leader.GetAddr())
-			f.abort()
-		case <- f.killch:
-			log.Printf("FollowerSyncProxy.Start(): Receive kill signal for peer %s.  Terminate.", f.leader.GetAddr())
-			f.abort()
+	case success, ok := <-donech2:
+		if !ok {
+			success = false
+		}
+		f.donech <- success
+		return success
+	case <-timeout:
+		log.Printf("FollowerSyncProxy.Start(): Synchronization timeout for peer %s. Terminate.", f.leader.GetAddr())
+		f.abort()
+	case <-f.killch:
+		log.Printf("FollowerSyncProxy.Start(): Receive kill signal for peer %s.  Terminate.", f.leader.GetAddr())
+		f.abort()
 	}
-	
+
 	return false
 }
 
 //
-// Terminate the syncrhonization with this leader.  Upon temrination, the leader 
-// will skip this follower.  This function is an no-op if the FollowerSyncProxy 
+// Terminate the syncrhonization with this leader.  Upon temrination, the leader
+// will skip this follower.  This function is an no-op if the FollowerSyncProxy
 // already completes successfully.
 //
 func (l *FollowerSyncProxy) Terminate() {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-	
+
 	if !l.isClosed {
 		l.isClosed = true
 		l.killch <- true
@@ -915,14 +915,14 @@ func (l *FollowerSyncProxy) Terminate() {
 }
 
 //
-// Return a channel that tells when the syncrhonization is done.  
+// Return a channel that tells when the syncrhonization is done.
 // This is unbuffered channel such that FollowerSyncProxy will not be blocked
 // upon completion of synchronization (whether successful or not).
 //
 func (l *FollowerSyncProxy) GetDoneChannel() <-chan bool {
 	// do not return nil (can cause caller block forever)
 	return (<-chan bool)(l.donech)
-} 
+}
 
 /////////////////////////////////////////////////////////////////////////////
 // FollowerSyncProxy - Private Function
@@ -936,10 +936,10 @@ func (f *FollowerSyncProxy) abort() {
 
 	common.SafeRun("FollowerSyncProxy.abort()",
 		func() {
-			// terminate any on-going messaging with follower 
+			// terminate any on-going messaging with follower
 			f.leader.Close()
 		})
-		
+
 	common.SafeRun("FollowerSyncProxy.abort()",
 		func() {
 			f.donech <- false
@@ -952,7 +952,7 @@ func (f *FollowerSyncProxy) abort() {
 func (l *FollowerSyncProxy) close() {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-	
+
 	l.isClosed = true
 }
 
@@ -962,19 +962,19 @@ func (l *FollowerSyncProxy) execute(donech chan bool) {
 		if r := recover(); r != nil {
 			log.Printf("panic in FollowerSyncProxy.execute() : %s\n", r)
 			log.Printf("FollowerSyncProxy.execute() terminates : Diagnostic Stack ...")
-			log.Printf("%s", debug.Stack())	
-			
+			log.Printf("%s", debug.Stack())
+
 			donech <- false // unblock caller
 		}
 	}()
-	
+
 	var stage FollowerStageCode = SEND_FOLLOWERINFO
 
 	for stage != FOLLOWER_SYNC_DONE {
 		switch stage {
 		case SEND_FOLLOWERINFO:
 			{
-				err := l.sendFollowerInfo() 
+				err := l.sendFollowerInfo()
 				if err != nil {
 					log.Printf("FollowerSyncProxy.sendFollowerInfo(): Error encountered = %s", err.Error())
 					safeSend("FollowerSyncProxy:execute()", donech, false)
@@ -984,7 +984,7 @@ func (l *FollowerSyncProxy) execute(donech chan bool) {
 			}
 		case RECEIVE_UPDATE_ACCEPTED_EPOCH:
 			{
-				err := l.receiveAndUpdateAcceptedEpoch() 
+				err := l.receiveAndUpdateAcceptedEpoch()
 				if err != nil {
 					log.Printf("FollowerSyncProxy.receiveAndUpdateAcceptedEpoch(): Error encountered = %s", err.Error())
 					safeSend("FollowerSyncProxy:execute()", donech, false)
@@ -994,7 +994,7 @@ func (l *FollowerSyncProxy) execute(donech chan bool) {
 			}
 		case SYNC_RECEIVE:
 			{
-				err := l.syncReceive() 
+				err := l.syncReceive()
 				if err != nil {
 					log.Printf("FollowerSyncProxy.syncReceive(): Error encountered = %s", err.Error())
 					safeSend("FollowerSyncProxy:execute()", donech, false)
@@ -1004,7 +1004,7 @@ func (l *FollowerSyncProxy) execute(donech chan bool) {
 			}
 		case RECEIVE_UPDATE_CURRENT_EPOCH:
 			{
-				err := l.receiveAndUpdateCurrentEpoch() 
+				err := l.receiveAndUpdateCurrentEpoch()
 				if err != nil {
 					log.Printf("FollowerSyncProxy.receiveAndUpdateCurrentEpoch(): Error encountered = %s", err.Error())
 					safeSend("FollowerSyncProxy:execute()", donech, false)
@@ -1021,7 +1021,7 @@ func (l *FollowerSyncProxy) execute(donech chan bool) {
 func (l *FollowerSyncProxy) sendFollowerInfo() error {
 
 	log.Printf("FollowerSyncProxy.sendFollowerInfo()")
-	
+
 	// Send my accepted epoch to the leader for voting (don't send current epoch)
 	epoch, err := l.handler.GetAcceptedEpoch()
 	if err != nil {
@@ -1034,7 +1034,7 @@ func (l *FollowerSyncProxy) sendFollowerInfo() error {
 func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 
 	log.Printf("FollowerSyncProxy.receiveAndUpdateAcceptedEpoch()")
-	
+
 	// Get the accepted epoch from the leader.   This epoch
 	// is already being voted on by multiple followers (the highest
 	// epoch among the quorum of followers).
@@ -1063,16 +1063,16 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 		// in the next round of voting.   Note that the leader derives this new accepted
 		// epoch only after it has polled from a quorum of followers.  So even if sync fails,
 		// it is unlikey that in the next sync, the leader will give a new accepted epoch smaller
-		// than what is being stored now. 
+		// than what is being stored now.
 		err = l.handler.NotifyNewAcceptedEpoch(epoch)
 		if err != nil {
-			return err 
+			return err
 		}
 	} else if epoch == acceptedEpoch {
-		// In ZK, if the local epoch (acceptedEpoch) == leader's epoch (epoch), it will replly an EpochAck with epoch = -1.  
-		// This is to tell the leader that it should not count this EpockAck when computing quorum of EpochAck. 
+		// In ZK, if the local epoch (acceptedEpoch) == leader's epoch (epoch), it will replly an EpochAck with epoch = -1.
+		// This is to tell the leader that it should not count this EpockAck when computing quorum of EpochAck.
 		// This is to ensure that this follower does not "double ack" to the leader (e.g. when this follower rejoins a
-		// stable ensemble).   In our implementation for ConsentState, it should not be affected by double ack from the same host. 
+		// stable ensemble).   In our implementation for ConsentState, it should not be affected by double ack from the same host.
 	} else {
 		return common.NewError(common.PROTOCOL_ERROR, "Accepted Epoch from leader is smaller or equal to my epoch.")
 	}
@@ -1089,8 +1089,8 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 	}
 
 	l.state.lastLoggedTxid = common.Txnid(txid)
-	l.state.currentEpoch = currentEpoch	
-	
+	l.state.currentEpoch = currentEpoch
+
 	packet = l.factory.CreateEpochAck(uint64(txid), currentEpoch)
 	return send(packet, l.leader)
 }
@@ -1098,7 +1098,7 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 func (l *FollowerSyncProxy) receiveAndUpdateCurrentEpoch() error {
 
 	log.Printf("FollowerSyncProxy.receiveAndUpdateCurrentEpoch()")
-	
+
 	// Get the accepted epoch from the leader.   This epoch
 	// is already being voted on by multiple followers (the highest
 	// epoch among the quorum of followers).
@@ -1118,10 +1118,10 @@ func (l *FollowerSyncProxy) receiveAndUpdateCurrentEpoch() error {
 	// Once the current epoch is updated, it will not be reset even if the
 	// sychornization with the leader fails.  Therefore, the follower will always
 	// remember the largest current epoch known to it, such that it can be used
-	// in the next round of voting.   Note that the leader derives this new current 
+	// in the next round of voting.   Note that the leader derives this new current
 	// epoch only after it has polled from a quorum of followers.  So even if sync fails,
 	// it is unlikey that in the next sync, the leader will give a new current epoch smaller
-	// than what is being stored now. 
+	// than what is being stored now.
 	err = l.handler.NotifyNewCurrentEpoch(epoch)
 	if err != nil {
 		return err
@@ -1135,10 +1135,10 @@ func (l *FollowerSyncProxy) receiveAndUpdateCurrentEpoch() error {
 func (l *FollowerSyncProxy) syncReceive() error {
 
 	log.Printf("FollowerSyncProxy.syncReceive()")
-	
+
 	lastCommittedFromLeader := common.BOOTSTRAP_LAST_COMMITTED_TXID
-	pendingCommit 			:= make([]LogEntryMsg, 0, common.MAX_PROPOSALS)
-	
+	pendingCommit := make([]LogEntryMsg, 0, common.MAX_PROPOSALS)
+
 	for {
 		packet, err := listen("LogEntry", l.leader)
 		if err != nil {
@@ -1154,42 +1154,42 @@ func (l *FollowerSyncProxy) syncReceive() error {
 			lastCommittedFromLeader = lastTxnid
 			continue
 		}
-		
+
 		// If this is the last one, then flush the pending log entry as well.  The streamEnd
 		// message has a more recent lastCommitedTxid from the leader which is retreievd after
-		// the last log entry is sent.  
+		// the last log entry is sent.
 		if entry.GetOpCode() == uint32(common.OPCODE_STREAM_END_MARKER) {
 			log.Printf("LeaderSyncProxy.syncReceive(). Receive stream_end.  Txid : %d", lastTxnid)
 			lastCommittedFromLeader = lastTxnid
-		
-			// write any log entry that has not been logged. 	
+
+			// write any log entry that has not been logged.
 			for _, entry := range pendingCommit {
 				toCommit := entry.GetTxnid() <= uint64(lastCommittedFromLeader)
-				
-				if err := l.handler.LogAndCommit(common.Txnid(entry.GetTxnid()), 
-												entry.GetOpCode(), 
-												entry.GetKey(), 
-												entry.GetContent(),
-												toCommit); err != nil {
+
+				if err := l.handler.LogAndCommit(common.Txnid(entry.GetTxnid()),
+					entry.GetOpCode(),
+					entry.GetKey(),
+					entry.GetContent(),
+					toCommit); err != nil {
 					return err
 				}
 			}
 
 			return nil
 		}
-	
+
 		// write the new log entry.  If the txid is less than the last known committed txid
-		// from the leader, then commit the entry. Otherwise, keep it in a pending list. 
+		// from the leader, then commit the entry. Otherwise, keep it in a pending list.
 		toCommit := lastTxnid <= lastCommittedFromLeader
 		if toCommit {
-			// This call needs to be atomic to ensure that the commit log and the data store 
+			// This call needs to be atomic to ensure that the commit log and the data store
 			// are updated transactionally.  This ensures that if the follower crashes, the
 			// repository as a while remains in a consistent state.
-			if err := l.handler.LogAndCommit(common.Txnid(entry.GetTxnid()), 
-									entry.GetOpCode(), 
-									entry.GetKey(), 
-									entry.GetContent(),
-									true); err != nil {
+			if err := l.handler.LogAndCommit(common.Txnid(entry.GetTxnid()),
+				entry.GetOpCode(),
+				entry.GetKey(),
+				entry.GetContent(),
+				true); err != nil {
 				return err
 			}
 		} else {
@@ -1209,12 +1209,12 @@ func listen(name string, pipe *common.PeerPipe) (common.Packet, error) {
 	reqch := pipe.ReceiveChannel()
 	req, ok := <-reqch
 	if !ok {
-		return nil, common.NewError(common.SERVER_ERROR, "SyncProxy.listen(): channel closed. Terminate")		
+		return nil, common.NewError(common.SERVER_ERROR, "SyncProxy.listen(): channel closed. Terminate")
 	}
 
 	if req.Name() != name {
-		return nil, common.NewError(common.PROTOCOL_ERROR, 
-			"SyncProxy.listen(): Expect message " + name + ", Receive message " + req.Name())
+		return nil, common.NewError(common.PROTOCOL_ERROR,
+			"SyncProxy.listen(): Expect message "+name+", Receive message "+req.Name())
 	}
 
 	return req, nil
@@ -1224,8 +1224,8 @@ func send(packet common.Packet, pipe *common.PeerPipe) error {
 
 	log.Printf("SyncProxy.send(): sending packet %s to peer (TCP %s)", packet.Name(), pipe.GetAddr())
 	if !pipe.Send(packet) {
-		return common.NewError(common.SERVER_ERROR, fmt.Sprintf("SyncProxy.listen(): Fail to send packet %s to peer (TCP %s)", 
-			packet.Name(), pipe.GetAddr()))		
+		return common.NewError(common.SERVER_ERROR, fmt.Sprintf("SyncProxy.listen(): Fail to send packet %s to peer (TCP %s)",
+			packet.Name(), pipe.GetAddr()))
 	}
 
 	return nil
@@ -1234,6 +1234,6 @@ func send(packet common.Packet, pipe *common.PeerPipe) error {
 func safeSend(header string, donech chan bool, result bool) {
 	common.SafeRun(header,
 		func() {
-			donech <- result 
+			donech <- result
 		})
 }

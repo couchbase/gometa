@@ -125,7 +125,7 @@ func (r *ServerConfig) GetInt(key string) (uint64, error) {
 }
 
 //
-// Delete from server config 
+// Delete from server config
 //
 func (r *ServerConfig) Delete(key string) error {
 

@@ -62,13 +62,13 @@ func (f *ConcreteMsgFactory) CreateVote(round uint64,
 	solicit bool) protocol.VoteMsg {
 
 	return &Vote{Version: proto.Uint32(ProtoVersion()),
-		Round:    proto.Uint64(round),
-		Status:   proto.Uint32(status),
-		Epoch:    proto.Uint32(epoch),
-		CndId:    proto.String(cndId),
-		CndLoggedTxnId: proto.Uint64(loggedTxnId),
+		Round:             proto.Uint64(round),
+		Status:            proto.Uint32(status),
+		Epoch:             proto.Uint32(epoch),
+		CndId:             proto.String(cndId),
+		CndLoggedTxnId:    proto.Uint64(loggedTxnId),
 		CndCommittedTxnId: proto.Uint64(committedTxnId),
-		Solicit : proto.Bool(solicit)}
+		Solicit:           proto.Bool(solicit)}
 }
 
 func (f *ConcreteMsgFactory) CreateLogEntry(txnid uint64,
@@ -84,13 +84,13 @@ func (f *ConcreteMsgFactory) CreateLogEntry(txnid uint64,
 }
 
 func (f *ConcreteMsgFactory) CreateFollowerInfo(epoch uint32,
-											    fid string,
-											    voting bool) protocol.FollowerInfoMsg {
+	fid string,
+	voting bool) protocol.FollowerInfoMsg {
 
 	return &FollowerInfo{Version: proto.Uint32(ProtoVersion()),
 		AcceptedEpoch: proto.Uint32(epoch),
-		Fid:     proto.String(fid),
-		Voting: proto.Bool(voting)}
+		Fid:           proto.String(fid),
+		Voting:        proto.Bool(voting)}
 }
 
 func (f *ConcreteMsgFactory) CreateLeaderInfo(epoch uint32) protocol.LeaderInfoMsg {

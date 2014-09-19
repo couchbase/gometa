@@ -1,15 +1,15 @@
 package server
 
 import (
+	"github.com/couchbase/gometa/action"
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/message"
 	"github.com/couchbase/gometa/protocol"
-	"github.com/couchbase/gometa/action"
 	r "github.com/couchbase/gometa/repository"
-	"sync"
-	"time"
 	"log"
 	"runtime/debug"
+	"sync"
+	"time"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -17,42 +17,42 @@ import (
 /////////////////////////////////////////////////////////////////////////////
 
 type Server struct {
-	repo      		*r.Repository
-	log       		*r.CommitLog
-	srvConfig 		*r.ServerConfig
-	state     		*ServerState
-	site      		*protocol.ElectionSite
-	factory   		protocol.MsgFactory
-	handler   		*action.ServerAction	
-	listener  		*common.PeerListener
-	reqListener 	*RequestListener
-	skillch   		chan bool
+	repo        *r.Repository
+	log         *r.CommitLog
+	srvConfig   *r.ServerConfig
+	state       *ServerState
+	site        *protocol.ElectionSite
+	factory     protocol.MsgFactory
+	handler     *action.ServerAction
+	listener    *common.PeerListener
+	reqListener *RequestListener
+	skillch     chan bool
 }
 
 type ServerState struct {
-	incomings 		chan *protocol.RequestHandle
+	incomings chan *protocol.RequestHandle
 
 	// mutex protected variables
-	mutex     		sync.Mutex
-	done      		bool
-	status    		protocol.PeerStatus
-	pendings  		map[uint64]*protocol.RequestHandle // key : request id
-	proposals 		map[common.Txnid]*protocol.RequestHandle // key : txnid
+	mutex     sync.Mutex
+	done      bool
+	status    protocol.PeerStatus
+	pendings  map[uint64]*protocol.RequestHandle       // key : request id
+	proposals map[common.Txnid]*protocol.RequestHandle // key : txnid
 }
 
 var gServer *Server = nil
 
 /////////////////////////////////////////////////////////////////////////////
-// Main Function 
+// Main Function
 /////////////////////////////////////////////////////////////////////////////
 
 func RunServer(config string) error {
 
 	err := NewEnv(config)
 	if err != nil {
-		return err	
+		return err
 	}
-	
+
 	repeat := true
 	for repeat {
 		pauseTime := RunOnce()
@@ -66,7 +66,7 @@ func RunServer(config string) error {
 			repeat = false
 		}
 	}
-	
+
 	return nil
 }
 
@@ -87,19 +87,19 @@ func (s *Server) bootstrap() (err error) {
 	// Initialize server state
 	s.state = newServerState()
 
-	// Initialize repository service	
+	// Initialize repository service
 	s.repo, err = r.OpenRepository()
 	if err != nil {
 		return err
 	}
 	s.log = r.NewCommitLog(s.repo)
 	s.srvConfig = r.NewServerConfig(s.repo)
-	
+
 	// initialize the current transaction id to the lastLoggedTxid.  This
 	// is the txid that this node has seen so far.  If this node becomes
 	// the leader, a new epoch will be used and new current txid will
-	// be generated.   
-	lastLoggedTxid, err := s.srvConfig.GetLastLoggedTxnId() 
+	// be generated.
+	lastLoggedTxid, err := s.srvConfig.GetLastLoggedTxnId()
 	if err != nil {
 		return err
 	}
@@ -111,12 +111,12 @@ func (s *Server) bootstrap() (err error) {
 	s.handler = action.NewServerAction(s.repo, s.log, s.srvConfig, s, s.factory, s)
 	s.skillch = make(chan bool, 1) // make it buffered to unblock sender
 	s.site = nil
-	
+
 	// Need to start the peer listener before election. A follower may
 	// finish its election before a leader finishes its election. Therefore,
 	// a follower node can request a connection to the leader node before that
-	// node knows it is a leader.  By starting the listener now, it allows the 
-	// follower to establish the connection and let the leader handles this 
+	// node knows it is a leader.  By starting the listener now, it allows the
+	// follower to establish the connection and let the leader handles this
 	// connection at a later time (when it is ready to be a leader).
 	s.listener, err = common.StartPeerListener(GetHostTCPAddr())
 	if err != nil {
@@ -128,7 +128,7 @@ func (s *Server) bootstrap() (err error) {
 	if err != nil {
 		return common.WrapError(common.SERVER_ERROR, "Fail to start RequestListener.", err)
 	}
-	
+
 	return nil
 }
 
@@ -139,14 +139,14 @@ func (s *Server) runElection() (leader string, err error) {
 
 	host := GetHostUDPAddr()
 	peers := GetPeerUDPAddr()
-	
+
 	// Create an election site to start leader election.
 	log.Printf("Server.runElection(): Local Server %s start election", host)
 	log.Printf("Server.runElection(): Peer in election")
 	for _, peer := range peers {
 		log.Printf("	peer : %s", peer)
 	}
-	
+
 	s.site, err = protocol.CreateElectionSite(host, peers, s.factory, s.handler, false)
 	if err != nil {
 		return "", err
@@ -154,12 +154,12 @@ func (s *Server) runElection() (leader string, err error) {
 
 	resultCh := s.site.StartElection()
 	if resultCh == nil {
-		return "", common.NewError(common.SERVER_ERROR, "Election Site is in progress or is closed.") 
+		return "", common.NewError(common.SERVER_ERROR, "Election Site is in progress or is closed.")
 	}
-	
+
 	leader, ok := <-resultCh // blocked until leader is elected
 	if !ok {
-		return "", common.NewError(common.SERVER_ERROR, "Election Fails") 
+		return "", common.NewError(common.SERVER_ERROR, "Election Fails")
 	}
 
 	return leader, nil
@@ -183,7 +183,7 @@ func (s *Server) runServer(leader string) (err error) {
 		s.state.setStatus(protocol.FOLLOWING)
 		leaderAddr := findMatchingPeerTCPAddr(leader)
 		if len(leaderAddr) == 0 {
-			return common.NewError(common.SERVER_ERROR, "Cannot find matching TCP addr for leader " + leader)
+			return common.NewError(common.SERVER_ERROR, "Cannot find matching TCP addr for leader "+leader)
 		}
 		err = protocol.RunFollowerServer(GetHostTCPAddr(), leaderAddr, s.state, s.handler, s.factory, s.skillch)
 	}
@@ -204,7 +204,7 @@ func (s *Server) Terminate() {
 	}
 
 	s.state.done = true
-	
+
 	s.site.Close()
 	s.site = nil
 
@@ -236,14 +236,14 @@ func (s *Server) cleanupState() {
 				s.listener.Close()
 			}
 		})
-		
+
 	common.SafeRun("Server.cleanupState()",
 		func() {
 			if s.reqListener != nil {
 				s.reqListener.Close()
 			}
 		})
-		
+
 	common.SafeRun("Server.cleanupState()",
 		func() {
 			if s.repo != nil {
@@ -257,7 +257,7 @@ func (s *Server) cleanupState() {
 				s.site.Close()
 			}
 		})
-		
+
 	for len(s.state.incomings) > 0 {
 		request := <-s.state.incomings
 		request.Err = common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
@@ -296,10 +296,10 @@ func (s *Server) cleanupState() {
 //
 // Run the server until it stop.  Will not attempt to re-run.
 //
-func RunOnce() (int) {
+func RunOnce() int {
 
 	log.Printf("Server.RunOnce() : Start Running Server")
-	
+
 	pauseTime := 0
 	gServer = new(Server)
 
@@ -307,10 +307,10 @@ func RunOnce() (int) {
 		if r := recover(); r != nil {
 			log.Printf("panic in Server.runOnce() : %s\n", r)
 		}
-		
+
 		log.Printf("RunOnce() terminates : Diagnostic Stack ...")
-		log.Printf("%s", debug.Stack())		
-	
+		log.Printf("%s", debug.Stack())
+
 		common.SafeRun("Server.cleanupState()",
 			func() {
 				gServer.cleanupState()
@@ -333,7 +333,7 @@ func RunOnce() (int) {
 			log.Printf("Server.RunOnce() : Error Encountered During Election : %s", err.Error())
 			pauseTime = 100
 		} else {
-		
+
 			// Check if the server has been terminated explicitly. If so, don't run.
 			if !gServer.IsDone() {
 				// runServer() is done if there is an error	or being terminated explicitly (killch)
@@ -350,14 +350,13 @@ func RunOnce() (int) {
 	return pauseTime
 }
 
-
 /////////////////////////////////////////////////////////////////////////////
-// QuorumVerifier 
+// QuorumVerifier
 /////////////////////////////////////////////////////////////////////////////
 
 func (s *Server) HasQuorum(count int) bool {
 	ensembleSz := s.handler.GetEnsembleSize()
-	return count > int(ensembleSz / 2)
+	return count > int(ensembleSz/2)
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -403,14 +402,13 @@ func (s *ServerState) AddPendingRequest(handle *protocol.RequestHandle) {
 	s.pendings[handle.Request.GetReqId()] = handle
 }
 
-func (s *ServerState) GetRequestChannel() (<-chan *protocol.RequestHandle) {
+func (s *ServerState) GetRequestChannel() <-chan *protocol.RequestHandle {
 
 	return (<-chan *protocol.RequestHandle)(s.incomings)
 }
 
-	
 /////////////////////////////////////////////////////////////////////////////
-// Request Handle 
+// Request Handle
 /////////////////////////////////////////////////////////////////////////////
 
 //
@@ -464,17 +462,17 @@ func (s *Server) UpdateStateOnCommit(txnid common.Txnid, key string) {
 	// that this host originates the request.   Get the request handle and
 	// notify the waiting goroutine that the request is done.
 	handle, ok := s.state.proposals[txnid]
-	
+
 	if ok {
 		log.Printf("Server.UpdateStateOnCommit(): Notify client for proposal %d", txnid)
-		
+
 		delete(s.state.proposals, txnid)
 
 		handle.CondVar.L.Lock()
 		defer handle.CondVar.L.Unlock()
 
 		handle.CondVar.Signal()
-	} 
+	}
 }
 
 func (s *Server) GetStatus() protocol.PeerStatus {
@@ -486,13 +484,13 @@ func (s *Server) UpdateWinningEpoch(epoch uint32) {
 	// for new incoming vote, the server can reply with the
 	// new and correct epoch
 	s.site.UpdateWinningEpoch(epoch)
-	
+
 	// any new tnxid from now on will use the new epoch
 	common.SetEpoch(epoch)
 }
 
 func (s *Server) GetPeerUDPAddr() []string {
-	return GetPeerUDPAddr() 
+	return GetPeerUDPAddr()
 }
 
 func (s *Server) GetHostTCPAddr() string {
@@ -500,9 +498,9 @@ func (s *Server) GetHostTCPAddr() string {
 }
 
 func (s *Server) GetEnsembleSize() uint64 {
-	return uint64(len(GetPeerUDPAddr())) + 1  // including myself 
+	return uint64(len(GetPeerUDPAddr())) + 1 // including myself
 }
 
 func (s *Server) GetFollowerId() string {
-	return GetHostTCPAddr() 
+	return GetHostTCPAddr()
 }

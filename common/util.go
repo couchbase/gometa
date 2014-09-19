@@ -26,6 +26,6 @@ const (
 	EQUAL CompareResult = iota
 	GREATER
 	LESSER
- 	MORE_RECENT	
-	LESS_RECENT	
+	MORE_RECENT
+	LESS_RECENT
 )

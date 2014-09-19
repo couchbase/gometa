@@ -2,8 +2,8 @@ package repository
 
 import (
 	"github.com/couchbase/gometa/common"
-	"log"
 	fdb "github.com/couchbaselabs/goforestdb"
+	"log"
 	"sync"
 )
 
@@ -45,7 +45,7 @@ func (r *Repository) Set(key string, content []byte) error {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	
+
 	log.Printf("Repo.Set(): key %s, len(content) %d", key, len(content))
 
 	//convert key to its collatejson encoded byte representation
@@ -69,7 +69,7 @@ func (r *Repository) Set(key string, content []byte) error {
 func (r *Repository) Get(key string) ([]byte, error) {
 
 	log.Printf("Repo.Get(): key %s", key)
-	
+
 	//convert key to its collatejson encoded byte representation
 	k, err := CollateString(key)
 	if err != nil {
@@ -97,7 +97,7 @@ func (r *Repository) Delete(key string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	return r.db.Commit(fdb.COMMIT_NORMAL)
 }
 

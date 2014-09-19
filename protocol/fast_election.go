@@ -2,11 +2,11 @@ package protocol
 
 import (
 	"github.com/couchbase/gometa/common"
+	"log"
 	"net"
+	"runtime/debug"
 	"sync"
 	"time"
-	"log"
-	"runtime/debug"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -21,36 +21,36 @@ import (
 // 3) poll worker - recieve votes from other voters and determine if majority is reached
 //
 type ElectionSite struct {
-	messenger    *common.PeerMessenger
-	master       *ballotMaster
-	worker       *pollWorker
-	
+	messenger *common.PeerMessenger
+	master    *ballotMaster
+	worker    *pollWorker
+
 	solicitOnly  bool
 	ensemble     []net.Addr
 	fullEnsemble []string
 	factory      MsgFactory
 	handler      ActionHandler
-	
-	mutex        sync.Mutex
-	isClosed     bool
+
+	mutex    sync.Mutex
+	isClosed bool
 }
 
 type ballotResult struct {
 	proposed      VoteMsg
-	winningEpoch  uint32		// winning epoch : can be updated after follower has sync with leader
+	winningEpoch  uint32             // winning epoch : can be updated after follower has sync with leader
 	receivedVotes map[string]VoteMsg // the map key is voter UDP address
 	activePeers   map[string]VoteMsg // the map key is voter UDP address
 }
 
 type Ballot struct {
-	result   	*ballotResult
-	resultch 	chan bool // should only be closed by pollWorker
+	result   *ballotResult
+	resultch chan bool // should only be closed by pollWorker
 }
 
 type ballotMaster struct {
-	site   *ElectionSite
+	site *ElectionSite
 
-	// mutex protected state	
+	// mutex protected state
 	mutex  sync.Mutex
 	winner *ballotResult
 	inProg bool
@@ -68,11 +68,11 @@ type pollWorker struct {
 // The election round is incremented for every new election being run in
 // this process.    If there is an ensemble of peers are running election,
 // these peers will need to be in the same round in order to achieve quorum.
-// Essentially, if a peer joins an electing ensemble, it can either join 
+// Essentially, if a peer joins an electing ensemble, it can either join
 // the current round of voting or start a new round.  If it start a new round,
-// then it must have enough peers to join his round before a quorum can be reached. 
-// If a peer leaves an ensemble, its vote still count (ZK does not take away vote).  
-// The sycnhronization (recovery) phase will double check if a quorum of followers 
+// then it must have enough peers to join his round before a quorum can be reached.
+// If a peer leaves an ensemble, its vote still count (ZK does not take away vote).
+// The sycnhronization (recovery) phase will double check if a quorum of followers
 // agree to the leader before the algorithm is fully converged.
 //
 var gElectionRound uint64 = 0
@@ -90,18 +90,18 @@ func CreateElectionSite(laddr string,
 	handler ActionHandler,
 	solicitOnly bool) (election *ElectionSite, err error) {
 
-	// create a full ensemble (including the local host)	
-    en, fullEn, err := cloneEnsemble(peers, laddr)
-    if err != nil {
-    	return nil, err
-    }
+	// create a full ensemble (including the local host)
+	en, fullEn, err := cloneEnsemble(peers, laddr)
+	if err != nil {
+		return nil, err
+	}
 
 	election = &ElectionSite{isClosed: false,
-		factory:  factory,
-		handler:  handler,
-		ensemble: en,
+		factory:      factory,
+		handler:      handler,
+		ensemble:     en,
 		fullEnsemble: fullEn,
-		solicitOnly : solicitOnly}
+		solicitOnly:  solicitOnly}
 
 	// Create a new messenger
 	election.messenger, err = newMessenger(laddr)
@@ -122,17 +122,17 @@ func CreateElectionSite(laddr string,
 //
 // Start a new Election.  If there is a ballot in progress, this function
 // will return a nil channel.  The ballot will happen indefinitely until a winner
-// emerge or there is an error.   The winner will be returned through winnerch.  
-// If there is an error, the channel will be closed without sending a value.  
+// emerge or there is an error.   The winner will be returned through winnerch.
+// If there is an error, the channel will be closed without sending a value.
 //
-func (e *ElectionSite) StartElection() (<- chan string) {
+func (e *ElectionSite) StartElection() <-chan string {
 
 	// ballot in progress
 	if !e.master.setBallotInProg(false) || e.IsClosed() {
-		return nil 
+		return nil
 	}
 
-	// create a buffered channel so sender won't block.	
+	// create a buffered channel so sender won't block.
 	winnerch := make(chan string, 1)
 
 	go e.master.castBallot(winnerch)
@@ -142,7 +142,7 @@ func (e *ElectionSite) StartElection() (<- chan string) {
 
 //
 // Close ElectionSite.  Any pending ballot will be closed immediately.
-// 
+//
 //
 func (e *ElectionSite) Close() {
 	e.mutex.Lock()
@@ -150,7 +150,7 @@ func (e *ElectionSite) Close() {
 
 	if !e.isClosed {
 		log.Printf("ElectionSite.Close() : Diagnostic Stack ...")
-		log.Printf("%s", debug.Stack())	
+		log.Printf("%s", debug.Stack())
 
 		e.isClosed = true
 
@@ -171,7 +171,7 @@ func (e *ElectionSite) IsClosed() bool {
 }
 
 //
-// Update the winning epoch. The epoch can change after 
+// Update the winning epoch. The epoch can change after
 // the synchronization phase (when leader tells the
 // follower what is the actual epoch value -- after the
 // leader gets a quorum of followers).  There are other
@@ -183,7 +183,7 @@ func (e *ElectionSite) IsClosed() bool {
 //
 func (s *ElectionSite) UpdateWinningEpoch(epoch uint32) {
 
-	s.master.updateWinningEpoch(epoch)	
+	s.master.updateWinningEpoch(epoch)
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -200,7 +200,7 @@ func (s *ElectionSite) createVoteFromCurState() VoteMsg {
 		// if epoch is missing, set the epoch to the smallest possible
 		// number.  This is to allow the voting peers to tell me what
 		// the right epoch would be during balloting.  This allows me
-		// to proceed leader election.  After leader election, this 
+		// to proceed leader election.  After leader election, this
 		// node will either be a leader or follower, and it will need
 		// to synchornize with the peer's state (acceptedEpoch, currentEpoch).
 		epoch = common.BOOTSTRAP_CURRENT_EPOCH
@@ -209,17 +209,17 @@ func (s *ElectionSite) createVoteFromCurState() VoteMsg {
 	lastLoggedTxid, err := s.handler.GetLastLoggedTxid()
 	if err != nil {
 		// if txid is missing, set the txid to the smallest possible
-		// number.  This likely will cause the peer to ignore my vote. 
+		// number.  This likely will cause the peer to ignore my vote.
 		lastLoggedTxid = common.BOOTSTRAP_LAST_LOGGED_TXID
 	}
-	
+
 	lastCommittedTxid, err := s.handler.GetLastCommittedTxid()
 	if err != nil {
 		// if txid is missing, set the txid to the smallest possible
-		// number.  This likely will cause the peer to ignore my vote. 
+		// number.  This likely will cause the peer to ignore my vote.
 		lastCommittedTxid = common.BOOTSTRAP_LAST_COMMITTED_TXID
 	}
-	
+
 	vote := s.factory.CreateVote(s.master.round,
 		uint32(s.handler.GetStatus()),
 		epoch,
@@ -244,14 +244,14 @@ func (s *ElectionSite) inEnsemble(voter net.Addr) bool {
 }
 
 //
-// Create an ensemble for voting 
+// Create an ensemble for voting
 //
 func cloneEnsemble(peers []string, laddr string) ([]net.Addr, []string, error) {
 
 	en := make([]net.Addr, 0, len(peers))
-	fullEn := make([]string, 0, len(peers) + 1)
-	
-	for i:=0; i < len(peers); i++ {
+	fullEn := make([]string, 0, len(peers)+1)
+
+	for i := 0; i < len(peers); i++ {
 		rAddr, err := net.ResolveUDPAddr("udp", peers[i])
 		if err != nil {
 			return nil, nil, err
@@ -259,9 +259,9 @@ func cloneEnsemble(peers []string, laddr string) ([]net.Addr, []string, error) {
 		en = append(en, rAddr)
 		fullEn = append(fullEn, rAddr.String())
 	}
-	
+
 	fullEn = append(fullEn, laddr)
-	
+
 	return en, fullEn, nil
 }
 
@@ -295,16 +295,16 @@ func (b *ballotMaster) castBallot(winnerch chan string) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in ballotMaster.castBallot() : %s\n", r)
-	    	common.SafeRun("ballotMaster.castBallot()",
+			common.SafeRun("ballotMaster.castBallot()",
 				func() {
 					b.site.Close()
 				})
 		}
-		
+
 		common.SafeRun("ballotMaster.castBallot()",
 			func() {
-				close(winnerch)  // unblock caller
-				
+				close(winnerch) // unblock caller
+
 				// balloting complete
 				b.setBallotInProg(true)
 			})
@@ -338,13 +338,13 @@ func (b *ballotMaster) castBallot(winnerch chan string) {
 		if ok {
 			common.SafeRun("ballotMaster.castBallot()",
 				func() {
-					// Remember the last round.  
+					// Remember the last round.
 					gElectionRound = b.round
 					// Announce the result
-					winnerch <- winner 
+					winnerch <- winner
 				})
-		} 
-	} 
+		}
+	}
 }
 
 //
@@ -396,23 +396,23 @@ func (b *ballotMaster) getNextRound() uint64 {
 //
 func (b *ballotMaster) createInitialBallot(resultch chan bool) *Ballot {
 
-	result := &ballotResult{winningEpoch : 0,
-	                        receivedVotes: make(map[string]VoteMsg),
-		                    activePeers: make(map[string]VoteMsg)}
+	result := &ballotResult{winningEpoch: 0,
+		receivedVotes: make(map[string]VoteMsg),
+		activePeers:   make(map[string]VoteMsg)}
 
 	ballot := &Ballot{result: result,
-		              resultch: resultch}
-		              
+		resultch: resultch}
+
 	b.getNextRound()
 	newVote := b.site.createVoteFromCurState()
-    ballot.updateProposed(newVote, b.site)
+	ballot.updateProposed(newVote, b.site)
 
 	return ballot
 }
 
 //
 // Copy a winning vote.  This function is called when
-// there is no active ballot going on.  
+// there is no active ballot going on.
 //
 func (b *ballotMaster) cloneWinningVote() VoteMsg {
 
@@ -423,7 +423,7 @@ func (b *ballotMaster) cloneWinningVote() VoteMsg {
 	// election.
 	if b.winner != nil {
 		return b.site.factory.CreateVote(
-			b.winner.proposed.GetRound(),	
+			b.winner.proposed.GetRound(),
 			uint32(b.site.handler.GetStatus()),
 			b.winner.winningEpoch,
 			b.winner.proposed.GetCndId(),
@@ -446,11 +446,11 @@ func (b *ballotMaster) cloneWinningVote() VoteMsg {
 func (b *ballotMaster) GetWinner() (string, bool) {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
-	
+
 	if b.winner != nil {
 		return b.winner.proposed.GetCndId(), true
-	} 
-	
+	}
+
 	return "", false
 }
 
@@ -460,9 +460,9 @@ func (b *ballotMaster) GetWinner() (string, bool) {
 func (b *ballotMaster) setWinner(result *ballotResult) {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
-	
+
 	b.winner = result
-	b.winner.winningEpoch = result.proposed.GetEpoch() 
+	b.winner.winningEpoch = result.proposed.GetEpoch()
 }
 
 //
@@ -471,7 +471,7 @@ func (b *ballotMaster) setWinner(result *ballotResult) {
 func (b *ballotMaster) updateWinningEpoch(epoch uint32) {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
-	
+
 	b.winner.winningEpoch = epoch
 }
 
@@ -485,17 +485,17 @@ func (b *ballotMaster) updateWinningEpoch(epoch uint32) {
 func (b *ballotMaster) setCurrentRound(round uint64) {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
-	
+
 	b.round = round
 }
 
-// 
+//
 // Get the current round
 //
 func (b *ballotMaster) getCurrentRound() uint64 {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
-	
+
 	return b.round
 }
 
@@ -506,14 +506,14 @@ func (b *ballotMaster) getCurrentRound() uint64 {
 func (b *Ballot) updateProposed(proposed VoteMsg, site *ElectionSite) {
 
 	// update the ballot
-	b.result.proposed = proposed 
+	b.result.proposed = proposed
 
 	// esnure the ballotMaster's round matches the proposed vote.
 	// These 2 values should be always in sync.
 	site.master.setCurrentRound(proposed.GetRound())
 
-	// update the recieved votes (for quorum)	
-	b.result.receivedVotes[site.messenger.GetLocalAddr()] = proposed 
+	// update the recieved votes (for quorum)
+	b.result.receivedVotes[site.messenger.GetLocalAddr()] = proposed
 }
 
 //
@@ -527,7 +527,7 @@ func (b *Ballot) resetAndUpdateProposed(proposed VoteMsg, site *ElectionSite) {
 	// -- possibly for faster convergence to quorum).
 	b.result.activePeers = make(map[string]VoteMsg)
 
-	// update the proposed	
+	// update the proposed
 	b.updateProposed(proposed, site)
 }
 
@@ -543,8 +543,8 @@ func startPollWorker(site *ElectionSite) *pollWorker {
 
 	worker := &pollWorker{site: site,
 		ballot:   nil,
-		killch:   make(chan bool, 1),     // make sure sender won't block
-		listench: make(chan *Ballot, 1)}  // make sure sender won't block
+		killch:   make(chan bool, 1),    // make sure sender won't block
+		listench: make(chan *Ballot, 1)} // make sure sender won't block
 
 	go worker.listen()
 
@@ -579,7 +579,7 @@ func (p *pollWorker) close() {
 //
 func (w *pollWorker) listen() {
 
-	// If this loop terminates (e.g. due to panic), then make sure 
+	// If this loop terminates (e.g. due to panic), then make sure
 	// there is no outstanding ballot waiting for a result.   Close
 	// any channel for outstanding ballot such that the caller
 	// won't get blocked forever.
@@ -587,18 +587,18 @@ func (w *pollWorker) listen() {
 		if r := recover(); r != nil {
 			log.Printf("panic in pollWorker.listen() : %s\n", r)
 		}
-	
+
 		// make sure we close the ElectionSite first such that
 		// there is no new ballot coming while we are shutting
 		// down the pollWorker. If not, then the some go-routine
-		// may be waiting forever for the new ballot to complete. 
-	    common.SafeRun("pollWorker.listen()",
+		// may be waiting forever for the new ballot to complete.
+		common.SafeRun("pollWorker.listen()",
 			func() {
 				w.site.Close()
 			})
-		
-		// unlock anyone waiting for existing ballot to complete.	
-	    common.SafeRun("pollWorker.listen()",
+
+		// unlock anyone waiting for existing ballot to complete.
+		common.SafeRun("pollWorker.listen()",
 			func() {
 				if w.ballot != nil {
 					close(w.ballot.resultch)
@@ -611,17 +611,17 @@ func (w *pollWorker) listen() {
 	reqch := w.site.messenger.DefaultReceiveChannel()
 	duration := common.BALLOT_TIMEOUT
 	timeout := time.After(duration * time.Millisecond)
-	
+
 	for {
 		select {
-		case w.ballot = <-w.listench:   // listench should never close
+		case w.ballot = <-w.listench: // listench should never close
 			{
 				// Before listening to any vote, see if we reach quorum already.
-				// This should only happen if there is only one server in the 
-				// ensemble.  If this election is for solicit purpose, then 
+				// This should only happen if there is only one server in the
+				// ensemble.  If this election is for solicit purpose, then
 				// run election all the time.
 				if !w.site.solicitOnly &&
-				   w.checkQuorum(w.ballot.result.receivedVotes, w.ballot.result.proposed) {
+					w.checkQuorum(w.ballot.result.receivedVotes, w.ballot.result.proposed) {
 					w.site.master.setWinner(w.ballot.result)
 					w.ballot.resultch <- true
 					w.ballot = nil
@@ -643,21 +643,21 @@ func (w *pollWorker) listen() {
 				var obj interface{} = msg.Content
 				vote := obj.(VoteMsg)
 				voter := msg.Peer
-			
+
 				// If I am receiving a vote that just for soliciting my response,
 				// then respond with my winning vote only after I am confirmed as
 				// either a leader or follower.  This ensure that the watcher will
 				// only find a leader from a stable ensemble.  This also ensures
 				// that the watcher will only count the votes from active participant,
 				// therefore, it will not count from other watcher as well as its
-				// own vote (code path for handling votes from electing member will 
+				// own vote (code path for handling votes from electing member will
 				// never called for watcher).
 				if vote.GetSolicit() {
 					status := w.site.handler.GetStatus()
-					if  status == LEADING || status == FOLLOWING {
+					if status == LEADING || status == FOLLOWING {
 						w.respondInquiry(voter, vote)
 					}
-				 	continue	
+					continue
 				}
 
 				// Check if the voter is in the ensemble
@@ -666,7 +666,7 @@ func (w *pollWorker) listen() {
 				}
 
 				if w.ballot == nil {
-					// If there is no ballot or the vote is from a watcher, 
+					// If there is no ballot or the vote is from a watcher,
 					// then just need to respond if I have a winner.
 					w.respondInquiry(voter, vote)
 
@@ -674,8 +674,8 @@ func (w *pollWorker) listen() {
 					// we achieve quorum, set the winner.
 					// setting the winner and usetting the ballot
 					// should be done together.
-		            // NOTE: ZK does not notify other peers when this node has
-		            // select a leader 
+					// NOTE: ZK does not notify other peers when this node has
+					// select a leader
 					w.site.master.setWinner(w.ballot.result)
 					w.ballot.resultch <- true
 					w.ballot = nil
@@ -713,7 +713,7 @@ func (w *pollWorker) respondInquiry(voter net.Addr, vote VoteMsg) {
 
 	if PeerStatus(vote.GetStatus()) == ELECTING {
 		// Make sure that we only send this when there is a winning vote, such
-		// that the vote has a majority support. 
+		// that the vote has a majority support.
 		msg := w.site.master.cloneWinningVote()
 		if msg != nil {
 			// send the winning vote if there is no error
@@ -743,8 +743,8 @@ func (w *pollWorker) handleVoteForElectingPeer(voter net.Addr, vote VoteMsg) boo
 
 	// compare the round.  When there are electing peers, they will eventually
 	// converge to the same round when quorum is reached.  This implies that
-	// an established ensemble should share the same round, and this value 
-	// remains stable for the ensemble.  
+	// an established ensemble should share the same round, and this value
+	// remains stable for the ensemble.
 	compareRound := w.compareRound(vote)
 
 	// if the incoming vote has a greater round, re-ballot.
@@ -753,7 +753,7 @@ func (w *pollWorker) handleVoteForElectingPeer(voter net.Addr, vote VoteMsg) boo
 		// update the current round.  This need to be done
 		// before updateProposed() is called.
 		w.site.master.setCurrentRound(vote.GetRound())
-		
+
 		if w.compareVoteWithCurState(vote) == common.GREATER {
 			// Update my vote if the incoming vote is larger.
 			w.ballot.resetAndUpdateProposed(vote, w.site)
@@ -774,7 +774,7 @@ func (w *pollWorker) handleVoteForElectingPeer(voter net.Addr, vote VoteMsg) boo
 		// update myself to the incoming vote and broadcast my new vote
 		if w.compareVoteWithProposed(vote) == common.GREATER {
 			// update and notify that our new vote
-		    w.ballot.updateProposed(vote, w.site)
+			w.ballot.updateProposed(vote, w.site)
 			w.site.messenger.Multicast(w.cloneProposedVote(), w.site.ensemble)
 
 			// Add this vote to the received list.  Note that even if
@@ -805,13 +805,13 @@ func (w *pollWorker) handleVoteForElectingPeer(voter net.Addr, vote VoteMsg) boo
 // Handle a new vote from a leader or follower.   This implies that this vote
 // has already reached quorum and this node belongs to the quorum.  When we
 // reach this method, it can be:
-// 1) An new ensemble is converging from a set of electing nodes.  So nodes are 
-//    reaching this conclusion faster than I am. 
+// 1) An new ensemble is converging from a set of electing nodes.  So nodes are
+//    reaching this conclusion faster than I am.
 // 2) I am joining an established ensemble (I rejoin the network or restart).
 // 3) A node from an established ensemble responds to me, but the ensemble
-//    could soon be dissolve (lose majority) after the node sends the message. 
-// 4) An rogue node re-join the network while I am running election 
-//    (due to bug/race condition?).    
+//    could soon be dissolve (lose majority) after the node sends the message.
+// 4) An rogue node re-join the network while I am running election
+//    (due to bug/race condition?).
 //
 func (w *pollWorker) handleVoteForActivePeer(voter net.Addr, vote VoteMsg) bool {
 
@@ -824,18 +824,18 @@ func (w *pollWorker) handleVoteForActivePeer(voter net.Addr, vote VoteMsg) bool 
 		// this vote to the list of received votes.  All the received votes
 		// are from the same round.  If we get a quorum from the received
 		// votes, then announce the result.
-		// NOTE: ZK does not check the epoch nor update the proposed vote upon 
-		// receiving a vote from an active member (unlike receiving a vote from 
-		// electing peer).  This implies that if this is a rogue vote (a node 
-		// sends out a vote and the ensemble loses majority), the election alogrithm 
+		// NOTE: ZK does not check the epoch nor update the proposed vote upon
+		// receiving a vote from an active member (unlike receiving a vote from
+		// electing peer).  This implies that if this is a rogue vote (a node
+		// sends out a vote and the ensemble loses majority), the election alogrithm
 		// will not get affected -- it can still converge if there is majority of
 		// electing peer to reach quorum.  If the established ensmeble remains stable,
-		// then there should be enough active member responds to me and I will 
-		// eventually reach quorum (based on ballot.result.activePeers -- see below). 
+		// then there should be enough active member responds to me and I will
+		// eventually reach quorum (based on ballot.result.activePeers -- see below).
 		w.ballot.result.receivedVotes[voter.String()] = vote
 
 		if w.checkQuorum(w.ballot.result.receivedVotes, vote) && w.certifyLeader(vote) {
-			// accept this vote from the peer 
+			// accept this vote from the peer
 			w.ballot.updateProposed(vote, w.site)
 			return true
 		}
@@ -843,9 +843,9 @@ func (w *pollWorker) handleVoteForActivePeer(voter net.Addr, vote VoteMsg) bool 
 
 	// The active peer has chosen a leader, but we cannot confirm it yet.
 	// Keep the active peer onto a different list, since receivedVotes
-	// can be reset (all received votes must be from the same round).  
-	// If this peer goes down after sending us his vote, his vote still count 
-	// in this ballot.  By calling certifyLeader(), we can also makes sure that 
+	// can be reset (all received votes must be from the same round).
+	// If this peer goes down after sending us his vote, his vote still count
+	// in this ballot.  By calling certifyLeader(), we can also makes sure that
 	// the candidate has established itself to us as a leader.
 	w.ballot.result.activePeers[voter.String()] = vote
 
@@ -853,11 +853,11 @@ func (w *pollWorker) handleVoteForActivePeer(voter net.Addr, vote VoteMsg) bool 
 	// can have a different round than mime.   There may already be an established
 	// ensemble and I am merely trying to join them.
 	if w.checkQuorum(w.ballot.result.activePeers, vote) && w.certifyLeader(vote) {
-		
+
 		w.ballot.updateProposed(vote, w.site)
 		return true
 	}
-	
+
 	return false
 }
 
@@ -884,19 +884,19 @@ func (w *pollWorker) compareRound(vote VoteMsg) common.CompareResult {
 //
 func (w *pollWorker) compareVote(vote1, vote2 VoteMsg) common.CompareResult {
 
-	// Vote with the larger epoch always is larger 
+	// Vote with the larger epoch always is larger
 	result := common.CompareEpoch(vote1.GetEpoch(), vote2.GetEpoch())
-	
+
 	if result == common.MORE_RECENT {
 		return common.GREATER
 	}
-	
+
 	if result == common.LESS_RECENT {
 		return common.LESSER
 	}
 
 	// If a candidate has a larger logged txid, it means the candidate
-	// has processed more proposals.   This vote is larger. 
+	// has processed more proposals.   This vote is larger.
 	if vote1.GetCndLoggedTxnId() > vote2.GetCndLoggedTxnId() {
 		return common.GREATER
 	}
@@ -905,10 +905,10 @@ func (w *pollWorker) compareVote(vote1, vote2 VoteMsg) common.CompareResult {
 		return common.LESSER
 	}
 
-	// This candidate has the same number of proposals in his committed log as 
-	// the other one. But if a candidate has a larger committed txid, 
+	// This candidate has the same number of proposals in his committed log as
+	// the other one. But if a candidate has a larger committed txid,
 	// it means this candidate also has processed more commit messages from the
-	// previous leader.   This vote is larger. 
+	// previous leader.   This vote is larger.
 	if vote1.GetCndCommittedTxnId() > vote2.GetCndCommittedTxnId() {
 		return common.GREATER
 	}
@@ -954,7 +954,7 @@ func (w *pollWorker) acceptAndCheckQuorum(voter net.Addr, vote VoteMsg) bool {
 
 	// Remember this peer's vote.  Note that ZK never takes away a voter's votes
 	// even if the voter has gone down (ZK would not know).  But ZK will ensure
-	// that the new leader will have a quorum of followers (in synchronization/recovery 
+	// that the new leader will have a quorum of followers (in synchronization/recovery
 	// phase) before the ensemble become stable.
 	w.ballot.result.receivedVotes[voter.String()] = vote
 	return w.checkQuorum(w.ballot.result.receivedVotes, w.ballot.result.proposed)
@@ -983,7 +983,7 @@ func (w *pollWorker) checkQuorum(votes map[string]VoteMsg, candidate VoteMsg) bo
 			count++
 		}
 	}
-	
+
 	return w.site.handler.GetQuorumVerifier().HasQuorum(count)
 }
 

@@ -1,10 +1,10 @@
 package main
 
 import (
-	"os"
-	"log"
 	"flag"
 	"github.com/couchbase/gometa/server"
+	"log"
+	"os"
 )
 
 //
@@ -24,7 +24,7 @@ func main() {
 		runTestClient(config)
 		os.Exit(0)
 	}
-	
+
 	if isWatcher == "true" {
 		runWatcher(config)
 		os.Exit(0)
@@ -32,9 +32,9 @@ func main() {
 
 	err := server.RunServer(config)
 	if err != nil {
-		log.Printf("Encounter Error = %s. Terminate server", err.Error())	
+		log.Printf("Encounter Error = %s. Terminate server", err.Error())
 		os.Exit(1)
 	}
 
-	os.Exit(0) 
+	os.Exit(0)
 }

@@ -139,7 +139,7 @@ func (req *FollowerInfo) Print() {
 	log.Printf("	AcceptedEpoch : %d", req.GetAcceptedEpoch())
 	log.Printf("	Voting        : %s", strconv.FormatBool(req.GetVoting()))
 }
-   	
+
 //
 // EpochAck - implement Packet interface
 //

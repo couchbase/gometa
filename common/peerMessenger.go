@@ -3,8 +3,8 @@ package common
 import (
 	"log"
 	"net"
-	"sync"
 	"runtime/debug"
+	"sync"
 )
 
 /////////////////////////////////////////////////
@@ -70,15 +70,15 @@ func NewPeerMessenger(laddr string, splitter map[string]chan *Message) (*PeerMes
 // Return the default receive channel.  If a splitter is specified, then
 // it will first use the channel in the splitter map.  If the splitter is
 // not specified or the splitter map does not map to a channel, then
-// the default receive channel is used.   
+// the default receive channel is used.
 //
 func (p *PeerMessenger) DefaultReceiveChannel() <-chan *Message {
 
 	// Just return receivech even if it is closed.  The caller
 	// can tell if the channel is closed by using multi-value
-	// recieve operator.  Returning a nil channel can cause 
+	// recieve operator.  Returning a nil channel can cause
 	// the caller being block forever.
-	// 
+	//
 	return (<-chan *Message)(p.receivech)
 }
 
@@ -111,13 +111,13 @@ func (p *PeerMessenger) GetLocalAddr() string {
 func (p *PeerMessenger) Close() bool {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	
+
 	if !p.isClosed {
-	
-		log.Printf("PeerMessenger.Close() : Local Addr %s", p.GetLocalAddr())	
+
+		log.Printf("PeerMessenger.Close() : Local Addr %s", p.GetLocalAddr())
 		log.Printf("PeerMessenger.Close() : Diagnostic Stack ...")
 		log.Printf("%s", debug.Stack())
-		
+
 		p.isClosed = true
 
 		SafeRun("PeerMessenger.Close()",
@@ -227,11 +227,11 @@ func (p *PeerMessenger) doSend() {
 
 		log.Printf("PeerMessenger.doSend() : Preparing message %s to Peer %s", msg.Content.Name(), msg.Peer.String())
 		msg.Content.Print()
-		
+
 		serialized, err := Marshall(msg.Content)
 		if err != nil {
 			log.Printf("PeerMessenger.doSend() : Fail to marshall message to Peer %s", msg.Peer.String())
-		 	continue	
+			continue
 		}
 		size := len(serialized)
 
@@ -239,8 +239,8 @@ func (p *PeerMessenger) doSend() {
 		log.Printf("PeerMessenger.doSend() : Sending message %s (len %d) to Peer %s", msg.Content.Name(), size, msg.Peer.String())
 		n, err := p.conn.WriteTo(serialized, msg.Peer)
 		if n < size || err != nil {
-			log.Printf("PeerMessenger.doSend() : ecounter error when sending mesasage to Peer %s.  Error = %s", 
-					msg.Peer.String(), err.Error())
+			log.Printf("PeerMessenger.doSend() : ecounter error when sending mesasage to Peer %s.  Error = %s",
+				msg.Peer.String(), err.Error())
 		}
 	}
 }
@@ -254,7 +254,7 @@ func (p *PeerMessenger) doReceive() {
 		if r := recover(); r != nil {
 			log.Printf("panic in PeerMessenger.doReceive() : %s\n", r)
 		}
-		
+
 		// This will close the Send and Receive channel
 		p.Close()
 	}()
@@ -265,8 +265,8 @@ func (p *PeerMessenger) doReceive() {
 		buf := make([]byte, MAX_DATAGRAM_SIZE)
 		n, peer, err := p.conn.ReadFrom(buf)
 		if err != nil {
-			log.Printf("PeerMessenger.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Terminate.", 
-						err.Error())
+			log.Printf("PeerMessenger.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Terminate.",
+				err.Error())
 			return
 		}
 		log.Printf("PeerMessenger.doRecieve() : Receiving message from Peer %s, bytes read %d", peer.String(), n)
@@ -275,14 +275,14 @@ func (p *PeerMessenger) doReceive() {
 		// skip the first 8 bytes (total len)
 		packet, err := UnMarshall(buf[8:n])
 		if err != nil {
-			log.Printf("PeerMessenger.doRecieve() : ecounter error when unmarshalling mesasage from Peer.  Error = %s. Terminate.", 
-						err.Error())
+			log.Printf("PeerMessenger.doRecieve() : ecounter error when unmarshalling mesasage from Peer.  Error = %s. Terminate.",
+				err.Error())
 			break
 		}
 		log.Printf("PeerMessenger.doRecieve() : Message decoded.  Packet = %s", packet.Name())
 		packet.Print()
 
-		// This can block if the reciever of the channel is slow or terminated premauturely (which cause channel to filled up). 
+		// This can block if the reciever of the channel is slow or terminated premauturely (which cause channel to filled up).
 		// In this case, this can cause the UDP connection to fail such that other nodes will no longer send message to this node.
 		p.queue(&Message{Content: packet, Peer: peer})
 	}
@@ -308,7 +308,7 @@ func (p *PeerMessenger) queue(message *Message) {
 }
 
 //
-// Get a connection to receive packet 
+// Get a connection to receive packet
 //
 func getConn(laddr string) (net.PacketConn, error) {
 

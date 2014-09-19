@@ -4,8 +4,8 @@ import (
 	"encoding/binary"
 	"log"
 	"net"
-	"sync"
 	"runtime/debug"
+	"sync"
 )
 
 /////////////////////////////////////////////////
@@ -54,15 +54,15 @@ func (p *PeerPipe) GetAddr() string {
 }
 
 //
-// Return the receive channel.  
+// Return the receive channel.
 //
 func (p *PeerPipe) ReceiveChannel() <-chan Packet {
 
 	// Just return receivech even if it is closed.  The caller
 	// can tell if the channel is closed by using multi-value
-	// recieve operator.  Returning a nil channel can cause 
+	// recieve operator.  Returning a nil channel can cause
 	// the caller being block forever.
-	// 
+	//
 	return (<-chan Packet)(p.receivech)
 }
 
@@ -73,9 +73,9 @@ func (p *PeerPipe) ReceiveChannel() <-chan Packet {
 func (p *PeerPipe) Close() bool {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	
+
 	if !p.isClosed {
-	
+
 		log.Printf("PeerPipe.Close(): Remote Address %s", p.GetAddr())
 		log.Printf("PeerPipe.Close() : Diagnostic Stack ...")
 		log.Printf("%s", debug.Stack())
@@ -140,13 +140,13 @@ func (p *PeerPipe) doSend() {
 			log.Printf("PeerPipe.doSend() : Send channel closed.  Terminate.")
 			return
 		}
-		
+
 		log.Printf("PeerPipe.doSend() : Prepare to send message %s to Peer %s", packet.Name(), p.GetAddr())
 		packet.Print()
 
 		msg, err := Marshall(packet)
 		if err != nil {
-		    log.Printf("PeerPipe.doSend() : Fail to marshall message %s to Peer %s. Terminate.", packet.Name(), p.GetAddr()) 
+			log.Printf("PeerPipe.doSend() : Fail to marshall message %s to Peer %s. Terminate.", packet.Name(), p.GetAddr())
 			return
 		}
 		size := len(msg)
@@ -157,8 +157,8 @@ func (p *PeerPipe) doSend() {
 		if n < size || err != nil {
 			// Network error. Close the loop.  The pipe will
 			// close and cause subsequent Send() to fail.
-			log.Printf("PeerPipe.doSend() : ecounter error when sending mesasage to Peer %s.  Error = %s.  Terminate.", 
-					p.GetAddr(), err.Error())
+			log.Printf("PeerPipe.doSend() : ecounter error when sending mesasage to Peer %s.  Error = %s.  Terminate.",
+				p.GetAddr(), err.Error())
 			return
 		}
 	}
@@ -185,8 +185,8 @@ func (p *PeerPipe) doReceive() {
 		log.Printf("PeerPipe.doRecieve() : Receiving message from Peer %s, bytes read %d", p.GetAddr(), n)
 		if n < 8 || err != nil {
 			// if encountering an error, kill the pipe.
-			log.Printf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Kill Pipe.", 
-						err.Error())
+			log.Printf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Kill Pipe.",
+				err.Error())
 			return
 		}
 
@@ -196,25 +196,25 @@ func (p *PeerPipe) doReceive() {
 		n, err = p.conn.Read(buf)
 		if uint64(n) < size || err != nil {
 			// if encountering an error, kill the pipe.
-			log.Printf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Kill Pipe.", 
-						err.Error())
+			log.Printf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Kill Pipe.",
+				err.Error())
 			return
 		}
 		log.Printf("PeerPipe.doRecieve() : Receiving message from Peer %s, bytes read %d", p.GetAddr(), n)
-		
+
 		// unmarshall the content and put it in the channel
 		packet, err := UnMarshall(buf)
 		if err != nil {
-			log.Printf("PeerPipe.doRecieve() : ecounter error when unmarshalling mesasage from Peer.  Error = %s. Terminate.", 
-					err.Error())	
+			log.Printf("PeerPipe.doRecieve() : ecounter error when unmarshalling mesasage from Peer.  Error = %s. Terminate.",
+				err.Error())
 			return
 		}
 		log.Printf("PeerPipe.doRecieve() : Message decoded.  Packet = %s", packet.Name())
 		packet.Print()
-	
-		// This can block if the reciever of the channel is slow or terminated premauturely (which cause channel to fill up).   
+
+		// This can block if the reciever of the channel is slow or terminated premauturely (which cause channel to fill up).
 		// In this case, this can cause the TCP connection to fail.  The other end of the pipe will close as a result
-		// of this.  This end of the pipe will eventually close since it can no longer send message to the other end.   
+		// of this.  This end of the pipe will eventually close since it can no longer send message to the other end.
 		p.queue(packet)
 	}
 }

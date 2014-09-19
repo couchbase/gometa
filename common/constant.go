@@ -1,8 +1,8 @@
 package common
 
 import (
-	"time"
 	"math"
+	"time"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -27,18 +27,17 @@ var MAX_RETRY_BACKOFF time.Duration = 10000                          // max back
 var REPOSITORY_NAME = "MetadataStore"                                // Forest db name for metadata store
 var PREFIX_SERVER_CONFIG_PATH = "/couchbase/cstore/1/server/config/" // Directory prefix for server config
 var PREFIX_COMMIT_LOG_PATH = "/couchbase/cstore/100/commitlog/"      // Directory prefix for commit log
-var PREFIX_DATA_PATH = "/couchbase/cstore/200/data/"                 // Directory prefix for user data 
+var PREFIX_DATA_PATH = "/couchbase/cstore/200/data/"                 // Directory prefix for user data
 var CONFIG_ACCEPTED_EPOCH = "AcceptedEpoch"                          // Server Config Param : AcceptedEpoch
 var CONFIG_CURRENT_EPOCH = "CurrentEpoch"                            // Server Config Param : CurrentEpoch
 var CONFIG_LAST_LOGGED_TXID = "LastLoggedTxid"                       // Server Config Param : LastLoggedTxid
 var CONFIG_LAST_COMMITTED_TXID = "LastCommittedTxid"                 // Server Config Param : LastCommittedTxid
-var CONFIG_MAGIC = "MagicNumber"                                     // Server Config Param : Magic Number 
+var CONFIG_MAGIC = "MagicNumber"                                     // Server Config Param : Magic Number
 var CONFIG_MAGIC_VALUE uint64 = 0x0123456789                         // Server Config Param : Magic Number Value
-var MAX_EPOCH uint32 = math.MaxUint32                                // Max value for epoch 
-var MAX_COUNTER uint32 = math.MaxUint32                              // Max value for counter 
+var MAX_EPOCH uint32 = math.MaxUint32                                // Max value for epoch
+var MAX_COUNTER uint32 = math.MaxUint32                              // Max value for counter
 var BOOTSTRAP_LAST_COMMITTED_TXID Txnid = Txnid(0)                   // Boostrap value of last committed txid
 var BOOTSTRAP_LAST_LOGGED_TXID Txnid = Txnid(0)                      // Boostrap value of last logged txid
-var BOOTSTRAP_CURRENT_EPOCH uint32 = 0                      		 // Boostrap value of current epoch 
-var BOOTSTRAP_ACCEPTED_EPOCH uint32 = 0                      		 // Boostrap value of accepted epoch 
-var TCP_KEEP_ALIVE_PERIOD time.Duration = 100 * time.Millisecond	 // TCP keep alive period
-
+var BOOTSTRAP_CURRENT_EPOCH uint32 = 0                               // Boostrap value of current epoch
+var BOOTSTRAP_ACCEPTED_EPOCH uint32 = 0                              // Boostrap value of accepted epoch
+var TCP_KEEP_ALIVE_PERIOD time.Duration = 100 * time.Millisecond     // TCP keep alive period

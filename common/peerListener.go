@@ -3,8 +3,8 @@ package common
 import (
 	"log"
 	"net"
-	"sync"
 	"runtime/debug"
+	"sync"
 )
 
 /////////////////////////////////////////////////
@@ -50,8 +50,6 @@ func StartPeerListener(laddr string) (*PeerListener, error) {
 	return listener, nil
 }
 
-
-
 //
 // Get the channel for new peer connection request.
 // Return nil if the listener is closed. The consumer
@@ -79,7 +77,7 @@ func (l *PeerListener) Close() bool {
 
 	if !l.isClosed {
 		l.isClosed = true
-		
+
 		log.Printf("PeerListener.Close(): local address %s", l.naddr)
 		log.Printf("PeerListener.Close() : Diagnostic Stack ...")
 		log.Printf("%s", debug.Stack())

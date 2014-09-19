@@ -1,10 +1,10 @@
-package action 
+package action
 
 import (
+	"fmt"
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/message"
 	"github.com/couchbase/gometa/protocol"
-	"fmt"
 	repo "github.com/couchbase/gometa/repository"
 )
 
@@ -13,11 +13,11 @@ import (
 /////////////////////////////////////////////////////////////////////////////
 
 type ServerCallback interface {
-	GetStatus() protocol.PeerStatus 
+	GetStatus() protocol.PeerStatus
 	UpdateStateOnNewProposal(proposal protocol.ProposalMsg)
 	UpdateStateOnCommit(txnid common.Txnid, key string)
 	UpdateWinningEpoch(epoch uint32)
-	GetEnsembleSize() uint64 
+	GetEnsembleSize() uint64
 	GetFollowerId() string
 }
 
@@ -27,52 +27,52 @@ type DefaultServerCallback interface {
 }
 
 type ServerAction struct {
-	repo    	*repo.Repository
-	log     	*repo.CommitLog
-	config  	*repo.ServerConfig
-	server  	ServerCallback
-	factory 	protocol.MsgFactory
-	verifier   	protocol.QuorumVerifier
+	repo     *repo.Repository
+	log      *repo.CommitLog
+	config   *repo.ServerConfig
+	server   ServerCallback
+	factory  protocol.MsgFactory
+	verifier protocol.QuorumVerifier
 }
 
 ////////////////////////////////////////////////////////////////////////////
 // Public Function
 /////////////////////////////////////////////////////////////////////////////
 
-func NewDefaultServerAction(repository	*repo.Repository,
-							server		DefaultServerCallback) *ServerAction {
+func NewDefaultServerAction(repository *repo.Repository,
+	server DefaultServerCallback) *ServerAction {
 
 	log := repo.NewCommitLog(repository)
 	config := repo.NewServerConfig(repository)
-	factory := message.NewConcreteMsgFactory()							
-	
+	factory := message.NewConcreteMsgFactory()
+
 	return &ServerAction{
-		repo: 		repository,
-		log:     	log,
-		config:  	config,
-		server:  	server,
-		factory: 	factory,
-		verifier: 	server}
+		repo:     repository,
+		log:      log,
+		config:   config,
+		server:   server,
+		factory:  factory,
+		verifier: server}
 }
 
-func NewServerAction(repo 		*repo.Repository,
-					 log 		*repo.CommitLog,
-					 config		*repo.ServerConfig,	
-					 server		ServerCallback,
-					 factory	protocol.MsgFactory,
-					 verifier   protocol.QuorumVerifier) *ServerAction {
+func NewServerAction(repo *repo.Repository,
+	log *repo.CommitLog,
+	config *repo.ServerConfig,
+	server ServerCallback,
+	factory protocol.MsgFactory,
+	verifier protocol.QuorumVerifier) *ServerAction {
 
 	return &ServerAction{
-		repo: 		repo,
-		log:     	log,
-		config:  	config,
-		server:  	server,
-		factory: 	factory,
-		verifier: 	verifier}
+		repo:     repo,
+		log:      log,
+		config:   config,
+		server:   server,
+		factory:  factory,
+		verifier: verifier}
 }
 
 ////////////////////////////////////////////////////////////////////////////
-// Server Action for Environment 
+// Server Action for Environment
 /////////////////////////////////////////////////////////////////////////////
 
 func (a *ServerAction) GetEnsembleSize() uint64 {
@@ -94,11 +94,11 @@ func (a *ServerAction) Commit(txid common.Txnid) error {
 	if err != nil {
 		return err
 	}
-	
+
 	if err := a.persistChange(opCode, key, content); err != nil {
 		return err
 	}
-	
+
 	if err := a.config.SetLastCommittedTxid(txid); err != nil {
 		return err
 	}
@@ -114,7 +114,7 @@ func (a *ServerAction) LogProposal(p protocol.ProposalMsg) error {
 	if err != nil {
 		return err
 	}
-	
+
 	a.server.UpdateStateOnNewProposal(p)
 
 	return nil
@@ -156,30 +156,30 @@ func (a *ServerAction) GetAcceptedEpoch() (uint32, error) {
 
 func (a *ServerAction) NotifyNewAcceptedEpoch(epoch uint32) error {
 	oldEpoch, _ := a.GetAcceptedEpoch()
-	
+
 	// update only if the new epoch is larger
-	if oldEpoch < epoch {  
+	if oldEpoch < epoch {
 		err := a.config.SetAcceptedEpoch(epoch)
 		if err != nil {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 
 func (a *ServerAction) NotifyNewCurrentEpoch(epoch uint32) error {
 	oldEpoch, _ := a.GetCurrentEpoch()
-	
+
 	// update only if the new epoch is larger
-	if oldEpoch < epoch {  
+	if oldEpoch < epoch {
 		err := a.config.SetCurrentEpoch(epoch)
 		if err != nil {
 			return err
 		}
 		a.server.UpdateWinningEpoch(epoch)
 	}
-	
+
 	return nil
 }
 
@@ -187,7 +187,7 @@ func (a *ServerAction) NotifyNewCurrentEpoch(epoch uint32) error {
 // Function for discovery phase
 /////////////////////////////////////////////////////////////////////////////
 
-func (a *ServerAction) GetCommitedEntries(txid1, txid2 common.Txnid) (<- chan protocol.LogEntryMsg, <- chan error, chan <- bool, error) {
+func (a *ServerAction) GetCommitedEntries(txid1, txid2 common.Txnid) (<-chan protocol.LogEntryMsg, <-chan error, chan<- bool, error) {
 
 	// Get an iterator thas has exclusive write access.  This means there will not be
 	// new commit entry being written while iterating.
@@ -215,24 +215,24 @@ func (a *ServerAction) startLogStreamer(startTxid common.Txnid,
 	defer iter.Close()
 
 	// TODO : Need to lock the commitLog so there is no new commit while streaming
-	
-	txnid, op, key, body, err := iter.Next() 
-	for err == nil  {
-		// only stream entry with a txid greater than the given one.  The caller would already 
+
+	txnid, op, key, body, err := iter.Next()
+	for err == nil {
+		// only stream entry with a txid greater than the given one.  The caller would already
 		// have the entry for startTxid. If the caller use the boostrap value for txnid (0),
 		// then this will stream everything.
 		if txnid > startTxid {
 			msg := a.factory.CreateLogEntry(uint64(txnid), uint32(op), key, body)
 			select {
-				case logChan <- msg:
-				case _ = <- killChan :
-					break
+			case logChan <- msg:
+			case _ = <-killChan:
+				break
 			}
 		}
 		txnid, op, key, body, err = iter.Next()
 	}
 
-	// Nothing more to send.  The entries will be in the channel until the reciever consumes them. 
+	// Nothing more to send.  The entries will be in the channel until the reciever consumes them.
 	close(logChan)
 	close(errChan)
 }
@@ -244,15 +244,15 @@ func (a *ServerAction) LogAndCommit(txid common.Txnid, op uint32, key string, co
 	if err := a.appendCommitLog(txid, common.OpCode(op), key, content); err != nil {
 		return err
 	}
-	
+
 	if toCommit {
 		if err := a.persistChange(common.OpCode(op), key, content); err != nil {
 			return err
 		}
-		
+
 		return a.config.SetLastCommittedTxid(txid)
 	}
-	
+
 	return nil
 }
 
@@ -273,13 +273,13 @@ func (a *ServerAction) Get(key string) ([]byte, error) {
 func (a *ServerAction) persistChange(op common.OpCode, key string, content []byte) error {
 
 	newKey := fmt.Sprintf("%s%s", common.PREFIX_DATA_PATH, key)
-	
+
 	if op == common.OPCODE_ADD {
-		return a.repo.Set(newKey, content) 
+		return a.repo.Set(newKey, content)
 	}
-		
+
 	if op == common.OPCODE_SET {
-		return a.repo.Set(newKey, content) 
+		return a.repo.Set(newKey, content)
 	}
 
 	if op == common.OPCODE_DELETE {
@@ -295,10 +295,10 @@ func (a *ServerAction) appendCommitLog(txnid common.Txnid, opCode common.OpCode,
 	if err := a.log.Log(txnid, opCode, key, content); err != nil {
 		return err
 	}
-	
+
 	if err := a.config.SetLastLoggedTxid(txnid); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
