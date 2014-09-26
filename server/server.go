@@ -20,6 +20,7 @@ type Server struct {
 	repo        *r.Repository
 	log         *r.CommitLog
 	srvConfig   *r.ServerConfig
+	txn         *common.TxnState
 	state       *ServerState
 	site        *protocol.ElectionSite
 	factory     protocol.MsgFactory
@@ -95,20 +96,23 @@ func (s *Server) bootstrap() (err error) {
 	s.log = r.NewCommitLog(s.repo)
 	s.srvConfig = r.NewServerConfig(s.repo)
 
+	// Create and initialize new txn state.
+	s.txn = common.NewTxnState()
+
 	// initialize the current transaction id to the lastLoggedTxid.  This
 	// is the txid that this node has seen so far.  If this node becomes
 	// the leader, a new epoch will be used and new current txid will
-	// be generated.
+	// be generated. So no need to initialize the epoch at this point.
 	lastLoggedTxid, err := s.srvConfig.GetLastLoggedTxnId()
 	if err != nil {
 		return err
 	}
-	common.InitCurrentTxnid(common.Txnid(lastLoggedTxid))
+	s.txn.InitCurrentTxnid(common.Txnid(lastLoggedTxid))
 
 	// Initialize various callback facility for leader election and
 	// voting protocol.
 	s.factory = message.NewConcreteMsgFactory()
-	s.handler = action.NewServerAction(s.repo, s.log, s.srvConfig, s, s.factory, s)
+	s.handler = action.NewServerAction(s.repo, s.log, s.srvConfig, s, s.txn, s.factory, s)
 	s.skillch = make(chan bool, 1) // make it buffered to unblock sender
 	s.site = nil
 
@@ -486,7 +490,7 @@ func (s *Server) UpdateWinningEpoch(epoch uint32) {
 	s.site.UpdateWinningEpoch(epoch)
 
 	// any new tnxid from now on will use the new epoch
-	common.SetEpoch(epoch)
+	s.txn.SetEpoch(epoch)
 }
 
 func (s *Server) GetPeerUDPAddr() []string {

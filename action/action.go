@@ -30,6 +30,7 @@ type ServerAction struct {
 	repo     *repo.Repository
 	log      *repo.CommitLog
 	config   *repo.ServerConfig
+	txn      *common.TxnState
 	server   ServerCallback
 	factory  protocol.MsgFactory
 	verifier protocol.QuorumVerifier
@@ -40,7 +41,8 @@ type ServerAction struct {
 /////////////////////////////////////////////////////////////////////////////
 
 func NewDefaultServerAction(repository *repo.Repository,
-	server DefaultServerCallback) *ServerAction {
+	server DefaultServerCallback,
+	txn *common.TxnState) *ServerAction {
 
 	log := repo.NewCommitLog(repository)
 	config := repo.NewServerConfig(repository)
@@ -50,6 +52,7 @@ func NewDefaultServerAction(repository *repo.Repository,
 		repo:     repository,
 		log:      log,
 		config:   config,
+		txn:      txn,
 		server:   server,
 		factory:  factory,
 		verifier: server}
@@ -59,6 +62,7 @@ func NewServerAction(repo *repo.Repository,
 	log *repo.CommitLog,
 	config *repo.ServerConfig,
 	server ServerCallback,
+	txn *common.TxnState,
 	factory protocol.MsgFactory,
 	verifier protocol.QuorumVerifier) *ServerAction {
 
@@ -66,6 +70,7 @@ func NewServerAction(repo *repo.Repository,
 		repo:     repo,
 		log:      log,
 		config:   config,
+		txn:      txn,
 		server:   server,
 		factory:  factory,
 		verifier: verifier}
@@ -122,6 +127,10 @@ func (a *ServerAction) LogProposal(p protocol.ProposalMsg) error {
 
 func (a *ServerAction) GetFollowerId() string {
 	return a.server.GetFollowerId()
+}
+
+func (a *ServerAction) GetNextTxnId() common.Txnid {
+	return a.txn.GetNextTxnId()
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -264,6 +273,11 @@ func (a *ServerAction) Get(key string) ([]byte, error) {
 
 	newKey := fmt.Sprintf("%s%s", common.PREFIX_DATA_PATH, key)
 	return a.repo.Get(newKey)
+}
+
+func (a *ServerAction) Set(key string, content []byte) error {
+	newKey := fmt.Sprintf("%s%s", common.PREFIX_DATA_PATH, key)
+	return a.repo.Set(newKey, content)
 }
 
 ////////////////////////////////////////////////////////////////////////////

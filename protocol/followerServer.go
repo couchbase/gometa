@@ -42,11 +42,12 @@ func RunFollowerServer(naddr string,
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in RunFollowerServer() : %s\n", r)
+			log.Printf("%s", debug.Stack())
 			err = r.(error)
+		} else if common.Debug() {
+			log.Printf("RunFollowerServer terminates : Diagnostic Stack ...")
+			log.Printf("%s", debug.Stack())
 		}
-
-		log.Printf("RunFollowerServer terminates : Diagnostic Stack ...")
-		log.Printf("%s", debug.Stack())
 	}()
 
 	// create connection to leader

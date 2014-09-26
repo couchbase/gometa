@@ -14,6 +14,7 @@ type fakeServer struct {
 	repo    *repo.Repository
 	factory protocol.MsgFactory
 	handler *action.ServerAction
+	txn     *common.TxnState
 	killch  chan bool
 	status  protocol.PeerStatus
 }
@@ -86,8 +87,9 @@ func (s *fakeServer) bootstrap() (err error) {
 		return err
 	}
 
+	s.txn = common.NewTxnState()
 	s.factory = message.NewConcreteMsgFactory()
-	s.handler = action.NewDefaultServerAction(s.repo, s)
+	s.handler = action.NewDefaultServerAction(s.repo, s, s.txn)
 	s.killch = make(chan bool, 1) // make it buffered to unblock sender
 	s.status = protocol.ELECTING
 

@@ -7,34 +7,45 @@ import (
 
 type Txnid uint64
 
-var gEpoch uint64 = 0
-var gCounter uint64 = 0
-var gMutex sync.Mutex
-var gCurTxnid Txnid = 0
+type TxnState struct {
+	epoch    uint64
+	counter  uint64
+	mutex    sync.Mutex
+	curTxnid Txnid
+}
 
-func GetNextTxnId() Txnid {
-	gMutex.Lock()
-	defer gMutex.Unlock()
+func NewTxnState() *TxnState {
+	state := new(TxnState)
+	state.epoch = 0
+	state.counter = 0
+	state.curTxnid = 0
+
+	return state
+}
+
+func (t *TxnState) GetNextTxnId() Txnid {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 
 	// Increment the epoch. If the counter overflows, panic.
-	if gCounter == uint64(MAX_COUNTER) {
-		panic(fmt.Sprintf("Counter overflows for epoch %d", gEpoch))
+	if t.counter == uint64(MAX_COUNTER) {
+		panic(fmt.Sprintf("Counter overflows for epoch %d", t.epoch))
 	}
-	gCounter++
+	t.counter++
 
-	epoch := uint64(gEpoch << 32)
-	newTxnid := Txnid(epoch + gCounter)
+	epoch := uint64(t.epoch << 32)
+	newTxnid := Txnid(epoch + t.counter)
 
-	// gCurTxnid is initialized using the LastLoggedTxid in the local repository.  So if this node becomes master,
+	// t.curTxnid is initialized using the LastLoggedTxid in the local repository.  So if this node becomes master,
 	// we want to make sure that the new txid is larger than the one that we saw before.
-	if gCurTxnid >= newTxnid {
+	if t.curTxnid >= newTxnid {
 		// Assertion.  This is to ensure integrity of the system.  Wrong txnid can result in corruption.
-		panic(fmt.Sprintf("GetNextTxnId(): Assertion: New Txnid %d is smaller than or equal to old txnid %d", newTxnid, gCurTxnid))
+		panic(fmt.Sprintf("GetNextTxnId(): Assertion: New Txnid %d is smaller than or equal to old txnid %d", newTxnid, t.curTxnid))
 	}
 
-	gCurTxnid = newTxnid
+	t.curTxnid = newTxnid
 
-	return gCurTxnid
+	return t.curTxnid
 }
 
 // Return true if txid2 is logically next in sequence from txid1.
@@ -56,25 +67,25 @@ func IsNextInSequence(new, old Txnid) bool {
 	return false
 }
 
-func SetEpoch(newEpoch uint32) {
-	gMutex.Lock()
-	defer gMutex.Unlock()
+func (t *TxnState) SetEpoch(newEpoch uint32) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 
-	if gEpoch >= uint64(newEpoch) {
+	if t.epoch >= uint64(newEpoch) {
 		// Assertion.  This is to ensure integrity of the system.  We do not support epoch rollover yet.
-		panic(fmt.Sprintf("SetEpoch(): Assertion: New Epoch %d is smaller than or equal to old epoch %d", newEpoch, gEpoch))
+		panic(fmt.Sprintf("SetEpoch(): Assertion: New Epoch %d is smaller than or equal to old epoch %d", newEpoch, t.epoch))
 	}
 
-	gEpoch = uint64(newEpoch)
-	gCounter = 0
+	t.epoch = uint64(newEpoch)
+	t.counter = 0
 }
 
-func InitCurrentTxnid(txnid Txnid) {
-	gMutex.Lock()
-	defer gMutex.Unlock()
+func (t *TxnState) InitCurrentTxnid(txnid Txnid) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 
-	if txnid > gCurTxnid {
-		gCurTxnid = txnid
+	if txnid > t.curTxnid {
+		t.curTxnid = txnid
 	}
 }
 

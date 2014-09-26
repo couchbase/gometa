@@ -28,8 +28,12 @@ type RepoIterator struct {
 // Open a repository
 //
 func OpenRepository() (*Repository, error) {
+	return OpenRepositoryWithName(common.REPOSITORY_NAME)
+}
 
-	db, err := fdb.Open(common.REPOSITORY_NAME, nil)
+func OpenRepositoryWithName(name string) (*Repository, error) {
+
+	db, err := fdb.Open(name, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -68,15 +72,15 @@ func (r *Repository) Set(key string, content []byte) error {
 //
 func (r *Repository) Get(key string) ([]byte, error) {
 
-	log.Printf("Repo.Get(): key %s", key)
-
 	//convert key to its collatejson encoded byte representation
 	k, err := CollateString(key)
 	if err != nil {
 		return nil, err
 	}
 
-	return r.db.GetKV(k)
+	value, err := r.db.GetKV(k)
+	log.Printf("Repo.Get(): key %s, found=%s", key, err != nil)
+	return value, err
 }
 
 //

@@ -98,6 +98,8 @@ func runOnce(peer string,
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in WatcherServer.runOnce() : %s\n", r)
+			log.Printf("%s", debug.Stack())
+		} else if common.Debug() {
 			log.Printf("WatcherServer.runOnce() terminates : Diagnostic Stack ...")
 			log.Printf("%s", debug.Stack())
 		}
@@ -186,6 +188,8 @@ func findPeerToConnect(host string,
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in findPeerToConnect() : %s\n", r)
+			log.Printf("%s", debug.Stack())
+		} else if common.Debug() {
 			log.Printf("findPeerToConnect() terminates : Diagnostic Stack ...")
 			log.Printf("%s", debug.Stack())
 		}

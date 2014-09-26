@@ -77,8 +77,10 @@ func (p *PeerPipe) Close() bool {
 	if !p.isClosed {
 
 		log.Printf("PeerPipe.Close(): Remote Address %s", p.GetAddr())
-		log.Printf("PeerPipe.Close() : Diagnostic Stack ...")
-		log.Printf("%s", debug.Stack())
+		if Debug() {
+			log.Printf("PeerPipe.Close() : Diagnostic Stack ...")
+			log.Printf("%s", debug.Stack())
+		}
 
 		p.isClosed = true
 

@@ -149,8 +149,10 @@ func (e *ElectionSite) Close() {
 	defer e.mutex.Unlock()
 
 	if !e.isClosed {
-		log.Printf("ElectionSite.Close() : Diagnostic Stack ...")
-		log.Printf("%s", debug.Stack())
+		if common.Debug() {
+			log.Printf("ElectionSite.Close() : Diagnostic Stack ...")
+			log.Printf("%s", debug.Stack())
+		}
 
 		e.isClosed = true
 

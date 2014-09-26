@@ -115,12 +115,14 @@ func (f *Follower) Terminate() {
 func (f *Follower) startListener() {
 
 	defer func() {
+
 		if r := recover(); r != nil {
 			log.Printf("panic in Follower.startListener() : %s\n", r)
+			log.Printf("%s", debug.Stack())
+		} else if common.Debug() {
+			log.Printf("Follower.startListener() terminates: Diagnostic Stack ...")
+			log.Printf("%s", debug.Stack())
 		}
-
-		log.Printf("Follower.startListener() terminates : Diagnostic Stack ...")
-		log.Printf("%s", debug.Stack())
 
 		common.SafeRun("Follower.startListener()",
 			func() {
@@ -216,6 +218,9 @@ func (f *Follower) handleCommit(msg CommitMsg) error {
 		// All commits are processed sequentially to ensure serializability.
 		p := f.pendings[0]
 		if p == nil || p.GetTxnid() != msg.GetTxnid() {
+			log.Printf("Proposal must committed in sequential order for the same leader term. "+
+				"Found out-of-order commit. Last proposal txid %d, commit msg %d", p.GetTxnid(), msg.GetTxnid())
+
 			return common.NewError(common.PROTOCOL_ERROR,
 				fmt.Sprintf("Proposal must committed in sequential order for the same leader term. "+
 					"Found out-of-order commit. Last proposal txid %d, commit msg %d", p.GetTxnid(), msg.GetTxnid()))

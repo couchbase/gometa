@@ -59,11 +59,12 @@ func RunLeaderServer(naddr string,
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in RunLeaderServer() : %s\n", r)
+			log.Printf("%s", debug.Stack())
 			err = r.(error)
+		} else if common.Debug() {
+			log.Printf("RunLeaderServer terminates : Diagnostic Stack ...")
+			log.Printf("%s", debug.Stack())
 		}
-
-		log.Printf("RunLeaderServer terminates : Diagnostic Stack ...")
-		log.Printf("%s", debug.Stack())
 	}()
 
 	// create a leader
@@ -122,10 +123,11 @@ func (l *LeaderServer) listenFollower(listenerState *ListenerState) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in LeaderServer.listenFollower() : %s\n", r)
+			log.Printf("%s", debug.Stack())
+		} else if common.Debug() {
+			log.Printf("LeaderServer.listenFollower() terminates : Diagnostic Stack ...")
+			log.Printf("%s", debug.Stack())
 		}
-
-		log.Printf("LeaderServer.listenFollower() terminates : Diagnostic Stack ...")
-		log.Printf("%s", debug.Stack())
 
 		common.SafeRun("LeaderServer.listenFollower()",
 			func() {
@@ -157,8 +159,13 @@ func (l *LeaderServer) listenFollower(listenerState *ListenerState) {
 
 	for {
 		select {
-		case conn := <-connCh:
+		case conn, ok := <-connCh:
 			{
+				if !ok {
+					// channel close.  Simply return.
+					return
+				}
+
 				// There is a new peer connection request from the follower.  Start a proxy to synchronize with the follower.
 				// The leader does not proactively connect to follower:
 				// 1) The ensemble is stable, but a follower may just reboot and needs to connect to the leader
@@ -190,6 +197,8 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in LeaderServer.startProxy() : %s\n", r)
+			log.Printf("%s", debug.Stack())
+		} else if common.Debug() {
 			log.Printf("LeaderServer.startProxy() : Diagnostic Stack ...")
 			log.Printf("%s", debug.Stack())
 		}
@@ -304,8 +313,9 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in LeaderServer.processRequest() : %s\n", r)
+			log.Printf("%s", debug.Stack())
 			err = r.(error)
-
+		} else if common.Debug() {
 			log.Printf("LeaderServer.processRequest() : Diagnostic Stack ...")
 			log.Printf("%s", debug.Stack())
 		}

@@ -75,6 +75,8 @@ type ActionHandler interface {
 	//
 	// The following API are used during normal execution
 	//
+	GetNextTxnId() common.Txnid
+
 	GetFollowerId() string
 
 	LogProposal(proposal ProposalMsg) error

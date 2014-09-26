@@ -311,10 +311,11 @@ func (l *messageListener) start() {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in messageListener.start() : %s\n", r)
+			log.Printf("%s", debug.Stack())
+		} else if common.Debug() {
+			log.Printf("leader's messageListener.start() terminates : Diagnostic Stack ...")
+			log.Printf("%s", debug.Stack())
 		}
-
-		log.Printf("leader's messageListener.start() terminates : Diagnostic Stack ...")
-		log.Printf("%s", debug.Stack())
 
 		common.SafeRun("messageListener.start()",
 			func() {
@@ -385,10 +386,11 @@ func (l *Leader) listen() {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in Leader.listen() : %s\n", r)
+			log.Printf("%s", debug.Stack())
+		} else if common.Debug() {
+			log.Printf("Leader.listen() terminates : Diagnostic Stack ...")
+			log.Printf("%s", debug.Stack())
 		}
-
-		log.Printf("Leader.listen() terminates : Diagnostic Stack ...")
-		log.Printf("%s", debug.Stack())
 
 		common.SafeRun("Leader.listen()",
 			func() {
@@ -458,7 +460,7 @@ func (l *Leader) CreateProposal(host string, req RequestMsg) error {
 	// can panic if the txnid overflows.   In this case, this should terminate
 	// the leader and forces a new election for getting a new epoch. ZK has the
 	// same behavior.
-	txnid := common.GetNextTxnId()
+	txnid := l.handler.GetNextTxnId()
 	log.Printf("Leader.CreateProposal(): New Proposal : Epoch %d, Counter %d",
 		txnid.GetEpoch(), txnid.GetCounter())
 
@@ -635,6 +637,9 @@ func (l *Leader) hasQuorum(txid common.Txnid) bool {
 	// hierarchy quorums for scalability (servers are put into different
 	// groups and quorums are obtained within a group).
 
+	log.Printf("Leader.hasQuorum: accepted response for txid %d = %d, ensemble size = %d",
+		uint64(txid), len(l.quorums[txid]), l.handler.GetEnsembleSize())
+
 	accepted, ok := l.quorums[txid]
 	if !ok {
 		// no one has voted yet on this proposal
@@ -658,6 +663,9 @@ func (l *Leader) commit(txid common.Txnid) error {
 	// a fatal condition due to protocol error.
 	//
 	if !common.IsNextInSequence(txid, l.lastCommitted) {
+		log.Printf("Proposal must committed in sequential order for the same leader term. "+
+			"Found out-of-order commit. Leader last committed txid %d, commit msg %d", l.lastCommitted, txid)
+
 		return common.NewError(common.PROTOCOL_ERROR,
 			fmt.Sprintf("Proposal must committed in sequential order for the same leader term. "+
 				"Found out-of-order commit. Leader last committed txid %d, commit msg %d", l.lastCommitted, txid))

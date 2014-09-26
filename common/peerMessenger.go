@@ -115,8 +115,10 @@ func (p *PeerMessenger) Close() bool {
 	if !p.isClosed {
 
 		log.Printf("PeerMessenger.Close() : Local Addr %s", p.GetLocalAddr())
-		log.Printf("PeerMessenger.Close() : Diagnostic Stack ...")
-		log.Printf("%s", debug.Stack())
+		if Debug() {
+			log.Printf("PeerMessenger.Close() : Diagnostic Stack ...")
+			log.Printf("%s", debug.Stack())
+		}
 
 		p.isClosed = true
 
