@@ -2,6 +2,7 @@
 I) INTRODUCTION
 ---------------
 
+
 Gometa is a GO implementation of a distributed metadata store. Gometa uses zookeeper Zab protocol for leader election and quorum write.  
 
 Zookeeper is battle tested consensus protocol, being used in big deployment such as linked-in and Netflix.  Papers regarding zookeeper:
