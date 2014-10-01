@@ -91,7 +91,7 @@ func StartRequestListener(laddr string, server *Server) (*RequestListener, error
 //
 func (li *RequestListener) Close() {
 	li.mutex.Lock()
-	li.mutex.Unlock()
+	defer li.mutex.Unlock()
 
 	if !li.isClosed {
 		li.isClosed = true
