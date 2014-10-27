@@ -34,7 +34,7 @@ func OpenRepository() (*Repository, error) {
 func OpenRepositoryWithName(name string) (*Repository, error) {
 
 	config := fdb.DefaultConfig()
-	config.SetBufferCacheSize(1024*1024)
+	config.SetBufferCacheSize(1024 * 1024)
 	db, err := fdb.Open(name, config)
 	if err != nil {
 		return nil, err
