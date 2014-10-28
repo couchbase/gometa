@@ -81,7 +81,7 @@ func (r *Repository) Get(key string) ([]byte, error) {
 	}
 
 	value, err := r.db.GetKV(k)
-	log.Printf("Repo.Get(): key %s, found=%s", key, err == nil)
+	log.Printf("Repo.Get(): key %s, found=%v", key, err == nil)
 	return value, err
 }
 
