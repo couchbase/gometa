@@ -774,7 +774,8 @@ func (w *pollWorker) handleVoteForElectingPeer(voter net.Addr, vote VoteMsg) boo
 	} else if compareRound == common.EQUAL {
 		// if it is the same round and the incoming vote has higher epoch or txid,
 		// update myself to the incoming vote and broadcast my new vote
-		if w.compareVoteWithProposed(vote) == common.GREATER {
+		switch w.compareVoteWithProposed(vote) {
+		case common.GREATER:
 			// update and notify that our new vote
 			w.ballot.updateProposed(vote, w.site)
 			w.site.messenger.Multicast(w.cloneProposedVote(), w.site.ensemble)
@@ -793,6 +794,8 @@ func (w *pollWorker) handleVoteForElectingPeer(voter net.Addr, vote VoteMsg) boo
 			// for now, I can return as long as I reach quorum and
 			// let subsequent phase to do more checking.
 
+			return w.acceptAndCheckQuorum(voter, vote)
+		case common.EQUAL:
 			return w.acceptAndCheckQuorum(voter, vote)
 		}
 	} else {
