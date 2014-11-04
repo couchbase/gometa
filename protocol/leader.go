@@ -465,8 +465,8 @@ func (l *Leader) createProposal(host string, req RequestMsg) error {
 	// the leader and forces a new election for getting a new epoch. ZK has the
 	// same behavior.
 	txnid := l.handler.GetNextTxnId()
-	log.Printf("Leader.createProposal(): New Proposal : Epoch %d, Counter %d",
-		txnid.GetEpoch(), txnid.GetCounter())
+	log.Printf("Leader.createProposal(): New Proposal : Txnid %d (Epoch %d, Counter %d)",
+		txnid, txnid.GetEpoch(), txnid.GetCounter())
 
 	// Create a new proposal
 	proposal := l.factory.CreateProposal(uint64(txnid),
