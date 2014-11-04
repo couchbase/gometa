@@ -285,6 +285,11 @@ func (l *Leader) RemoveObserver(id string) {
 	delete(l.observers, id)
 }
 
+func (l *Leader) QueueRequest(fid string, req common.Packet) {
+	n := &notification{fid: fid, payload: req}
+	l.notifications <- n
+}
+
 /////////////////////////////////////////////////
 // messageListener
 /////////////////////////////////////////////////
@@ -335,10 +340,9 @@ func (l *messageListener) start() {
 		select {
 		case req, ok := <-reqch:
 			if ok {
-				n := &notification{fid: l.fid, payload: req}
 				// TODO:  Let's say send is blocked because l.notifications is full, will it becomes unblock
 				// when leader.notifications is unblock.
-				l.leader.notifications <- n
+				l.leader.QueueRequest(l.fid, req)
 			} else {
 				// The channel is closed.  Need to shutdown the listener.
 				log.Printf("messageListener.start(): message channel closed. Remove peer %s as follower.", l.fid)
@@ -437,7 +441,7 @@ func (l *Leader) handleMessage(msg common.Packet, follower string) (err error) {
 	err = nil
 	switch request := msg.(type) {
 	case RequestMsg:
-		err = l.CreateProposal(follower, request)
+		err = l.createProposal(follower, request)
 	case AcceptMsg:
 		err = l.handleAccept(request)
 	default:
@@ -454,14 +458,14 @@ func (l *Leader) handleMessage(msg common.Packet, follower string) (err error) {
 //
 // Create a new proposal from request
 //
-func (l *Leader) CreateProposal(host string, req RequestMsg) error {
+func (l *Leader) createProposal(host string, req RequestMsg) error {
 
 	// This should be the only place to call GetNextTxnId().  This function
 	// can panic if the txnid overflows.   In this case, this should terminate
 	// the leader and forces a new election for getting a new epoch. ZK has the
 	// same behavior.
 	txnid := l.handler.GetNextTxnId()
-	log.Printf("Leader.CreateProposal(): New Proposal : Epoch %d, Counter %d",
+	log.Printf("Leader.createProposal(): New Proposal : Epoch %d, Counter %d",
 		txnid.GetEpoch(), txnid.GetCounter())
 
 	// Create a new proposal
@@ -472,13 +476,13 @@ func (l *Leader) CreateProposal(host string, req RequestMsg) error {
 		req.GetKey(),
 		req.GetContent())
 
-	return l.NewProposal(proposal)
+	return l.newProposal(proposal)
 }
 
 //
 // Handle a new proposal
 //
-func (l *Leader) NewProposal(proposal ProposalMsg) error {
+func (l *Leader) newProposal(proposal ProposalMsg) error {
 
 	// Call out to log the proposal.  Always do this first before
 	// sending to followers.

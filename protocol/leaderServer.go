@@ -353,8 +353,8 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 				// de-queue the request
 				s.state.requestMgr.AddPendingRequest(handle)
 
-				// create the proposal and forward to the leader
-				s.leader.CreateProposal(s.leader.GetFollowerId(), handle.Request)
+				// forward request to the leader
+				s.leader.QueueRequest(s.leader.GetFollowerId(), handle.Request)
 			} else {
 				// server shutdown.
 				log.Printf("LeaderServer.processRequest(): channel for receiving client request is closed. Terminate.")
