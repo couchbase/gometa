@@ -37,20 +37,20 @@ message Commit {
 }
 
 message Vote {
-    required uint32          version                            = 1; // protocol version TBD
-    required uint64          round                          = 2; // round
-    required uint32          status                         = 3; // status - ELECTING,LEADING,FOLLOWING
-    required uint32          epoch                          = 4; // epoch (leader term)
-    required string          cndId                          = 5; // proposed candidate Id
-    required uint64          cndLoggedTxnId         = 6; // proposed candidate last logged TxnId
+    required uint32          version            = 1; // protocol version TBD
+    required uint64          round              = 2; // round
+    required uint32          status             = 3; // status - ELECTING,LEADING,FOLLOWING
+    required uint32          epoch              = 4; // epoch (leader term)
+    required string          cndId              = 5; // proposed candidate Id
+    required uint64          cndLoggedTxnId     = 6; // proposed candidate last logged TxnId
     required uint64          cndCommittedTxnId  = 7; // proposed candidate last committed TxnId
     required bool            solicit            = 8; // is the vote coming from a participant who is just watching?
 }
 
 message FollowerInfo {
-    required uint32          version                    = 1; // protocol version TBD
+    required uint32          version        = 1; // protocol version TBD
     required uint32          acceptedEpoch  = 2;
-    required string          fid                    = 3;
+    required string          fid            = 3;
     required bool            voting         = 4;
 }
 
@@ -61,13 +61,13 @@ message EpochAck {
 }
 
 message LeaderInfo {
-    required uint32          version                    = 1; // protocol version TBD
+    required uint32          version        = 1; // protocol version TBD
     required uint32          acceptedEpoch  = 2;
 }
 
 message NewLeader {
-    required uint32          version                      = 1; // protocol version TBD
-    required uint32          currentEpoch     = 2;
+    required uint32          version        = 1; // protocol version TBD
+    required uint32          currentEpoch   = 2;
 }
 
 message NewLeaderAck {
