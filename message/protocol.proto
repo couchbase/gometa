@@ -17,57 +17,57 @@ package message;
 
 message Proposal {
     required uint32          version   = 1; // protocol version TBD
-   	required uint64          txnid     = 2; 
-   	required string          fid       = 3;
-   	required uint64          reqId     = 4;
-   	required uint32          opCode    = 5; 
-   	required string          key       = 6; 
-   	required bytes           content   = 7;
+    required uint64          txnid     = 2;
+    required string          fid       = 3;
+    required uint64          reqId     = 4;
+    required uint32          opCode    = 5;
+    required string          key       = 6;
+    required bytes           content   = 7;
 }
 
 message Accept {
     required uint32          version   = 1; // protocol version TBD
-   	required uint64          txnid     = 2; 
-   	required string          fid       = 3; 
+    required uint64          txnid     = 2;
+    required string          fid       = 3;
 }
 
 message Commit {
     required uint32          version   = 1; // protocol version TBD
-   	required uint64          txnid     = 2; 
+    required uint64          txnid     = 2;
 }
 
 message Vote {
-    required uint32          version   			= 1; // protocol version TBD
-   	required uint64          round     			= 2; // round
-   	required uint32          status    			= 3; // status - ELECTING,LEADING,FOLLOWING 
-   	required uint32          epoch     			= 4; // epoch (leader term)
-   	required string          cndId     			= 5; // proposed candidate Id
-   	required uint64          cndLoggedTxnId  	= 6; // proposed candidate last logged TxnId
-   	required uint64          cndCommittedTxnId  = 7; // proposed candidate last committed TxnId
-   	required bool            solicit            = 8; // is the vote coming from a participant who is just watching?
+    required uint32          version                            = 1; // protocol version TBD
+    required uint64          round                          = 2; // round
+    required uint32          status                         = 3; // status - ELECTING,LEADING,FOLLOWING
+    required uint32          epoch                          = 4; // epoch (leader term)
+    required string          cndId                          = 5; // proposed candidate Id
+    required uint64          cndLoggedTxnId         = 6; // proposed candidate last logged TxnId
+    required uint64          cndCommittedTxnId  = 7; // proposed candidate last committed TxnId
+    required bool            solicit            = 8; // is the vote coming from a participant who is just watching?
 }
 
 message FollowerInfo {
-    required uint32          version   		= 1; // protocol version TBD
-   	required uint32          acceptedEpoch  = 2; 
-   	required string          fid       		= 3; 
-   	required bool            voting         = 4;
+    required uint32          version                    = 1; // protocol version TBD
+    required uint32          acceptedEpoch  = 2;
+    required string          fid                    = 3;
+    required bool            voting         = 4;
 }
 
 message EpochAck {
     required uint32          version        = 1; // protocol version TBD
-   	required uint64          lastLoggedTxid = 2; 
-   	required uint32          currentEpoch   = 3; 
+    required uint64          lastLoggedTxid = 2;
+    required uint32          currentEpoch   = 3;
 }
 
 message LeaderInfo {
-    required uint32          version   		= 1; // protocol version TBD
-   	required uint32          acceptedEpoch  = 2; 
+    required uint32          version                    = 1; // protocol version TBD
+    required uint32          acceptedEpoch  = 2;
 }
 
 message NewLeader {
-    required uint32          version   		  = 1; // protocol version TBD
-   	required uint32          currentEpoch     = 2; 
+    required uint32          version                      = 1; // protocol version TBD
+    required uint32          currentEpoch     = 2;
 }
 
 message NewLeaderAck {
@@ -76,16 +76,16 @@ message NewLeaderAck {
 
 message LogEntry {
     required uint32          version   = 1; // protocol version TBD
-   	required uint64          txnid     = 2; 
-   	required uint32          opCode    = 3; 
-   	required string          key       = 4; 
-   	required bytes           content   = 5;
+    required uint64          txnid     = 2;
+    required uint32          opCode    = 3;
+    required string          key       = 4;
+    required bytes           content   = 5;
 }
 
 message Request {
     required uint32          version   = 1; // protocol version TBD
-   	required uint64          reqId     = 2; 
-   	required uint32          opCode    = 3; 
-   	required string          key       = 4; 
-   	required bytes           content   = 5;
+    required uint64          reqId     = 2;
+    required uint32          opCode    = 3;
+    required string          key       = 4;
+    required bytes           content   = 5;
 }
