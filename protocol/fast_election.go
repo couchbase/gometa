@@ -626,8 +626,12 @@ func (w *pollWorker) listen() {
 
 	// Get the channel for receiving votes from the peer.
 	reqch := w.site.messenger.DefaultReceiveChannel()
-	duration := common.BALLOT_TIMEOUT
-	timeout := time.After(duration * time.Millisecond)
+
+	timeout := common.NewBackoffTimer(
+		common.BALLOT_TIMEOUT*time.Millisecond,
+		common.BALLOT_MAX_TIMEOUT*time.Millisecond,
+		2,
+	)
 
 	for {
 		select {
@@ -644,8 +648,7 @@ func (w *pollWorker) listen() {
 					w.ballot = nil
 				} else {
 					// There is a new ballot.
-					duration := common.BALLOT_TIMEOUT
-					timeout = time.After(duration * time.Millisecond)
+					timeout.Reset()
 				}
 			}
 		// Receiving a vote
@@ -698,21 +701,16 @@ func (w *pollWorker) listen() {
 					w.ballot = nil
 				}
 
-				duration = common.BALLOT_TIMEOUT
-				timeout = time.After(duration * time.Millisecond)
+				timeout.Reset()
 			}
-		case <-timeout:
+		case <-timeout.GetChannel():
 			{
 				// If there is a timeout but no response, send vote again.
 				if w.ballot != nil {
 					w.site.messenger.Multicast(w.cloneProposedVote(), w.site.ensemble)
 				}
 
-				newDuration := duration * 2
-				if newDuration < common.BALLOT_MAX_TIMEOUT {
-					duration = newDuration
-				}
-				timeout = time.After(duration * time.Millisecond)
+				timeout.Backoff()
 			}
 		case <-w.killch:
 			{

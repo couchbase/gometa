@@ -17,6 +17,7 @@ package common
 
 import (
 	"log"
+	"time"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -65,4 +66,50 @@ func (c *Cleanup) Run() {
 
 func (c *Cleanup) Cancel() {
 	c.canceled = true
+}
+
+type BackoffTimer struct {
+	timer *time.Timer
+
+	duration    time.Duration
+	maxDuration time.Duration
+	factor      int
+
+	currentDuration time.Duration
+}
+
+func NewBackoffTimer(duration time.Duration,
+	maxDuration time.Duration, factor int) *BackoffTimer {
+
+	return &BackoffTimer{
+		timer: time.NewTimer(duration),
+
+		duration:    duration,
+		maxDuration: maxDuration,
+		factor:      factor,
+
+		currentDuration: duration,
+	}
+}
+
+func (t *BackoffTimer) GetChannel() <-chan time.Time {
+	return t.timer.C
+}
+
+func (t *BackoffTimer) Stop() bool {
+	return t.timer.Stop()
+}
+
+func (t *BackoffTimer) Reset() {
+	t.currentDuration = t.duration
+	t.timer.Reset(t.currentDuration)
+}
+
+func (t *BackoffTimer) Backoff() {
+	t.currentDuration *= time.Duration(t.factor)
+	if t.currentDuration > t.maxDuration {
+		t.currentDuration = t.maxDuration
+	}
+
+	t.timer.Reset(t.currentDuration)
 }
