@@ -44,3 +44,25 @@ const (
 	MORE_RECENT
 	LESS_RECENT
 )
+
+type Cleanup struct {
+	canceled bool
+	f        func()
+}
+
+func NewCleanup(f func()) *Cleanup {
+	return &Cleanup{
+		canceled: false,
+		f:        f,
+	}
+}
+
+func (c *Cleanup) Run() {
+	if !c.canceled {
+		c.f()
+	}
+}
+
+func (c *Cleanup) Cancel() {
+	c.canceled = true
+}
