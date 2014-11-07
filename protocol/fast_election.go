@@ -143,7 +143,7 @@ func CreateElectionSite(laddr string,
 func (e *ElectionSite) StartElection() <-chan string {
 
 	// ballot in progress
-	if !e.master.setBallotInProg(false) || e.IsClosed() {
+	if !e.master.setBallotInProg(true) || e.IsClosed() {
 		return nil
 	}
 
@@ -323,7 +323,7 @@ func (b *ballotMaster) castBallot(winnerch chan string) {
 				close(winnerch) // unblock caller
 
 				// balloting complete
-				b.setBallotInProg(true)
+				b.setBallotInProg(false)
 			})
 	}()
 
@@ -377,23 +377,19 @@ func (b *ballotMaster) close() {
 //
 // if there is a balllot in progress
 //
-func (b *ballotMaster) setBallotInProg(clear bool) bool {
+func (b *ballotMaster) setBallotInProg(value bool) bool {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 
-	if b.inProg && !clear {
+	if b.inProg && value {
 		return false
 	}
 
-	if !b.inProg && clear {
+	if !b.inProg && !value {
 		return false
 	}
 
-	if clear {
-		b.inProg = false
-	} else {
-		b.inProg = true
-	}
+	b.inProg = value
 
 	return true
 }
