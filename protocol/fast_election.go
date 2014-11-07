@@ -625,6 +625,9 @@ func (w *pollWorker) listen() {
 		2,
 	)
 
+	inFinalize := false
+	finalizeTimer := common.NewStoppedResettableTimer(common.BALLOT_FINALIZE_WAIT * time.Millisecond)
+
 	for {
 		select {
 		case w.ballot = <-w.listench: // listench should never close
@@ -641,6 +644,8 @@ func (w *pollWorker) listen() {
 				} else {
 					// There is a new ballot.
 					timeout.Reset()
+					inFinalize = false
+					finalizeTimer.Stop()
 				}
 			}
 		// Receiving a vote
@@ -685,17 +690,34 @@ func (w *pollWorker) listen() {
 
 				timeout.Reset()
 
+				proposed := w.cloneProposedVote()
 				if w.handleVote(voter, vote) {
-					// we achieve quorum, set the winner.
-					// setting the winner and usetting the ballot
-					// should be done together.
-					// NOTE: ZK does not notify other peers when this node has
-					// select a leader
-					w.site.master.setWinner(w.ballot.result)
-					w.ballot.resultch <- true
-					w.ballot = nil
-					timeout.Stop()
+					proposedUpdated :=
+						w.compareVote(w.ballot.result.proposed, proposed) != common.EQUAL
+
+					if !inFinalize || proposedUpdated {
+						inFinalize = true
+						finalizeTimer.Reset()
+					}
+				} else {
+					if inFinalize {
+						// we had a quorum but not anymore
+						inFinalize = false
+						finalizeTimer.Stop()
+					}
 				}
+			}
+		case <-finalizeTimer.C:
+			{
+				// we achieve quorum, set the winner.
+				// setting the winner and usetting the ballot
+				// should be done together.
+				// NOTE: ZK does not notify other peers when this node has
+				// select a leader
+				w.site.master.setWinner(w.ballot.result)
+				w.ballot.resultch <- true
+				w.ballot = nil
+				timeout.Stop()
 			}
 		case <-timeout.GetChannel():
 			{

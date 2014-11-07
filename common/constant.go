@@ -35,6 +35,7 @@ var MESSAGE_TRANSPORT_TYPE = "tcp"                                   // network 
 var ELECTION_TRANSPORT_TYPE = "udp"                                  // network protocol for election vote transport
 var BALLOT_TIMEOUT time.Duration = 50                                // timeout for a ballot (millisecond)
 var BALLOT_MAX_TIMEOUT time.Duration = 500                           // max timeout for a ballot (millisecond)
+var BALLOT_FINALIZE_WAIT time.Duration = 200                         // wait this much for new votes before completing leader election
 var SYNC_TIMEOUT time.Duration = 10000                               // timeout for synchronization (millisecond)
 var LEADER_TIMEOUT time.Duration = 100000                            // timeout for leader (millisecond)
 var RETRY_BACKOFF time.Duration = 100                                // backoff time for retry (millisecond)

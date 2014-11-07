@@ -113,3 +113,31 @@ func (t *BackoffTimer) Backoff() {
 
 	t.timer.Reset(t.currentDuration)
 }
+
+type ResettableTimer struct {
+	d time.Duration
+
+	*time.Timer
+}
+
+func (t *ResettableTimer) Reset() {
+	t.Timer.Reset(t.d)
+}
+
+func NewResettableTimer(d time.Duration) *ResettableTimer {
+	return &ResettableTimer{
+		d:     d,
+		Timer: time.NewTimer(d),
+	}
+}
+
+func NewStoppedResettableTimer(d time.Duration) *ResettableTimer {
+	timer := NewResettableTimer(d)
+	timer.Stop()
+	select {
+	case <-timer.C:
+	default:
+	}
+
+	return timer
+}
