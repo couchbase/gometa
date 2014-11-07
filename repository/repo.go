@@ -27,8 +27,9 @@ import (
 /////////////////////////////////////////////////////////////////////////////
 
 type Repository struct {
-	db    *fdb.Database
-	mutex sync.Mutex
+	dbfile *fdb.File
+	db     *fdb.KVStore
+	mutex  sync.Mutex
 }
 
 type RepoIterator struct {
@@ -50,12 +51,23 @@ func OpenRepositoryWithName(name string) (*Repository, error) {
 
 	config := fdb.DefaultConfig()
 	config.SetBufferCacheSize(1024 * 1024)
-	db, err := fdb.Open(name, config)
+	dbfile, err := fdb.Open(name, config)
 	if err != nil {
 		return nil, err
 	}
 
-	repo := &Repository{db: db}
+	cleanup := common.NewCleanup(func() {
+		dbfile.Close()
+	})
+	defer cleanup.Run()
+
+	db, err := dbfile.OpenKVStoreDefault(nil)
+	if err != nil {
+		return nil, err
+	}
+	cleanup.Cancel()
+
+	repo := &Repository{dbfile: dbfile, db: db}
 	return repo, nil
 }
 
@@ -81,7 +93,7 @@ func (r *Repository) Set(key string, content []byte) error {
 		return err
 	}
 
-	return r.db.Commit(fdb.COMMIT_NORMAL)
+	return r.dbfile.Commit(fdb.COMMIT_NORMAL)
 }
 
 //
@@ -119,7 +131,7 @@ func (r *Repository) Delete(key string) error {
 		return err
 	}
 
-	return r.db.Commit(fdb.COMMIT_NORMAL)
+	return r.dbfile.Commit(fdb.COMMIT_NORMAL)
 }
 
 //
@@ -130,6 +142,9 @@ func (r *Repository) Close() {
 	if r.db != nil {
 		r.db.Close()
 		r.db = nil
+
+		r.dbfile.Close()
+		r.dbfile = nil
 	}
 }
 
