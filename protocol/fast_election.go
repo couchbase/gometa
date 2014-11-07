@@ -652,8 +652,7 @@ func (w *pollWorker) listen() {
 
 				// Receive a new vote.  The voter is identified by its UDP port,
 				// which must remain the same during the election phase.
-				var obj interface{} = msg.Content
-				vote := obj.(VoteMsg)
+				vote := msg.Content.(VoteMsg)
 				voter := msg.Peer
 
 				// If I am receiving a vote that just for soliciting my response,
