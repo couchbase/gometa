@@ -375,22 +375,18 @@ func (b *ballotMaster) close() {
 }
 
 //
-// if there is a balllot in progress
+// Update the flag indicating if there is a balllot in progress. Return value
+// is true if the flag value was changed.
 //
 func (b *ballotMaster) setBallotInProg(value bool) bool {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 
-	if b.inProg && value {
-		return false
-	}
-
-	if !b.inProg && !value {
+	if b.inProg == value {
 		return false
 	}
 
 	b.inProg = value
-
 	return true
 }
 
