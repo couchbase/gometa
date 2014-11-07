@@ -680,8 +680,12 @@ func (w *pollWorker) listen() {
 					// If there is no ballot or the vote is from a watcher,
 					// then just need to respond if I have a winner.
 					w.respondInquiry(voter, vote)
+					continue
+				}
 
-				} else if w.handleVote(voter, vote) {
+				timeout.Reset()
+
+				if w.handleVote(voter, vote) {
 					// we achieve quorum, set the winner.
 					// setting the winner and usetting the ballot
 					// should be done together.
@@ -690,18 +694,16 @@ func (w *pollWorker) listen() {
 					w.site.master.setWinner(w.ballot.result)
 					w.ballot.resultch <- true
 					w.ballot = nil
+					timeout.Stop()
 				}
-
-				timeout.Reset()
 			}
 		case <-timeout.GetChannel():
 			{
 				// If there is a timeout but no response, send vote again.
 				if w.ballot != nil {
 					w.site.messenger.Multicast(w.cloneProposedVote(), w.site.ensemble)
+					timeout.Backoff()
 				}
-
-				timeout.Backoff()
 			}
 		case <-w.killch:
 			{
