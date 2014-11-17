@@ -72,7 +72,8 @@ func RunFollowerServer(naddr string,
 	}
 
 	pipe := common.NewPeerPipe(conn)
-	log.Printf("FollowerServer.RunFollowerServer() : Follower %s successfully created TCP connection to leader %s", naddr, leader)
+	log.Printf("FollowerServer.RunFollowerServer() : Follower %s successfully "+
+		"created TCP connection to leader %s, local address %s", naddr, leader, conn.LocalAddr())
 
 	// close the connection to the leader. If connection is closed,
 	// sync proxy and follower will also terminate by err-ing out.
