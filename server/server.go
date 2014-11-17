@@ -75,8 +75,7 @@ func RunServer(config string) error {
 		if !gServer.IsDone() {
 			if pauseTime > 0 {
 				// wait before restart
-				timer := time.NewTimer(time.Duration(pauseTime) * time.Millisecond)
-				<-timer.C
+				time.Sleep(time.Duration(pauseTime) * time.Millisecond)
 			}
 		} else {
 			repeat = false
