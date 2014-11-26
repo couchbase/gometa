@@ -26,21 +26,21 @@ import (
 // main function
 //
 func main() {
-
-	var isClient string
-	var isWatcher string
+	var isClient bool
+	var isWatcher bool
 	var config string
-	flag.StringVar(&isClient, "client", "false", "run as test client")
-	flag.StringVar(&isWatcher, "watcher", "false", "run as watcher")
+
+	flag.BoolVar(&isClient, "client", false, "run as test client")
+	flag.BoolVar(&isWatcher, "watcher", false, "run as watcher")
 	flag.StringVar(&config, "config", "", "path for configuration file")
 	flag.Parse()
 
-	if isClient == "true" {
+	if isClient {
 		runTestClient(config)
 		os.Exit(0)
 	}
 
-	if isWatcher == "true" {
+	if isWatcher {
 		runWatcher(config)
 		os.Exit(0)
 	}
