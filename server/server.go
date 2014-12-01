@@ -69,8 +69,7 @@ func RunServer(config string) error {
 		return err
 	}
 
-	repeat := true
-	for repeat {
+	for {
 		pauseTime := RunOnce()
 		if !gServer.IsDone() {
 			if pauseTime > 0 {
@@ -78,7 +77,7 @@ func RunServer(config string) error {
 				time.Sleep(time.Duration(pauseTime) * time.Millisecond)
 			}
 		} else {
-			repeat = false
+			break
 		}
 	}
 
