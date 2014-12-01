@@ -22,6 +22,25 @@ import (
 	"os"
 )
 
+func stdinWatcher() {
+	b := make([]byte, 1)
+
+	for {
+		_, err := os.Stdin.Read(b)
+		if err != nil {
+			log.Printf("Got %s when reading stdin. Terminating.", err.Error())
+			break
+		}
+
+		if b[0] == '\n' || b[0] == '\r' {
+			log.Printf("Got new line on a stdin. Terminating.")
+			break
+		}
+	}
+
+	os.Exit(0)
+}
+
 //
 // main function
 //
@@ -29,10 +48,13 @@ func main() {
 	var isClient bool
 	var isWatcher bool
 	var config string
+	var watchStdin bool
 
 	flag.BoolVar(&isClient, "client", false, "run as test client")
 	flag.BoolVar(&isWatcher, "watcher", false, "run as watcher")
 	flag.StringVar(&config, "config", "", "path for configuration file")
+	flag.BoolVar(&watchStdin, "watch-stdin", true,
+		"watch standard input and terminate on EOL or EOF")
 	flag.Parse()
 
 	if isClient {
@@ -43,6 +65,10 @@ func main() {
 	if isWatcher {
 		runWatcher(config)
 		os.Exit(0)
+	}
+
+	if watchStdin {
+		go stdinWatcher()
 	}
 
 	err := server.RunServer(config)
