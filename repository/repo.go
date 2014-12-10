@@ -35,6 +35,7 @@ type Repository struct {
 
 type RepoIterator struct {
 	iter *fdb.Iterator
+	db *fdb.KVStore
 }
 
 type Snapshot struct {
@@ -304,21 +305,34 @@ func (r *Repository) NewIterator(startKey, endKey string) (*RepoIterator, error)
 	if err != nil {
 		return nil, err
 	}
-	result := &RepoIterator{iter: iter}
+	result := &RepoIterator{iter: iter, db : r.db}
 	return result, nil
 }
 
 // Get value from iterator
 func (i *RepoIterator) Next() (key string, content []byte, err error) {
 
-	// TODO: Check if fdb and iterator is closed
-	doc, err := i.iter.Next()
+	if i.iter == nil {
+		return "", nil, fdb.RESULT_ITERATOR_FAIL 
+	}
+
+	doc, err := i.iter.Get()
 	if err != nil {
 		return "", nil, err
 	}
 
+	err = i.iter.Next()
+	if err != nil && err != fdb.RESULT_ITERATOR_FAIL {
+		return "", nil, err
+	}
+
+	i.db.Get(doc)
 	key = DecodeString(doc.Key())
 	body := doc.Body()
+
+	if err == fdb.RESULT_ITERATOR_FAIL {
+		i.iter = nil
+	}
 
 	return key, body, nil
 }
@@ -327,6 +341,7 @@ func (i *RepoIterator) Next() (key string, content []byte, err error) {
 func (i *RepoIterator) Close() {
 	// TODO: Check if fdb iterator is closed
 	i.iter.Close()
+	i.iter = nil
 }
 
 // This only support ascii.
