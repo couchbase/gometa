@@ -49,7 +49,7 @@ func (e *Error) IsFatal() bool {
 }
 
 func (e *Error) Error() string {
-	return codeToStr(e.code) + " : " + e.reason
+	return codeToStr(e.code) + " : " + e.reason + " : " + e.cause.Error()
 }
 
 func codeToStr(code ErrorCode) string {
