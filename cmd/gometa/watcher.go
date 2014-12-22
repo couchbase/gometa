@@ -57,6 +57,7 @@ func runWatcher(path string) {
 		server.GetHostUDPAddr(),
 		server.GetPeerUDPAddr(),
 		server.GetPeerTCPAddr(),
+		nil,
 		fs.handler,
 		fs.factory,
 		fs.killch,

@@ -31,16 +31,16 @@ import (
 /////////////////////////////////////////////////////////////////////////////
 
 type EmbeddedServer struct {
-	msgAddr		string
-	repo        *r.Repository
-	log         *r.CommitLog
-	srvConfig   *r.ServerConfig
-	txn         *common.TxnState
-	state       *ServerState
-	factory     protocol.MsgFactory
-	handler     *action.ServerAction
-	listener    *common.PeerListener
-	skillch     chan bool
+	msgAddr   string
+	repo      *r.Repository
+	log       *r.CommitLog
+	srvConfig *r.ServerConfig
+	txn       *common.TxnState
+	state     *ServerState
+	factory   protocol.MsgFactory
+	handler   *action.ServerAction
+	listener  *common.PeerListener
+	skillch   chan bool
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -51,15 +51,15 @@ func RunEmbeddedServer(msgAddr string) (*EmbeddedServer, error) {
 
 	server := new(EmbeddedServer)
 	server.msgAddr = msgAddr
-	
+
 	if err := server.bootstrap(); err != nil {
 		log.Printf("EmbeddedServer.boostrap: error : %v\n", err)
 		return nil, err
 	}
-	
+
 	go server.run()
 
-	return server, nil 
+	return server, nil
 }
 
 //
@@ -155,7 +155,7 @@ func (s *EmbeddedServer) DeleteValue(key string) {
 //
 func (s *EmbeddedServer) GetIterator(startKey, endKey string) (*r.RepoIterator, error) {
 
-	return s.repo.NewIterator(startKey, endKey) 
+	return s.repo.NewIterator(startKey, endKey)
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -173,7 +173,7 @@ func (s *EmbeddedServer) bootstrap() (err error) {
 			log.Printf("panic in EmbeddedServer.bootstrap() : %s\n", r)
 			log.Printf("%s", debug.Stack())
 		}
-		
+
 		if err != nil || r != nil {
 			common.SafeRun("EmbeddedServer.bootstrap()",
 				func() {
@@ -181,7 +181,7 @@ func (s *EmbeddedServer) bootstrap() (err error) {
 				})
 		}
 	}()
-	
+
 	// Initialize server state
 	s.state = newServerState()
 
@@ -233,8 +233,8 @@ func (s *EmbeddedServer) run() {
 		s.runOnce()
 		if !s.IsDone() {
 			time.Sleep(time.Duration(200) * time.Millisecond)
-			
-			if !s.IsDone() {			
+
+			if !s.IsDone() {
 				if err := s.bootstrap(); err != nil {
 					log.Printf("EmbeddedServer.boostrap: error : %v\n", err)
 				}
@@ -315,13 +315,13 @@ func (s *EmbeddedServer) runOnce() {
 			log.Printf("Diagnostic Stack ...")
 			log.Printf("%s", debug.Stack())
 		}
-		
+
 		common.SafeRun("EmbeddedServer.cleanupState()",
 			func() {
 				s.cleanupState()
 			})
 	}()
-	
+
 	// Check if the server has been terminated explicitly. If so, don't run.
 	if !s.IsDone() {
 
@@ -408,9 +408,9 @@ func (s *EmbeddedServer) UpdateWinningEpoch(epoch uint32) {
 }
 
 func (s *EmbeddedServer) GetEnsembleSize() uint64 {
-	return 1 
+	return 1
 }
 
 func (s *EmbeddedServer) GetFollowerId() string {
-	return s.msgAddr 
+	return s.msgAddr
 }

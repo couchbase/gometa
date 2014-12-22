@@ -90,11 +90,9 @@ func (f *Follower) GetFollowerId() string {
 // Forward the request to the leader
 //
 func (f *Follower) ForwardRequest(request RequestMsg) bool {
-	if f.kind == FOLLOWER {
-		log.Printf("Follower.ForwardRequest(): Follower %s forward request to leader (TCP %s)",
-			f.GetFollowerId(), f.pipe.GetAddr())
-		return f.pipe.Send(request)
-	}
+	log.Printf("Follower.ForwardRequest(): Follower %s forward request to leader (TCP %s)",
+		f.GetFollowerId(), f.pipe.GetAddr())
+	return f.pipe.Send(request)
 
 	// do not process request if I am a watcher
 	return false

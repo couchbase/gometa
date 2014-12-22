@@ -73,7 +73,7 @@ type Leader struct {
 	// mutex protected variable
 	mutex     sync.Mutex
 	followers map[string]*messageListener
-	watchers  map[string]*common.PeerPipe
+	watchers  map[string]*messageListener
 	observers map[string]*observer
 	isClosed  bool
 	changech  chan bool // notify membership of active followers have changed
@@ -105,7 +105,7 @@ func NewLeader(naddr string,
 
 	leader = &Leader{naddr: naddr,
 		followers:     make(map[string]*messageListener),
-		watchers:      make(map[string]*common.PeerPipe),
+		watchers:      make(map[string]*messageListener),
 		observers:     make(map[string]*observer),
 		quorums:       make(map[common.Txnid][]string),
 		proposals:     make(map[common.Txnid]ProposalMsg),
@@ -141,6 +141,9 @@ func (l *Leader) Terminate() {
 	if !l.isClosed {
 		l.isClosed = true
 		for _, listener := range l.followers {
+			listener.terminate()
+		}
+		for _, listener := range l.watchers {
 			listener.terminate()
 		}
 		common.SafeRun("Leader.Terminate()",
@@ -213,13 +216,16 @@ func (l *Leader) AddWatcher(fid string,
 	}
 
 	// Rememeber the old message listener and start a new one.
-	oldPipe, ok := l.watchers[fid]
-	l.watchers[fid] = peer
+	oldListener, ok := l.watchers[fid]
 
-	// kill the old PeerPipe
-	if ok && oldPipe != nil {
-		log.Printf("Leader.AddWatcher() : old PeerPipe found for watcher %s.  Closing old PeerPipe.", fid)
-		oldPipe.Close()
+	listener := newListener(fid, peer, l)
+	l.watchers[fid] = listener
+	go listener.start()
+
+	// kill the old message listener
+	if ok && oldListener != nil {
+		log.Printf("Leader.AddWatcher() : old Listener found for watcher %s.  Terminating old listener", fid)
+		oldListener.terminate()
 	}
 }
 
@@ -572,7 +578,7 @@ func (l *Leader) sendProposal(proposal ProposalMsg) {
 	}
 
 	for _, w := range l.watchers {
-		w.Send(msg)
+		w.pipe.Send(msg)
 	}
 
 	for _, o := range l.observers {
@@ -736,7 +742,7 @@ func (l *Leader) sendCommit(txnid common.Txnid) error {
 
 	// send message to watchers
 	for _, w := range l.watchers {
-		w.Send(msg)
+		w.pipe.Send(msg)
 	}
 
 	// Send the message to the observer

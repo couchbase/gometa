@@ -34,6 +34,7 @@ import (
 // away, the sender won't get blocked.
 //
 func RunWatcherServer(leader string,
+	requestMgr RequestMgr,
 	handler ActionHandler,
 	factory MsgFactory,
 	killch <-chan bool,
@@ -43,7 +44,7 @@ func RunWatcherServer(leader string,
 	backoff := common.RETRY_BACKOFF
 	retry := true
 	for retry {
-		if runOnce(leader, handler, factory, killch, readych, once) {
+		if runOnce(leader, requestMgr, handler, factory, killch, readych, once) {
 			retry = false
 		}
 
@@ -68,6 +69,7 @@ func RunWatcherServer(leader string,
 func RunWatcherServerWithElection(host string,
 	peerUDP []string,
 	peerTCP []string,
+	requestMgr RequestMgr,
 	handler ActionHandler,
 	factory MsgFactory,
 	killch <-chan bool,
@@ -82,7 +84,7 @@ func RunWatcherServerWithElection(host string,
 			return
 		}
 
-		if peer != "" && runOnce(peer, handler, factory, killch, readych, once) {
+		if peer != "" && runOnce(peer, requestMgr, handler, factory, killch, readych, once) {
 			retry = false
 		}
 
@@ -103,6 +105,7 @@ func RunWatcherServerWithElection(host string,
 /////////////////////////////////////////////////////////////////////////////
 
 func runOnce(peer string,
+	requestMgr RequestMgr,
 	handler ActionHandler,
 	factory MsgFactory,
 	killch <-chan bool,
@@ -143,7 +146,7 @@ func runOnce(peer string,
 
 	// run watcher after synchronization
 	if success {
-		if !runWatcher(pipe, handler, factory, killch, readych, once) {
+		if !runWatcher(pipe, requestMgr, handler, factory, killch, readych, once) {
 			log.Printf("WatcherServer.runOnce() : Watcher terminated unexpectedly.")
 			return false
 		}
@@ -259,6 +262,7 @@ func findPeerToConnect(host string,
 // Run Watcher Protocol
 //
 func runWatcher(pipe *common.PeerPipe,
+	requestMgr RequestMgr,
 	handler ActionHandler,
 	factory MsgFactory,
 	killch <-chan bool,
@@ -274,14 +278,37 @@ func runWatcher(pipe *common.PeerPipe,
 	// notify that the watcher is starting to run.  Only do this once.
 	once.Do(func() { readych <- true })
 
-	select {
-	case <-killch:
-		// server is being explicitly terminated.  Terminate the watcher go-rountine as well.
-		log.Printf("WatcherServer.runTillEnd(): receive kill signal. Terminate.")
-		return true
-	case <-donech:
-		// watcher is done.  Just return.
-		log.Printf("WatcherServer.runTillEnd(): Watcher go-routine terminates. Terminate.")
-		return false
+	var incomings <-chan *RequestHandle
+	if requestMgr != nil {
+		incomings = requestMgr.GetRequestChannel()
+	} else {
+		incomings = make(chan *RequestHandle)
+	}
+
+	for {
+		select {
+		case handle, ok := <-incomings:
+			if ok {
+				// move request to pending queue (waiting for proposal)
+				requestMgr.AddPendingRequest(handle)
+
+				// forward the request to the leader
+				if !watcher.ForwardRequest(handle.Request) {
+					log.Printf("WatcherServer.processRequest(): fail to send client request to leader. Terminate.")
+					return
+				}
+			} else {
+				log.Printf("WatcherServer.processRequest(): channel for receiving client request is closed. Terminate.")
+				return
+			}
+		case <-killch:
+			// server is being explicitly terminated.  Terminate the watcher go-rountine as well.
+			log.Printf("WatcherServer.runTillEnd(): receive kill signal. Terminate.")
+			return true
+		case <-donech:
+			// watcher is done.  Just return.
+			log.Printf("WatcherServer.runTillEnd(): Watcher go-routine terminates. Terminate.")
+			return false
+		}
 	}
 }
