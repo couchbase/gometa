@@ -27,13 +27,21 @@ import (
 /////////////////////////////////////////////////////////////////////////////
 
 type Repository struct {
-	dbfile *fdb.File
-	db     *fdb.KVStore
-	mutex  sync.Mutex
+	dbfile    *fdb.File
+	db        *fdb.KVStore
+	snapshots []*Snapshot
+	mutex     sync.Mutex
 }
 
 type RepoIterator struct {
 	iter *fdb.Iterator
+}
+
+type Snapshot struct {
+	snapshot *fdb.KVStore
+	count    int
+	txnid    common.Txnid
+	mutex    sync.Mutex
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -67,7 +75,7 @@ func OpenRepositoryWithName(name string) (*Repository, error) {
 	}
 	cleanup.Cancel()
 
-	repo := &Repository{dbfile: dbfile, db: db}
+	repo := &Repository{dbfile: dbfile, db: db, snapshots: nil}
 	return repo, nil
 }
 
@@ -94,6 +102,97 @@ func (r *Repository) Set(key string, content []byte) error {
 	}
 
 	return r.dbfile.Commit(fdb.COMMIT_NORMAL)
+}
+
+func (r *Repository) CreateSnapshot(txnid common.Txnid) error {
+
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	info, err := r.db.Info()
+	if err != nil {
+		return err
+	}
+
+	fdbSnapshot, err := r.db.SnapshotOpen(info.LastSeqNum())
+	if err != nil {
+		return err
+	}
+
+	snapshot := &Snapshot{snapshot: fdbSnapshot,
+		txnid: txnid,
+		count: 0}
+
+	r.pruneSnapshot()
+
+	r.snapshots = append(r.snapshots, snapshot)
+	return nil
+}
+
+func (r *Repository) AcquireSnapshot() (common.Txnid, *RepoIterator, error) {
+
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	if len(r.snapshots) == 0 {
+		return common.Txnid(0), nil, nil
+	}
+
+	snapshot := r.snapshots[len(r.snapshots)-1]
+
+	iter, err := snapshot.snapshot.IteratorInit(nil, nil, fdb.ITR_NONE)
+	if err != nil {
+		return common.Txnid(0), nil, err
+	}
+	return snapshot.txnid, &RepoIterator{iter: iter}, nil
+}
+
+func (r *Repository) ReleaseSnapshot(txnid common.Txnid) {
+
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	for _, snapshot := range r.snapshots {
+		if snapshot.txnid == txnid && snapshot.count > 0 {
+			snapshot.count--
+		}
+	}
+}
+
+func (r *Repository) pruneSnapshot() {
+
+	// TODO : closing a snapshot
+	var newList []*Snapshot = nil
+	for _, snapshot := range r.snapshots {
+		if snapshot.count <= 0 {
+			newList = append(newList, snapshot)
+		} else {
+			// closing snapshot
+			snapshot.snapshot.Close()
+		}
+	}
+
+	r.snapshots = newList
+}
+
+//
+// Update/Insert into the repository
+//
+func (r *Repository) SetNoCommit(key string, content []byte) error {
+
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	log.Printf("Repo.SetNoCommit(): key %s, len(content) %d", key, len(content))
+
+	//convert key to its collatejson encoded byte representation
+	k, err := CollateString(key)
+	if err != nil {
+		return err
+	}
+
+	// set value
+	return r.db.SetKV(k, content)
 }
 
 //
@@ -135,11 +234,44 @@ func (r *Repository) Delete(key string) error {
 }
 
 //
+// Delete from repository
+//
+func (r *Repository) DeleteNoCommit(key string) error {
+
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	//convert key to its collatejson encoded byte representation
+	k, err := CollateString(key)
+	if err != nil {
+		return err
+	}
+
+	return r.db.DeleteKV(k)
+}
+
+//
+// Delete from repository
+//
+func (r *Repository) Commit() error {
+
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	return r.dbfile.Commit(fdb.COMMIT_NORMAL)
+}
+
+//
 // Close repository.
 //
 func (r *Repository) Close() {
 	// TODO: Does it need mutex?
 	if r.db != nil {
+		for _, snapshot := range r.snapshots {
+			snapshot.snapshot.Close()
+		}
+		r.snapshots = nil
+
 		r.db.Close()
 		r.db = nil
 

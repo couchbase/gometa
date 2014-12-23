@@ -43,7 +43,7 @@ type DefaultServerCallback interface {
 
 type ServerAction struct {
 	repo     *repo.Repository
-	log      *repo.CommitLog
+	log      repo.CommitLogger
 	config   *repo.ServerConfig
 	txn      *common.TxnState
 	server   ServerCallback
@@ -74,7 +74,7 @@ func NewDefaultServerAction(repository *repo.Repository,
 }
 
 func NewServerAction(repo *repo.Repository,
-	log *repo.CommitLog,
+	log repo.CommitLogger,
 	config *repo.ServerConfig,
 	server ServerCallback,
 	txn *common.TxnState,
@@ -123,6 +123,7 @@ func (a *ServerAction) Commit(txid common.Txnid) error {
 		return err
 	}
 
+	a.log.MarkCommitted(txid)
 	a.server.UpdateStateOnCommit(txid, key)
 
 	return nil
@@ -230,7 +231,7 @@ func (a *ServerAction) GetCommitedEntries(txid1, txid2 common.Txnid) (<-chan pro
 }
 
 func (a *ServerAction) startLogStreamer(startTxid common.Txnid,
-	iter *repo.LogIterator,
+	iter repo.CommitLogIterator,
 	logChan chan protocol.LogEntryMsg,
 	errChan chan error,
 	killChan chan bool) {
@@ -274,7 +275,11 @@ func (a *ServerAction) LogAndCommit(txid common.Txnid, op uint32, key string, co
 			return err
 		}
 
-		return a.config.SetLastCommittedTxid(txid)
+		if err := a.config.SetLastCommittedTxid(txid); err != nil {
+			return err
+		}
+
+		a.log.MarkCommitted(txid)
 	}
 
 	return nil

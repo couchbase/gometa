@@ -33,7 +33,7 @@ import (
 type EmbeddedServer struct {
 	msgAddr   string
 	repo      *r.Repository
-	log       *r.CommitLog
+	log       r.CommitLogger
 	srvConfig *r.ServerConfig
 	txn       *common.TxnState
 	state     *ServerState
@@ -190,7 +190,7 @@ func (s *EmbeddedServer) bootstrap() (err error) {
 	if err != nil {
 		return err
 	}
-	s.log = r.NewCommitLog(s.repo)
+	s.log = r.NewTransientCommitLog(s.repo)
 	s.srvConfig = r.NewServerConfig(s.repo)
 
 	// Create and initialize new txn state.

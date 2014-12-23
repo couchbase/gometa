@@ -28,6 +28,19 @@ import (
 // CommitLog
 /////////////////////////////////////////////////////////////////////////////
 
+type CommitLogger interface {
+	Log(txid common.Txnid, op common.OpCode, key string, content []byte) error
+	Get(txid common.Txnid) (common.OpCode, string, []byte, error)
+	Delete(txid common.Txnid) error
+	MarkCommitted(txid common.Txnid) error
+	NewIterator(txid1, txid2 common.Txnid) (CommitLogIterator, error)
+}
+
+type CommitLogIterator interface {
+	Next() (txnid common.Txnid, op common.OpCode, key string, content []byte, err error)
+	Close()
+}
+
 type CommitLog struct {
 	repo    *Repository
 	factory *message.ConcreteMsgFactory
@@ -98,6 +111,14 @@ func (r *CommitLog) Delete(txid common.Txnid) error {
 	return r.repo.Delete(k)
 }
 
+//
+// Mark a log entry has been committted
+//
+func (r *CommitLog) MarkCommitted(txid common.Txnid) error {
+	// no-op
+	return nil
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // LogIterator Public Function
 /////////////////////////////////////////////////////////////////////////////
@@ -105,7 +126,7 @@ func (r *CommitLog) Delete(txid common.Txnid) error {
 //
 // Create a new iterator
 //
-func (r *CommitLog) NewIterator(txid1, txid2 common.Txnid) (*LogIterator, error) {
+func (r *CommitLog) NewIterator(txid1, txid2 common.Txnid) (CommitLogIterator, error) {
 
 	startKey := createLogKey(txid1)
 	endKey := ""    // get everything until the commit log is exhausted

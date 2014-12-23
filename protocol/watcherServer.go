@@ -33,7 +33,7 @@ import (
 // channel such that if the goroutine running RunWatcherServer goes
 // away, the sender won't get blocked.
 //
-func RunWatcherServer(leader string,
+func RunWatcherServerWithRequest(leader string,
 	requestMgr RequestMgr,
 	handler ActionHandler,
 	factory MsgFactory,
@@ -58,6 +58,21 @@ func RunWatcherServer(leader string,
 			}
 		}
 	}
+}
+
+//
+// Create a new WatcherServer. This is a blocking call until
+// the WatcherServer terminates. Make sure the kilch is a buffered
+// channel such that if the goroutine running RunWatcherServer goes
+// away, the sender won't get blocked.
+//
+func RunWatcherServer(leader string,
+	handler ActionHandler,
+	factory MsgFactory,
+	killch <-chan bool,
+	readych chan<- bool) {
+
+	RunWatcherServerWithRequest(leader, nil, handler, factory, killch, readych)
 }
 
 //
