@@ -39,6 +39,7 @@ type EmbeddedServer struct {
 	state     *ServerState
 	factory   protocol.MsgFactory
 	handler   *action.ServerAction
+	notifier  action.EventNotifier
 	listener  *common.PeerListener
 	skillch   chan bool
 }
@@ -49,8 +50,14 @@ type EmbeddedServer struct {
 
 func RunEmbeddedServer(msgAddr string) (*EmbeddedServer, error) {
 
+	return RunEmbeddedServerWithNotifier(msgAddr, nil)
+}
+
+func RunEmbeddedServerWithNotifier(msgAddr string, notifier action.EventNotifier) (*EmbeddedServer, error) {
+
 	server := new(EmbeddedServer)
 	server.msgAddr = msgAddr
+	server.notifier = notifier
 
 	if err := server.bootstrap(); err != nil {
 		log.Printf("EmbeddedServer.boostrap: error : %v\n", err)
@@ -209,7 +216,7 @@ func (s *EmbeddedServer) bootstrap() (err error) {
 	// Initialize various callback facility for leader election and
 	// voting protocol.
 	s.factory = message.NewConcreteMsgFactory()
-	s.handler = action.NewServerAction(s.repo, s.log, s.srvConfig, s, s.txn, s.factory, s)
+	s.handler = action.NewServerActionWithNotifier(s.repo, s.log, s.srvConfig, s, s.notifier, s.txn, s.factory, s)
 	s.skillch = make(chan bool, 1) // make it buffered to unblock sender
 
 	// Need to start the peer listener before election. A follower may

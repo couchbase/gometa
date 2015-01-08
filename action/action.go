@@ -47,8 +47,14 @@ type ServerAction struct {
 	config   *repo.ServerConfig
 	txn      *common.TxnState
 	server   ServerCallback
+	notifier EventNotifier
 	factory  protocol.MsgFactory
 	verifier protocol.QuorumVerifier
+}
+
+type EventNotifier interface {
+	OnNewProposal(txnid common.Txnid, op common.OpCode, key string, content []byte) error
+	OnCommit(txnid common.Txnid, key string)
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -69,6 +75,7 @@ func NewDefaultServerAction(repository *repo.Repository,
 		config:   config,
 		txn:      txn,
 		server:   server,
+		notifier: nil,
 		factory:  factory,
 		verifier: server}
 }
@@ -87,6 +94,27 @@ func NewServerAction(repo *repo.Repository,
 		config:   config,
 		txn:      txn,
 		server:   server,
+		notifier: nil,
+		factory:  factory,
+		verifier: verifier}
+}
+
+func NewServerActionWithNotifier(repo *repo.Repository,
+	log repo.CommitLogger,
+	config *repo.ServerConfig,
+	server ServerCallback,
+	notifier EventNotifier,
+	txn *common.TxnState,
+	factory protocol.MsgFactory,
+	verifier protocol.QuorumVerifier) *ServerAction {
+
+	return &ServerAction{
+		repo:     repo,
+		log:      log,
+		config:   config,
+		txn:      txn,
+		server:   server,
+		notifier: notifier,
 		factory:  factory,
 		verifier: verifier}
 }
@@ -115,6 +143,10 @@ func (a *ServerAction) Commit(txid common.Txnid) error {
 		return err
 	}
 
+	if a.notifier != nil {
+		a.notifier.OnCommit(txid, key)
+	}
+
 	if err := a.persistChange(opCode, key, content); err != nil {
 		return err
 	}
@@ -130,6 +162,13 @@ func (a *ServerAction) Commit(txid common.Txnid) error {
 }
 
 func (a *ServerAction) LogProposal(p protocol.ProposalMsg) error {
+
+	if a.notifier != nil {
+		tnxid, op, key, content := p.GetTxnid(), p.GetOpCode(), p.GetKey(), p.GetContent()
+		if err := a.notifier.OnNewProposal(common.Txnid(tnxid), common.OpCode(op), key, content); err != nil {
+			return err
+		}
+	}
 
 	err := a.appendCommitLog(common.Txnid(p.GetTxnid()), common.OpCode(p.GetOpCode()), p.GetKey(), p.GetContent())
 	if err != nil {
