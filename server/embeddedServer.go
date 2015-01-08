@@ -165,6 +165,18 @@ func (s *EmbeddedServer) GetIterator(startKey, endKey string) (*r.RepoIterator, 
 	return s.repo.NewIterator(startKey, endKey)
 }
 
+func (s *EmbeddedServer) SetConfigValue(key string, value string) error {
+	return s.srvConfig.LogStr(key, value)
+}
+
+func (s *EmbeddedServer) DeleteConfigValue(key string) error {
+	return s.srvConfig.Delete(key)
+}
+
+func (s *EmbeddedServer) GetConfigValue(key string) (string, error) {
+	return s.srvConfig.GetStr(key)
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // Server
 /////////////////////////////////////////////////////////////////////////////

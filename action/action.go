@@ -119,6 +119,18 @@ func NewServerActionWithNotifier(repo *repo.Repository,
 		verifier: verifier}
 }
 
+func (a *ServerAction) SetConfigValue(key string, value string) error {
+	return a.config.LogStr(key, value)
+}
+
+func (a *ServerAction) DeleteConfigValue(key string) error {
+	return a.config.Delete(key)
+}
+
+func (a *ServerAction) GetConfigValue(key string) (string, error) {
+	return a.config.GetStr(key)
+}
+
 ////////////////////////////////////////////////////////////////////////////
 // Server Action for Environment
 /////////////////////////////////////////////////////////////////////////////
