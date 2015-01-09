@@ -326,7 +326,7 @@ func (i *RepoIterator) Next() (key string, content []byte, err error) {
 		return "", nil, err
 	}
 
-	i.db.Get(doc)
+	//i.db.Get(doc)
 	key = DecodeString(doc.Key())
 	body := doc.Body()
 
@@ -340,8 +340,10 @@ func (i *RepoIterator) Next() (key string, content []byte, err error) {
 // close iterator
 func (i *RepoIterator) Close() {
 	// TODO: Check if fdb iterator is closed
-	i.iter.Close()
-	i.iter = nil
+	if i.iter != nil {
+		i.iter.Close()
+		i.iter = nil
+	}
 }
 
 // This only support ascii.

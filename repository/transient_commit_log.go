@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/message"
+	fdb "github.com/couchbaselabs/goforestdb"
 	"strings"
 	"sync"
 )
@@ -129,6 +130,7 @@ func (r *TransientCommitLog) NewIterator(txid1, txid2 common.Txnid) (CommitLogIt
 		return nil, common.NewError(common.REPO_ERROR, "TransientLCommitLog.NewIterator: cannot support beginning txid > 0")
 	}
 
+	// iter can be nil if nothing has been logged
 	txnid, iter, err := r.repo.AcquireSnapshot()
 	if err != nil {
 		return nil, err
@@ -148,10 +150,12 @@ func (r *TransientCommitLog) NewIterator(txid1, txid2 common.Txnid) (CommitLogIt
 		curContent: nil,
 		curError:   nil}
 
-	for {
-		result.curKey, result.curContent, result.curError = result.iter.Next()
-		if result.curError != nil || strings.Contains(result.curKey, common.PREFIX_DATA_PATH) {
-			break
+	if result.iter != nil {
+		for {
+			result.curKey, result.curContent, result.curError = result.iter.Next()
+			if result.curError != nil || strings.Contains(result.curKey, common.PREFIX_DATA_PATH) {
+				break
+			}
 		}
 	}
 
@@ -160,6 +164,10 @@ func (r *TransientCommitLog) NewIterator(txid1, txid2 common.Txnid) (CommitLogIt
 
 // Get value from iterator
 func (i *TransientLogIterator) Next() (txnid common.Txnid, op common.OpCode, key string, content []byte, err error) {
+
+	if i.iter == nil {
+		return 0, common.OPCODE_INVALID, "", nil, fdb.RESULT_ITERATOR_FAIL
+	}
 
 	if i.curError != nil {
 		return 0, common.OPCODE_INVALID, "", nil, i.curError
@@ -198,6 +206,8 @@ func (i *TransientLogIterator) Next() (txnid common.Txnid, op common.OpCode, key
 func (i *TransientLogIterator) Close() {
 
 	// TODO: Check if fdb iterator is closed
-	i.iter.Close()
+	if i.iter != nil {
+		i.iter.Close()
+	}
 	i.repo.ReleaseSnapshot(i.txnid)
 }
