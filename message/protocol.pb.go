@@ -20,6 +20,7 @@ It has these top-level messages:
 	NewLeaderAck
 	LogEntry
 	Request
+	Abort
 */
 package message
 
@@ -452,6 +453,46 @@ func (m *Request) GetContent() []byte {
 		return m.Content
 	}
 	return nil
+}
+
+type Abort struct {
+	Version          *uint32 `protobuf:"varint,1,req,name=version" json:"version,omitempty"`
+	ReqId            *uint64 `protobuf:"varint,2,req,name=reqId" json:"reqId,omitempty"`
+	Fid              *string `protobuf:"bytes,3,req,name=fid" json:"fid,omitempty"`
+	Error            *string `protobuf:"bytes,4,opt,name=error" json:"error,omitempty"`
+	XXX_unrecognized []byte  `json:"-"`
+}
+
+func (m *Abort) Reset()         { *m = Abort{} }
+func (m *Abort) String() string { return proto.CompactTextString(m) }
+func (*Abort) ProtoMessage()    {}
+
+func (m *Abort) GetVersion() uint32 {
+	if m != nil && m.Version != nil {
+		return *m.Version
+	}
+	return 0
+}
+
+func (m *Abort) GetReqId() uint64 {
+	if m != nil && m.ReqId != nil {
+		return *m.ReqId
+	}
+	return 0
+}
+
+func (m *Abort) GetFid() string {
+	if m != nil && m.Fid != nil {
+		return *m.Fid
+	}
+	return ""
+}
+
+func (m *Abort) GetError() string {
+	if m != nil && m.Error != nil {
+		return *m.Error
+	}
+	return ""
 }
 
 func init() {

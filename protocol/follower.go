@@ -187,6 +187,8 @@ func (f *Follower) handleMessage(msg common.Packet) (err error) {
 		err = f.handleProposal(request)
 	case CommitMsg:
 		err = f.handleCommit(request)
+	case AbortMsg:
+		err = f.handleAbort(request)
 	default:
 		log.Printf("Follower.handleMessage(): unrecognized message %s.  Ignore.", msg.Name())
 	}
@@ -251,6 +253,17 @@ func (f *Follower) handleCommit(msg CommitMsg) error {
 
 	// TODO: do we need to update election site?  I don't think so, but need to double check.
 
+	return nil
+}
+
+//
+// Handle abort message from the leader.
+//
+func (f *Follower) handleAbort(msg AbortMsg) error {
+
+	// TODO : Add a new function to ActionHandler for Abort
+	p := f.factory.CreateProposal(0, msg.GetFid(), msg.GetReqId(), uint32(common.OPCODE_ABORT), msg.GetError(), nil)
+	f.handler.LogProposal(p)
 	return nil
 }
 

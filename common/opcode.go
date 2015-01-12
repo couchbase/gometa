@@ -29,6 +29,7 @@ const (
 	OPCODE_SET
 	OPCODE_DELETE
 	OPCODE_GET
+	OPCODE_ABORT
 	OPCODE_STREAM_BEGIN_MARKER
 	OPCODE_STREAM_END_MARKER
 )
@@ -47,6 +48,8 @@ func GetOpCodeStr(r OpCode) string {
 		return "StreamBegin"
 	case OPCODE_STREAM_END_MARKER:
 		return "StreamEnd"
+	case OPCODE_ABORT:
+		return "Abort"
 	default:
 		return "Invalid"
 	}
@@ -70,6 +73,9 @@ func GetOpCode(s string) OpCode {
 	}
 	if s == "StreamEnd" {
 		return OPCODE_STREAM_END_MARKER
+	}
+	if s == "Abort" {
+		return OPCODE_ABORT
 	}
 	return OPCODE_INVALID
 }

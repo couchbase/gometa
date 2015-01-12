@@ -87,6 +87,28 @@ func (req *Commit) Print() {
 }
 
 //
+// Abort - implement Packet interface
+//
+func (req *Abort) Name() string {
+	return "Abort"
+}
+
+func (req *Abort) Encode() (data []byte, err error) {
+	return proto.Marshal(req)
+}
+
+func (req *Abort) Decode(data []byte) (err error) {
+	return proto.Unmarshal(data, req)
+}
+
+func (req *Abort) Print() {
+	log.Printf("Abort Message:")
+	log.Printf("	Fid    : %s", req.GetFid())
+	log.Printf("	ReqId  : %d", req.GetReqId())
+	log.Printf("	Error : %s", req.GetError())
+}
+
+//
 // Vote - implement Packet interface
 //
 func (req *Vote) Name() string {

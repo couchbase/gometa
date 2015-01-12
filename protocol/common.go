@@ -118,6 +118,8 @@ type MsgFactory interface {
 
 	CreateCommit(txnid uint64) CommitMsg
 
+	CreateAbort(fid string, reqId uint64, err string) AbortMsg
+	
 	CreateVote(round uint64, status uint32, epoch uint32, cndId string, cndLoggedTxnId uint64,
 		cndCommittedTxnId uint64, solicit bool) VoteMsg
 
@@ -159,6 +161,13 @@ type AcceptMsg interface {
 type CommitMsg interface {
 	common.Packet
 	GetTxnid() uint64
+}
+
+type AbortMsg interface {
+	common.Packet
+	GetFid() string
+	GetReqId() uint64
+	GetError() string
 }
 
 type RequestMsg interface {

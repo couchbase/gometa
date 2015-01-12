@@ -102,7 +102,11 @@ func (r *Repository) Set(key string, content []byte) error {
 		return err
 	}
 
-	return r.dbfile.Commit(fdb.COMMIT_NORMAL)
+	cerr := r.dbfile.Commit(fdb.COMMIT_NORMAL)
+	if info, err := r.db.Info(); err == nil {
+		log.Printf("Repo.Set(): forestdb seqnum after commit %v", info.LastSeqNum()) 
+	}
+	return cerr
 }
 
 func (r *Repository) CreateSnapshot(txnid common.Txnid) error {
@@ -127,6 +131,8 @@ func (r *Repository) CreateSnapshot(txnid common.Txnid) error {
 	r.pruneSnapshot()
 
 	r.snapshots = append(r.snapshots, snapshot)
+	
+	log.Printf("Repo.CreateSnapshot(): txnid %v, forestdb seqnum %v", txnid, info.LastSeqNum()) 
 	return nil
 }
 
@@ -141,7 +147,7 @@ func (r *Repository) AcquireSnapshot() (common.Txnid, *RepoIterator, error) {
 
 	snapshot := r.snapshots[len(r.snapshots)-1]
 
-	iter, err := snapshot.snapshot.IteratorInit(nil, nil, fdb.ITR_NONE)
+	iter, err := snapshot.snapshot.IteratorInit(nil, nil, fdb.ITR_NO_DELETES)
 	if err != nil {
 		return common.Txnid(0), nil, err
 	}
@@ -231,7 +237,11 @@ func (r *Repository) Delete(key string) error {
 		return err
 	}
 
-	return r.dbfile.Commit(fdb.COMMIT_NORMAL)
+	cerr := r.dbfile.Commit(fdb.COMMIT_NORMAL)
+	if info, err := r.db.Info(); err == nil {
+		log.Printf("Repo.Delete(): forestdb seqnum after commit %v", info.LastSeqNum()) 
+	}
+	return cerr
 }
 
 //
@@ -259,7 +269,11 @@ func (r *Repository) Commit() error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
-	return r.dbfile.Commit(fdb.COMMIT_NORMAL)
+	cerr := r.dbfile.Commit(fdb.COMMIT_NORMAL)
+	if info, err := r.db.Info(); err == nil {
+		log.Printf("Repo.Set(): forestdb seqnum after commit %v", info.LastSeqNum()) 
+	}
+	return cerr
 }
 
 //
@@ -301,7 +315,7 @@ func (r *Repository) NewIterator(startKey, endKey string) (*RepoIterator, error)
 		return nil, err
 	}
 
-	iter, err := r.db.IteratorInit(k1, k2, fdb.ITR_NONE)
+	iter, err := r.db.IteratorInit(k1, k2, fdb.ITR_NO_DELETES)
 	if err != nil {
 		return nil, err
 	}

@@ -68,6 +68,15 @@ func (f *ConcreteMsgFactory) CreateCommit(txnid uint64) protocol.CommitMsg {
 		Txnid: proto.Uint64(txnid)}
 }
 
+func (f *ConcreteMsgFactory) CreateAbort(fid string,
+	reqId uint64, err string) protocol.AbortMsg {
+
+	return &Abort{Version: proto.Uint32(ProtoVersion()),
+		Fid:     proto.String(fid),
+		ReqId:   proto.Uint64(reqId),
+		Error:   proto.String(err)}
+}
+
 func (f *ConcreteMsgFactory) CreateVote(round uint64,
 	status uint32,
 	epoch uint32,
@@ -160,4 +169,5 @@ func registerMessages() {
 	common.RegisterPacketByName("NewLeader", &NewLeader{})
 	common.RegisterPacketByName("NewLeaderAck", &NewLeaderAck{})
 	common.RegisterPacketByName("Request", &Request{})
+	common.RegisterPacketByName("Abort", &Abort{})
 }

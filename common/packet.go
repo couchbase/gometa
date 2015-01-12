@@ -58,8 +58,7 @@ func RegisterPacketByName(name string, instance Packet) {
 func CreatePacketByName(name string) (Packet, error) {
 	sample := gRegistry.mapping[name]
 	if sample == nil {
-		// TODO: return actual error
-		return nil, nil
+		panic("Packet " + name + " is not registered with message factory.  Cannot create new packet.")
 	}
 
 	return reflect.New(FindPacketConcreteType(sample)).Interface().(Packet), nil

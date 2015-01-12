@@ -89,3 +89,10 @@ message Request {
     required string          key       = 4;
     required bytes           content   = 5;
 }
+
+message Abort {
+    required uint32          version   = 1; // protocol version TBD
+    required uint64          reqId     = 2;
+    required string          fid       = 3;
+    optional string          error     = 4;
+}

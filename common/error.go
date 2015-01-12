@@ -36,6 +36,14 @@ type Error struct {
 	cause  error
 }
 
+type RecoverableError struct {
+	Reason string
+}
+
+func (e *RecoverableError) Error() string {
+	return e.Reason 
+}
+
 func NewError(code ErrorCode, reason string) *Error {
 	return &Error{code: code, reason: reason, cause: nil}
 }

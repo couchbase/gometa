@@ -144,6 +144,7 @@ func (p *PeerPipe) doSend() {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in PeerPipe.doSend() : %s\n", r)
+			log.Printf("%s", debug.Stack())
 		}
 
 		// This will close the Send and Receive channel
@@ -189,6 +190,7 @@ func (p *PeerPipe) doReceive() {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in PeerPipe.doReceive() : %s\n", r)
+			log.Printf("%s", debug.Stack())
 		}
 
 		// This will close the Send and Receive channel

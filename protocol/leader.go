@@ -509,6 +509,13 @@ func (l *Leader) newProposal(proposal ProposalMsg) error {
 	// sending to followers.
 	err := l.handler.LogProposal(proposal)
 	if err != nil {
+		if _, ok := err.(*common.RecoverableError); ok {
+			/// update the last committed to advacne the txnid.   
+			l.lastCommitted = common.Txnid(proposal.GetTxnid())
+			l.sendAbort(proposal, err)
+			return nil
+		}
+		
 		// If fails to log the proposal, return the error.
 		// This can cause the leader to re-elect.  Just to handle
 		// case where there is hardware failure or repository
@@ -583,6 +590,37 @@ func (l *Leader) sendProposal(proposal ProposalMsg) {
 
 	for _, o := range l.observers {
 		o.send(msg)
+	}
+}
+
+//
+// send the proposal to the followers
+//
+func (l *Leader) sendAbort(proposal ProposalMsg, err error) {
+
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	for _, f := range l.followers {
+		if f.fid == proposal.GetFid() {
+			msg := l.factory.CreateAbort(proposal.GetFid(), proposal.GetReqId(), err.Error())
+			f.pipe.Send(msg)
+			return
+		}
+	}
+	
+	for _, w := range l.watchers {
+		if w.fid == proposal.GetFid() {
+			msg := l.factory.CreateAbort(proposal.GetFid(), proposal.GetReqId(), err.Error())
+			w.pipe.Send(msg)
+			return
+		}
+	}
+
+	if l.GetFollowerId() == proposal.GetFid() {	
+		p := l.factory.CreateProposal(0, proposal.GetFid(), proposal.GetReqId(), 
+					uint32(common.OPCODE_ABORT), err.Error(), nil)
+		l.handler.LogProposal(p)
 	}
 }
 
