@@ -109,6 +109,28 @@ func (req *Abort) Print() {
 }
 
 //
+// Response - implement Packet interface
+//
+func (req *Response) Name() string {
+	return "Response"
+}
+
+func (req *Response) Encode() (data []byte, err error) {
+	return proto.Marshal(req)
+}
+
+func (req *Response) Decode(data []byte) (err error) {
+	return proto.Unmarshal(data, req)
+}
+
+func (req *Response) Print() {
+	log.Printf("Response Message:")
+	log.Printf("	Fid    : %s", req.GetFid())
+	log.Printf("	ReqId  : %d", req.GetReqId())
+	log.Printf("	Error : %s", req.GetError())
+}
+
+//
 // Vote - implement Packet interface
 //
 func (req *Vote) Name() string {

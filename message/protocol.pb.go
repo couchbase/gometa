@@ -21,6 +21,7 @@ It has these top-level messages:
 	LogEntry
 	Request
 	Abort
+	Response
 */
 package message
 
@@ -489,6 +490,46 @@ func (m *Abort) GetFid() string {
 }
 
 func (m *Abort) GetError() string {
+	if m != nil && m.Error != nil {
+		return *m.Error
+	}
+	return ""
+}
+
+type Response struct {
+	Version          *uint32 `protobuf:"varint,1,req,name=version" json:"version,omitempty"`
+	ReqId            *uint64 `protobuf:"varint,2,req,name=reqId" json:"reqId,omitempty"`
+	Fid              *string `protobuf:"bytes,3,req,name=fid" json:"fid,omitempty"`
+	Error            *string `protobuf:"bytes,4,opt,name=error" json:"error,omitempty"`
+	XXX_unrecognized []byte  `json:"-"`
+}
+
+func (m *Response) Reset()         { *m = Response{} }
+func (m *Response) String() string { return proto.CompactTextString(m) }
+func (*Response) ProtoMessage()    {}
+
+func (m *Response) GetVersion() uint32 {
+	if m != nil && m.Version != nil {
+		return *m.Version
+	}
+	return 0
+}
+
+func (m *Response) GetReqId() uint64 {
+	if m != nil && m.ReqId != nil {
+		return *m.ReqId
+	}
+	return 0
+}
+
+func (m *Response) GetFid() string {
+	if m != nil && m.Fid != nil {
+		return *m.Fid
+	}
+	return ""
+}
+
+func (m *Response) GetError() string {
 	if m != nil && m.Error != nil {
 		return *m.Error
 	}

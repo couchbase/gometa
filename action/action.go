@@ -175,6 +175,11 @@ func (a *ServerAction) Commit(txid common.Txnid) error {
 
 func (a *ServerAction) LogProposal(p protocol.ProposalMsg) error {
 
+	if common.OpCode(p.GetOpCode()) == common.OPCODE_ABORT || common.OpCode(p.GetOpCode()) == common.OPCODE_RESPONSE {
+		a.server.UpdateStateOnNewProposal(p)
+		return nil
+	}
+
 	if a.notifier != nil {
 		tnxid, op, key, content := p.GetTxnid(), p.GetOpCode(), p.GetKey(), p.GetContent()
 		if err := a.notifier.OnNewProposal(common.Txnid(tnxid), common.OpCode(op), key, content); err != nil {

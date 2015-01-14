@@ -61,9 +61,10 @@ import (
 /////////////////////////////////////////////////
 
 type Leader struct {
-	naddr   string
-	handler ActionHandler
-	factory MsgFactory
+	naddr      string
+	handler    ActionHandler
+	factory    MsgFactory
+	reqHandler CustomRequestHandler
 
 	notifications chan *notification
 	lastCommitted common.Txnid
@@ -113,6 +114,39 @@ func NewLeader(naddr string,
 		handler:       handler,
 		factory:       factory,
 		isClosed:      false,
+		reqHandler:    nil,
+		changech:      make(chan bool, common.MAX_PEERS)} // make it buffered so sender won't block
+
+	// This is initialized to the lastCommitted in repository. Subsequent commit() will update this
+	// field to the latest committed txnid. This field is used for ensuring the commit order is preserved.
+	// The leader will commit the proposal in the strict order as it arrives as to preserve serializability.
+	leader.lastCommitted, err = handler.GetLastCommittedTxid()
+	if err != nil {
+		return nil, err
+	}
+
+	// start a listener go-routine.  This will be closed when the leader terminate.
+	go leader.listen()
+
+	return leader, nil
+}
+
+func NewLeaderWithCustomHandler(naddr string,
+	handler ActionHandler,
+	factory MsgFactory,
+	reqHandler CustomRequestHandler) (leader *Leader, err error) {
+
+	leader = &Leader{naddr: naddr,
+		followers:     make(map[string]*messageListener),
+		watchers:      make(map[string]*messageListener),
+		observers:     make(map[string]*observer),
+		quorums:       make(map[common.Txnid][]string),
+		proposals:     make(map[common.Txnid]ProposalMsg),
+		notifications: make(chan *notification, common.MAX_PROPOSALS),
+		handler:       handler,
+		factory:       factory,
+		isClosed:      false,
+		reqHandler:    reqHandler,
 		changech:      make(chan bool, common.MAX_PEERS)} // make it buffered so sender won't block
 
 	// This is initialized to the lastCommitted in repository. Subsequent commit() will update this
@@ -311,6 +345,11 @@ func (l *Leader) QueueRequest(fid string, req common.Packet) {
 	l.notifications <- n
 }
 
+func (l *Leader) QueueResponse(req common.Packet) {
+	n := &notification{fid: l.GetFollowerId(), payload: req}
+	l.notifications <- n
+}
+
 /////////////////////////////////////////////////
 // messageListener
 /////////////////////////////////////////////////
@@ -462,9 +501,21 @@ func (l *Leader) handleMessage(msg common.Packet, follower string) (err error) {
 	err = nil
 	switch request := msg.(type) {
 	case RequestMsg:
-		err = l.createProposal(follower, request)
+		if common.IsCustomOpCode(common.OpCode(request.GetOpCode())) {
+			if l.reqHandler != nil {
+				l.reqHandler.OnNewRequest(follower, request)
+			} else {
+				log.Printf("Leader.handleMessage(): No custom request handler registered to handle custom request.")
+				response := l.factory.CreateResponse(follower, request.GetReqId(), "No custom request handler")
+				l.sendResponse(response)
+			}
+		} else {
+			err = l.createProposal(follower, request)
+		}
 	case AcceptMsg:
 		err = l.handleAccept(request)
+	case ResponseMsg:
+		l.sendResponse(request)
 	default:
 		// TODO: Should throw exception.  There is a possiblity that there is another leader.
 		log.Printf("Leader.handleMessage(): Leader unable to process message of type %s. Ignore message.", request.Name())
@@ -510,12 +561,12 @@ func (l *Leader) newProposal(proposal ProposalMsg) error {
 	err := l.handler.LogProposal(proposal)
 	if err != nil {
 		if _, ok := err.(*common.RecoverableError); ok {
-			/// update the last committed to advacne the txnid.   
+			/// update the last committed to advacne the txnid.
 			l.lastCommitted = common.Txnid(proposal.GetTxnid())
-			l.sendAbort(proposal, err)
+			l.sendAbort(proposal.GetFid(), proposal.GetReqId(), err.Error())
 			return nil
 		}
-		
+
 		// If fails to log the proposal, return the error.
 		// This can cause the leader to re-elect.  Just to handle
 		// case where there is hardware failure or repository
@@ -596,30 +647,61 @@ func (l *Leader) sendProposal(proposal ProposalMsg) {
 //
 // send the proposal to the followers
 //
-func (l *Leader) sendAbort(proposal ProposalMsg, err error) {
+func (l *Leader) sendAbort(fid string, reqId uint64, err string) {
 
+	log.Printf("leader.sendAbort(): Send Abort to %s", fid)
+		
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-	
+
 	for _, f := range l.followers {
-		if f.fid == proposal.GetFid() {
-			msg := l.factory.CreateAbort(proposal.GetFid(), proposal.GetReqId(), err.Error())
+		if f.fid == fid {
+			msg := l.factory.CreateAbort(fid, reqId, err)
 			f.pipe.Send(msg)
 			return
 		}
 	}
-	
+
 	for _, w := range l.watchers {
-		if w.fid == proposal.GetFid() {
-			msg := l.factory.CreateAbort(proposal.GetFid(), proposal.GetReqId(), err.Error())
+		if w.fid == fid {
+			msg := l.factory.CreateAbort(fid, reqId, err)
 			w.pipe.Send(msg)
 			return
 		}
 	}
 
-	if l.GetFollowerId() == proposal.GetFid() {	
-		p := l.factory.CreateProposal(0, proposal.GetFid(), proposal.GetReqId(), 
-					uint32(common.OPCODE_ABORT), err.Error(), nil)
+	if l.GetFollowerId() == fid {
+		p := l.factory.CreateProposal(0, fid, reqId, uint32(common.OPCODE_ABORT), err, nil)
+		l.handler.LogProposal(p)
+	}
+}
+
+//
+// send the response to the followers
+//
+func (l *Leader) sendResponse(msg ResponseMsg) {
+
+	log.Printf("leader.sendResponse(): Send Response to %s", msg.GetFid())
+	
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	for _, f := range l.followers {
+		if f.fid == msg.GetFid() {
+			f.pipe.Send(msg)
+			return
+		}
+	}
+
+	for _, w := range l.watchers {
+		if w.fid == msg.GetFid() {
+			w.pipe.Send(msg)
+			return
+		}
+	}
+
+	if l.GetFollowerId() == msg.GetFid() {
+		p := l.factory.CreateProposal(0, msg.GetFid(), msg.GetReqId(), uint32(common.OPCODE_RESPONSE), msg.GetError(), nil)
 		l.handler.LogProposal(p)
 	}
 }

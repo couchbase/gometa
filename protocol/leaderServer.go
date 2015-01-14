@@ -68,6 +68,17 @@ func RunLeaderServer(naddr string,
 	factory MsgFactory,
 	killch <-chan bool) (err error) {
 
+	return RunLeaderServerWithCustomHandler(naddr, listener, ss, handler, factory, nil, killch)
+}
+
+func RunLeaderServerWithCustomHandler(naddr string,
+	listener *common.PeerListener,
+	ss RequestMgr,
+	handler ActionHandler,
+	factory MsgFactory,
+	reqHandler CustomRequestHandler,
+	killch <-chan bool) (err error) {
+
 	log.Printf("LeaderServer.RunLeaderServer(): start leader server %s", naddr)
 
 	// Catch panic at the main entry point for LeaderServer
@@ -83,7 +94,7 @@ func RunLeaderServer(naddr string,
 	}()
 
 	// create a leader
-	leader, err := NewLeader(naddr, handler, factory)
+	leader, err := NewLeaderWithCustomHandler(naddr, handler, factory, reqHandler)
 	if err != nil {
 		return err
 	}
@@ -117,7 +128,7 @@ func RunLeaderServer(naddr string,
 	// start the main loop for processing incoming request.  The leader will
 	// process request only after it has received quorum of followers to
 	// synchronized with it.
-	err = server.processRequest(killch, listenerState)
+	err = server.processRequest(killch, listenerState, reqHandler)
 
 	log.Printf("LeaderServer.RunLeaderServer(): leader server %s terminate", naddr)
 
@@ -323,7 +334,8 @@ func (l *LeaderServer) incrementEpoch() error {
 // Goroutine for processing each request one-by-one
 //
 func (s *LeaderServer) processRequest(killch <-chan bool,
-	listenerState *ListenerState) (err error) {
+	listenerState *ListenerState,
+	reqHandler CustomRequestHandler) (err error) {
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -361,6 +373,14 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 
 	// notify the request processor to start processing new request
 	incomings := s.state.requestMgr.GetRequestChannel()
+
+	var outgoings <-chan common.Packet = nil
+	if reqHandler != nil {
+		outgoings = reqHandler.GetResponseChannel()
+	} else {
+		outgoings = make(<-chan common.Packet)
+	}
+	
 	for {
 		select {
 		case handle, ok := <-incomings:
@@ -374,6 +394,13 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 				// server shutdown.
 				log.Printf("LeaderServer.processRequest(): channel for receiving client request is closed. Terminate.")
 				return nil
+			}
+		case msg, ok := <-outgoings:
+			if ok {
+				// forward msg to the leader
+				s.leader.QueueResponse(msg)
+			} else {
+				log.Printf("LeaderServer.processRequest(): channel for receiving custom response is closed. Ignore.")
 			}
 		case <-killch:
 			// server shutdown
