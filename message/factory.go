@@ -72,9 +72,18 @@ func (f *ConcreteMsgFactory) CreateAbort(fid string,
 	reqId uint64, err string) protocol.AbortMsg {
 
 	return &Abort{Version: proto.Uint32(ProtoVersion()),
-		Fid:     proto.String(fid),
-		ReqId:   proto.Uint64(reqId),
-		Error:   proto.String(err)}
+		Fid:   proto.String(fid),
+		ReqId: proto.Uint64(reqId),
+		Error: proto.String(err)}
+}
+
+func (f *ConcreteMsgFactory) CreateResponse(fid string,
+	reqId uint64, err string) protocol.ResponseMsg {
+
+	return &Response{Version: proto.Uint32(ProtoVersion()),
+		Fid:   proto.String(fid),
+		ReqId: proto.Uint64(reqId),
+		Error: proto.String(err)}
 }
 
 func (f *ConcreteMsgFactory) CreateVote(round uint64,
@@ -170,4 +179,5 @@ func registerMessages() {
 	common.RegisterPacketByName("NewLeaderAck", &NewLeaderAck{})
 	common.RegisterPacketByName("Request", &Request{})
 	common.RegisterPacketByName("Abort", &Abort{})
+	common.RegisterPacketByName("Response", &Response{})
 }

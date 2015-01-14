@@ -119,7 +119,7 @@ type MsgFactory interface {
 	CreateCommit(txnid uint64) CommitMsg
 
 	CreateAbort(fid string, reqId uint64, err string) AbortMsg
-	
+
 	CreateVote(round uint64, status uint32, epoch uint32, cndId string, cndLoggedTxnId uint64,
 		cndCommittedTxnId uint64, solicit bool) VoteMsg
 
@@ -136,6 +136,8 @@ type MsgFactory interface {
 	CreateLogEntry(txnid uint64, opCode uint32, key string, content []byte) LogEntryMsg
 
 	CreateRequest(id uint64, opCode uint32, key string, content []byte) RequestMsg
+
+	CreateResponse(fid string, reqId uint64, err string) ResponseMsg
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -176,6 +178,13 @@ type RequestMsg interface {
 	GetOpCode() uint32
 	GetKey() string
 	GetContent() []byte
+}
+
+type ResponseMsg interface {
+	common.Packet
+	GetFid() string
+	GetReqId() uint64
+	GetError() string
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -246,4 +255,9 @@ type RequestHandle struct {
 type RequestMgr interface {
 	GetRequestChannel() <-chan *RequestHandle
 	AddPendingRequest(handle *RequestHandle)
+}
+
+type CustomRequestHandler interface {
+	OnNewRequest(fid string, request RequestMsg)
+	GetResponseChannel() <-chan common.Packet
 }

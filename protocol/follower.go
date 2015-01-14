@@ -189,6 +189,8 @@ func (f *Follower) handleMessage(msg common.Packet) (err error) {
 		err = f.handleCommit(request)
 	case AbortMsg:
 		err = f.handleAbort(request)
+	case ResponseMsg:
+		err = f.handleResponse(request)
 	default:
 		log.Printf("Follower.handleMessage(): unrecognized message %s.  Ignore.", msg.Name())
 	}
@@ -263,6 +265,17 @@ func (f *Follower) handleAbort(msg AbortMsg) error {
 
 	// TODO : Add a new function to ActionHandler for Abort
 	p := f.factory.CreateProposal(0, msg.GetFid(), msg.GetReqId(), uint32(common.OPCODE_ABORT), msg.GetError(), nil)
+	f.handler.LogProposal(p)
+	return nil
+}
+
+//
+// Handle response message from the leader.
+//
+func (f *Follower) handleResponse(msg ResponseMsg) error {
+
+	// TODO : Add a new function to ActionHandler for Abort
+	p := f.factory.CreateProposal(0, msg.GetFid(), msg.GetReqId(), uint32(common.OPCODE_RESPONSE), msg.GetError(), nil)
 	f.handler.LogProposal(p)
 	return nil
 }

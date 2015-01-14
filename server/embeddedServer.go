@@ -16,6 +16,7 @@
 package server
 
 import (
+	"errors"
 	"github.com/couchbase/gometa/action"
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/message"
@@ -31,17 +32,18 @@ import (
 /////////////////////////////////////////////////////////////////////////////
 
 type EmbeddedServer struct {
-	msgAddr   string
-	repo      *r.Repository
-	log       r.CommitLogger
-	srvConfig *r.ServerConfig
-	txn       *common.TxnState
-	state     *ServerState
-	factory   protocol.MsgFactory
-	handler   *action.ServerAction
-	notifier  action.EventNotifier
-	listener  *common.PeerListener
-	skillch   chan bool
+	msgAddr    string
+	repo       *r.Repository
+	log        r.CommitLogger
+	srvConfig  *r.ServerConfig
+	txn        *common.TxnState
+	state      *ServerState
+	factory    protocol.MsgFactory
+	handler    *action.ServerAction
+	notifier   action.EventNotifier
+	reqHandler protocol.CustomRequestHandler
+	listener   *common.PeerListener
+	skillch    chan bool
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -55,9 +57,15 @@ func RunEmbeddedServer(msgAddr string) (*EmbeddedServer, error) {
 
 func RunEmbeddedServerWithNotifier(msgAddr string, notifier action.EventNotifier) (*EmbeddedServer, error) {
 
+	return RunEmbeddedServerWithCustomHandler(msgAddr, notifier, nil)
+}
+
+func RunEmbeddedServerWithCustomHandler(msgAddr string, notifier action.EventNotifier, reqHandler protocol.CustomRequestHandler) (*EmbeddedServer, error) {
+
 	server := new(EmbeddedServer)
 	server.msgAddr = msgAddr
 	server.notifier = notifier
+	server.reqHandler = reqHandler
 
 	if err := server.bootstrap(); err != nil {
 		log.Printf("EmbeddedServer.boostrap: error : %v\n", err)
@@ -109,6 +117,20 @@ func (s *EmbeddedServer) GetValue(key string) ([]byte, error) {
 // Set value
 //
 func (s *EmbeddedServer) SetValue(key string, value []byte) {
+	s.Set(key, value)
+}
+
+//
+// Delete value
+//
+func (s *EmbeddedServer) DeleteValue(key string) {
+	s.Delete(key)
+}
+
+//
+// Set value
+//
+func (s *EmbeddedServer) Set(key string, value []byte) error {
 
 	id := uint64(time.Now().UnixNano())
 
@@ -129,12 +151,42 @@ func (s *EmbeddedServer) SetValue(key string, value []byte) {
 	// This goroutine will wait until the request has been processed.
 	handle.CondVar.Wait()
 	log.Printf("Receive Response for request. Key %s", key)
+
+	return handle.Err
+}
+
+//
+// Set value
+//
+func (s *EmbeddedServer) CustomSet(key string, value []byte) error {
+
+	id := uint64(time.Now().UnixNano())
+
+	request := s.factory.CreateRequest(id,
+		uint32(common.OPCODE_CUSTOM_SET),
+		key,
+		value)
+
+	handle := newRequestHandle(request)
+
+	handle.CondVar.L.Lock()
+	defer handle.CondVar.L.Unlock()
+
+	// push the request to a channel
+	log.Printf("Handing new request to server. Key %s", key)
+	s.state.incomings <- handle
+
+	// This goroutine will wait until the request has been processed.
+	handle.CondVar.Wait()
+	log.Printf("Receive Response for request. Key %s", key)
+
+	return handle.Err
 }
 
 //
 // Delete value
 //
-func (s *EmbeddedServer) DeleteValue(key string) {
+func (s *EmbeddedServer) Delete(key string) error {
 
 	id := uint64(time.Now().UnixNano())
 
@@ -155,6 +207,8 @@ func (s *EmbeddedServer) DeleteValue(key string) {
 	// This goroutine will wait until the request has been processed.
 	handle.CondVar.Wait()
 	log.Printf("Receive Response for request. Key %s", key)
+
+	return handle.Err
 }
 
 //
@@ -346,7 +400,8 @@ func (s *EmbeddedServer) runOnce() {
 
 		// runServer() is done if there is an error	or being terminated explicitly (killch)
 		s.state.setStatus(protocol.LEADING)
-		if err := protocol.RunLeaderServer(s.msgAddr, s.listener, s.state, s.handler, s.factory, s.skillch); err != nil {
+		if err := protocol.RunLeaderServerWithCustomHandler(
+			s.msgAddr, s.listener, s.state, s.handler, s.factory, s.reqHandler, s.skillch); err != nil {
 			log.Printf("EmbeddedServer.RunOnce() : Error Encountered From Server : %s", err.Error())
 		}
 	} else {
@@ -374,6 +429,7 @@ func (s *EmbeddedServer) UpdateStateOnNewProposal(proposal protocol.ProposalMsg)
 	fid := proposal.GetFid()
 	reqId := proposal.GetReqId()
 	txnid := proposal.GetTxnid()
+	opCode := common.OpCode(proposal.GetOpCode())
 
 	// If this host is the one that sends the request to the leader
 	if fid == s.handler.GetFollowerId() {
@@ -385,7 +441,19 @@ func (s *EmbeddedServer) UpdateStateOnNewProposal(proposal protocol.ProposalMsg)
 		handle, ok := s.state.pendings[reqId]
 		if ok {
 			delete(s.state.pendings, reqId)
-			s.state.proposals[common.Txnid(txnid)] = handle
+
+			if opCode == common.OPCODE_ABORT || opCode == common.OPCODE_RESPONSE {
+				handle.CondVar.L.Lock()
+				defer handle.CondVar.L.Unlock()
+				
+				if len(proposal.GetKey()) != 0 {
+					handle.Err = errors.New(proposal.GetKey())
+				}
+				
+				handle.CondVar.Signal()
+			} else {
+				s.state.proposals[common.Txnid(txnid)] = handle
+			}
 		}
 	}
 }
