@@ -263,10 +263,7 @@ func (f *Follower) handleCommit(msg CommitMsg) error {
 //
 func (f *Follower) handleAbort(msg AbortMsg) error {
 
-	// TODO : Add a new function to ActionHandler for Abort
-	p := f.factory.CreateProposal(0, msg.GetFid(), msg.GetReqId(), uint32(common.OPCODE_ABORT), msg.GetError(), nil)
-	f.handler.LogProposal(p)
-	return nil
+	return f.handler.Abort(msg.GetFid(), msg.GetReqId(), msg.GetError())
 }
 
 //
@@ -274,10 +271,7 @@ func (f *Follower) handleAbort(msg AbortMsg) error {
 //
 func (f *Follower) handleResponse(msg ResponseMsg) error {
 
-	// TODO : Add a new function to ActionHandler for Abort
-	p := f.factory.CreateProposal(0, msg.GetFid(), msg.GetReqId(), uint32(common.OPCODE_RESPONSE), msg.GetError(), nil)
-	f.handler.LogProposal(p)
-	return nil
+	return f.handler.Respond(msg.GetFid(), msg.GetReqId(), msg.GetError())
 }
 
 //

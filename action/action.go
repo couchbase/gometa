@@ -29,6 +29,7 @@ import (
 
 type ServerCallback interface {
 	GetStatus() protocol.PeerStatus
+	UpdateStateOnRespond(fid string, reqId uint64, err string)
 	UpdateStateOnNewProposal(proposal protocol.ProposalMsg)
 	UpdateStateOnCommit(txnid common.Txnid, key string)
 	UpdateWinningEpoch(epoch uint32)
@@ -175,11 +176,6 @@ func (a *ServerAction) Commit(txid common.Txnid) error {
 
 func (a *ServerAction) LogProposal(p protocol.ProposalMsg) error {
 
-	if common.OpCode(p.GetOpCode()) == common.OPCODE_ABORT || common.OpCode(p.GetOpCode()) == common.OPCODE_RESPONSE {
-		a.server.UpdateStateOnNewProposal(p)
-		return nil
-	}
-
 	if a.notifier != nil {
 		tnxid, op, key, content := p.GetTxnid(), p.GetOpCode(), p.GetKey(), p.GetContent()
 		if err := a.notifier.OnNewProposal(common.Txnid(tnxid), common.OpCode(op), key, content); err != nil {
@@ -194,6 +190,16 @@ func (a *ServerAction) LogProposal(p protocol.ProposalMsg) error {
 
 	a.server.UpdateStateOnNewProposal(p)
 
+	return nil
+}
+
+func (a *ServerAction) Abort(fid string, reqId uint64, err string) error {
+	a.server.UpdateStateOnRespond(fid, reqId, err)
+	return nil
+}
+
+func (a *ServerAction) Respond(fid string, reqId uint64, err string) error {
+	a.server.UpdateStateOnRespond(fid, reqId, err)
 	return nil
 }
 

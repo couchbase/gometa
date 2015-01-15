@@ -429,7 +429,23 @@ func (s *EmbeddedServer) UpdateStateOnNewProposal(proposal protocol.ProposalMsg)
 	fid := proposal.GetFid()
 	reqId := proposal.GetReqId()
 	txnid := proposal.GetTxnid()
-	opCode := common.OpCode(proposal.GetOpCode())
+
+	// If this host is the one that sends the request to the leader
+	if fid == s.handler.GetFollowerId() {
+		s.state.mutex.Lock()
+		defer s.state.mutex.Unlock()
+
+		// look up the request handle from the pending list and
+		// move it to the proposed list
+		handle, ok := s.state.pendings[reqId]
+		if ok {
+			delete(s.state.pendings, reqId)
+			s.state.proposals[common.Txnid(txnid)] = handle
+		}
+	}
+}
+
+func (s *EmbeddedServer) UpdateStateOnRespond(fid string, reqId uint64, err string) {
 
 	// If this host is the one that sends the request to the leader
 	if fid == s.handler.GetFollowerId() {
@@ -442,18 +458,14 @@ func (s *EmbeddedServer) UpdateStateOnNewProposal(proposal protocol.ProposalMsg)
 		if ok {
 			delete(s.state.pendings, reqId)
 
-			if opCode == common.OPCODE_ABORT || opCode == common.OPCODE_RESPONSE {
-				handle.CondVar.L.Lock()
-				defer handle.CondVar.L.Unlock()
-				
-				if len(proposal.GetKey()) != 0 {
-					handle.Err = errors.New(proposal.GetKey())
-				}
-				
-				handle.CondVar.Signal()
-			} else {
-				s.state.proposals[common.Txnid(txnid)] = handle
+			handle.CondVar.L.Lock()
+			defer handle.CondVar.L.Unlock()
+
+			if len(err) != 0 {
+				handle.Err = errors.New(err)
 			}
+
+			handle.CondVar.Signal()
 		}
 	}
 }

@@ -97,6 +97,10 @@ type ActionHandler interface {
 	LogProposal(proposal ProposalMsg) error
 
 	Commit(txid common.Txnid) error
+
+	Abort(fid string, reqId uint64, err string) error
+
+	Respond(fid string, reqId uint64, err string) error
 }
 
 /////////////////////////////////////////////////////////////////////////////
