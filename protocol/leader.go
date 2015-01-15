@@ -650,7 +650,7 @@ func (l *Leader) sendProposal(proposal ProposalMsg) {
 func (l *Leader) sendAbort(fid string, reqId uint64, err string) {
 
 	log.Printf("leader.sendAbort(): Send Abort to %s", fid)
-		
+
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
@@ -671,8 +671,7 @@ func (l *Leader) sendAbort(fid string, reqId uint64, err string) {
 	}
 
 	if l.GetFollowerId() == fid {
-		p := l.factory.CreateProposal(0, fid, reqId, uint32(common.OPCODE_ABORT), err, nil)
-		l.handler.LogProposal(p)
+		l.handler.Abort(fid, reqId, err)
 	}
 }
 
@@ -682,10 +681,10 @@ func (l *Leader) sendAbort(fid string, reqId uint64, err string) {
 func (l *Leader) sendResponse(msg ResponseMsg) {
 
 	log.Printf("leader.sendResponse(): Send Response to %s", msg.GetFid())
-	
+
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-	
+
 	for _, f := range l.followers {
 		if f.fid == msg.GetFid() {
 			f.pipe.Send(msg)
@@ -701,8 +700,7 @@ func (l *Leader) sendResponse(msg ResponseMsg) {
 	}
 
 	if l.GetFollowerId() == msg.GetFid() {
-		p := l.factory.CreateProposal(0, msg.GetFid(), msg.GetReqId(), uint32(common.OPCODE_RESPONSE), msg.GetError(), nil)
-		l.handler.LogProposal(p)
+		l.handler.Respond(msg.GetFid(), msg.GetReqId(), msg.GetError())
 	}
 }
 

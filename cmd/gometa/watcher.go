@@ -119,6 +119,9 @@ func (s *fakeServer) bootstrap() (err error) {
 func (s *fakeServer) UpdateStateOnNewProposal(proposal protocol.ProposalMsg) {
 }
 
+func (s *fakeServer) UpdateStateOnRespond(fid string, reqId uint64, err string) {
+}
+
 func (s *fakeServer) UpdateStateOnCommit(txnid common.Txnid, key string) {
 }
 

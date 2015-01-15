@@ -29,11 +29,9 @@ const (
 	OPCODE_SET
 	OPCODE_DELETE
 	OPCODE_GET
-	OPCODE_ABORT
 	OPCODE_CUSTOM_ADD
 	OPCODE_CUSTOM_SET
 	OPCODE_CUSTOM_DELETE
-	OPCODE_RESPONSE
 	OPCODE_STREAM_BEGIN_MARKER
 	OPCODE_STREAM_END_MARKER
 )
@@ -52,16 +50,12 @@ func GetOpCodeStr(r OpCode) string {
 		return "StreamBegin"
 	case OPCODE_STREAM_END_MARKER:
 		return "StreamEnd"
-	case OPCODE_ABORT:
-		return "Abort"
 	case OPCODE_CUSTOM_ADD:
 		return "Custom Add"
 	case OPCODE_CUSTOM_SET:
 		return "Custom Set"
 	case OPCODE_CUSTOM_DELETE:
 		return "Custom Delete"
-	case OPCODE_RESPONSE:
-		return "Response"
 	default:
 		return "Invalid"
 	}
@@ -86,9 +80,6 @@ func GetOpCode(s string) OpCode {
 	if s == "StreamEnd" {
 		return OPCODE_STREAM_END_MARKER
 	}
-	if s == "Abort" {
-		return OPCODE_ABORT
-	}
 	if s == "Custom Add" {
 		return OPCODE_CUSTOM_ADD
 	}
@@ -97,9 +88,6 @@ func GetOpCode(s string) OpCode {
 	}
 	if s == "Custom Delete" {
 		return OPCODE_CUSTOM_DELETE
-	}
-	if s == "Response" {
-		return OPCODE_RESPONSE
 	}
 	return OPCODE_INVALID
 }

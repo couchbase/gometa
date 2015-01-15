@@ -16,6 +16,7 @@
 package server
 
 import (
+	"errors"
 	"github.com/couchbase/gometa/action"
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/message"
@@ -461,6 +462,31 @@ func (s *Server) UpdateStateOnNewProposal(proposal protocol.ProposalMsg) {
 		if ok {
 			delete(s.state.pendings, reqId)
 			s.state.proposals[common.Txnid(txnid)] = handle
+		}
+	}
+}
+
+func (s *Server) UpdateStateOnRespond(fid string, reqId uint64, err string) {
+
+	// If this host is the one that sends the request to the leader
+	if fid == s.handler.GetFollowerId() {
+		s.state.mutex.Lock()
+		defer s.state.mutex.Unlock()
+
+		// look up the request handle from the pending list and
+		// move it to the proposed list
+		handle, ok := s.state.pendings[reqId]
+		if ok {
+			delete(s.state.pendings, reqId)
+
+			handle.CondVar.L.Lock()
+			defer handle.CondVar.L.Unlock()
+
+			if len(err) != 0 {
+				handle.Err = errors.New(err)
+			}
+
+			handle.CondVar.Signal()
 		}
 	}
 }
