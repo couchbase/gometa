@@ -158,12 +158,12 @@ func (s *EmbeddedServer) Set(key string, value []byte) error {
 //
 // Set value
 //
-func (s *EmbeddedServer) CustomSet(key string, value []byte) error {
+func (s *EmbeddedServer) MakeRequest(op common.OpCode, key string, value []byte) error {
 
 	id := uint64(time.Now().UnixNano())
 
 	request := s.factory.CreateRequest(id,
-		uint32(common.OPCODE_CUSTOM_SET),
+		uint32(op),
 		key,
 		value)
 
