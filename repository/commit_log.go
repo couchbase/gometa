@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/message"
-	"log"
+	"github.com/couchbase/gometa/log"
 	"strings"
 	"sync"
 )

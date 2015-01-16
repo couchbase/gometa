@@ -18,7 +18,7 @@ package protocol
 import (
 	"fmt"
 	"github.com/couchbase/gometa/common"
-	"log"
+	"github.com/couchbase/gometa/log"
 	"runtime/debug"
 	"sync"
 )
@@ -130,11 +130,11 @@ func (f *Follower) startListener() {
 	defer func() {
 
 		if r := recover(); r != nil {
-			log.Printf("panic in Follower.startListener() : %s\n", r)
-			log.Printf("%s", debug.Stack())
+			log.Errorf("panic in Follower.startListener() : %s\n", r)
+			log.Errorf("%s", debug.Stack())
 		} else if common.Debug() {
-			log.Printf("Follower.startListener() terminates: Diagnostic Stack ...")
-			log.Printf("%s", debug.Stack())
+			log.Infof("Follower.startListener() terminates: Diagnostic Stack ...")
+			log.Infof("%s", debug.Stack())
 		}
 
 		common.SafeRun("Follower.startListener()",
@@ -153,12 +153,12 @@ func (f *Follower) startListener() {
 				err := f.handleMessage(msg.(common.Packet))
 				if err != nil {
 					// If there is an error, terminate
-					log.Printf("Follower.startListener(): There is an error in handling leader message.  Error = %s.  Terminate.",
+					log.Errorf("Follower.startListener(): There is an error in handling leader message.  Error = %s.  Terminate.",
 						err.Error())
 					return
 				}
 			} else {
-				log.Printf("Follower.startListener(): message channel closed.  Terminate.")
+				log.Infof("Follower.startListener(): message channel closed.  Terminate.")
 				return
 			}
 		case <-f.killch:
@@ -192,7 +192,7 @@ func (f *Follower) handleMessage(msg common.Packet) (err error) {
 	case ResponseMsg:
 		err = f.handleResponse(request)
 	default:
-		log.Printf("Follower.handleMessage(): unrecognized message %s.  Ignore.", msg.Name())
+		log.Infof("Follower.handleMessage(): unrecognized message %s.  Ignore.", msg.Name())
 	}
 	return err
 }
@@ -235,7 +235,7 @@ func (f *Follower) handleCommit(msg CommitMsg) error {
 		// All commits are processed sequentially to ensure serializability.
 		p := f.pendings[0]
 		if p == nil || p.GetTxnid() != msg.GetTxnid() {
-			log.Printf("Proposal must committed in sequential order for the same leader term. "+
+			log.Errorf("Proposal must committed in sequential order for the same leader term. "+
 				"Found out-of-order commit. Last proposal txid %d, commit msg %d", p.GetTxnid(), msg.GetTxnid())
 
 			return common.NewError(common.PROTOCOL_ERROR,

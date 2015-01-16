@@ -20,7 +20,7 @@ import (
 	json "encoding/json"
 	"fmt"
 	"github.com/couchbase/gometa/server"
-	"log"
+	"github.com/couchbase/gometa/log"
 	"net/rpc"
 	"os"
 )
@@ -157,7 +157,7 @@ func runTestClient(path string) {
 			var reply *Reply
 			err = client.Call("RequestReceiver.NewRequest", request, &reply)
 			if err != nil {
-				log.Printf("ClientTest() : Error from server : %s. ", err.Error())
+				log.Errorf("ClientTest() : Error from server : %s. ", err.Error())
 			}
 
 			if reply != nil && reply.Result != nil {

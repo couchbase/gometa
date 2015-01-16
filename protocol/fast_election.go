@@ -17,7 +17,7 @@ package protocol
 
 import (
 	"github.com/couchbase/gometa/common"
-	"log"
+	"github.com/couchbase/gometa/log"
 	"net"
 	"runtime/debug"
 	"sync"
@@ -311,7 +311,7 @@ func (b *ballotMaster) castBallot(winnerch chan string) {
 	// successful.
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in ballotMaster.castBallot() : %s\n", r)
+			log.Errorf("panic in ballotMaster.castBallot() : %s\n", r)
 			common.SafeRun("ballotMaster.castBallot()",
 				func() {
 					b.site.Close()
@@ -594,7 +594,7 @@ func (w *pollWorker) listen() {
 	// won't get blocked forever.
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in pollWorker.listen() : %s\n", r)
+			log.Errorf("panic in pollWorker.listen() : %s\n", r)
 		}
 
 		// make sure we close the ElectionSite first such that
