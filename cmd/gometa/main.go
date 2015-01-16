@@ -18,7 +18,7 @@ package main
 import (
 	"flag"
 	"github.com/couchbase/gometa/server"
-	"log"
+	"github.com/couchbase/gometa/log"
 	"os"
 )
 
@@ -28,12 +28,12 @@ func stdinWatcher() {
 	for {
 		_, err := os.Stdin.Read(b)
 		if err != nil {
-			log.Printf("Got %s when reading stdin. Terminating.", err.Error())
+			log.Errorf("Got %s when reading stdin. Terminating.", err.Error())
 			break
 		}
 
 		if b[0] == '\n' || b[0] == '\r' {
-			log.Printf("Got new line on a stdin. Terminating.")
+			log.Errorf("Got new line on a stdin. Terminating.")
 			break
 		}
 	}
@@ -73,7 +73,7 @@ func main() {
 
 	err := server.RunServer(config)
 	if err != nil {
-		log.Printf("Encounter Error = %s. Terminate server", err.Error())
+		log.Errorf("Encounter Error = %s. Terminate server", err.Error())
 		os.Exit(1)
 	}
 

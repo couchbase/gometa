@@ -18,7 +18,7 @@ package protocol
 import (
 	"fmt"
 	"github.com/couchbase/gometa/common"
-	"log"
+	"github.com/couchbase/gometa/log"
 	"runtime/debug"
 	"sync"
 )
@@ -375,11 +375,11 @@ func (l *messageListener) start() {
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in messageListener.start() : %s\n", r)
-			log.Printf("%s", debug.Stack())
+			log.Errorf("panic in messageListener.start() : %s\n", r)
+			log.Errorf("%s", debug.Stack())
 		} else if common.Debug() {
-			log.Printf("leader's messageListener.start() terminates : Diagnostic Stack ...")
-			log.Printf("%s", debug.Stack())
+			log.Debugf("leader's messageListener.start() terminates : Diagnostic Stack ...")
+			log.Debugf("%s", debug.Stack())
 		}
 
 		common.SafeRun("messageListener.start()",
@@ -405,11 +405,11 @@ func (l *messageListener) start() {
 				l.leader.QueueRequest(l.fid, req)
 			} else {
 				// The channel is closed.  Need to shutdown the listener.
-				log.Printf("messageListener.start(): message channel closed. Remove peer %s as follower.", l.fid)
+				log.Infof("messageListener.start(): message channel closed. Remove peer %s as follower.", l.fid)
 				return
 			}
 		case <-l.killch:
-			log.Printf("messageListener.start(): Listener for %s receive kill signal. Terminate.", l.fid)
+			log.Infof("messageListener.start(): Listener for %s receive kill signal. Terminate.", l.fid)
 			return
 
 		}
@@ -449,11 +449,11 @@ func (l *Leader) removeListener(peer *messageListener) {
 func (l *Leader) listen() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in Leader.listen() : %s\n", r)
-			log.Printf("%s", debug.Stack())
+			log.Errorf("panic in Leader.listen() : %s\n", r)
+			log.Errorf("%s", debug.Stack())
 		} else if common.Debug() {
-			log.Printf("Leader.listen() terminates : Diagnostic Stack ...")
-			log.Printf("%s", debug.Stack())
+			log.Debugf("Leader.listen() terminates : Diagnostic Stack ...")
+			log.Debugf("%s", debug.Stack())
 		}
 
 		common.SafeRun("Leader.listen()",
@@ -471,17 +471,17 @@ func (l *Leader) listen() {
 				if !l.IsClosed() {
 					err := l.handleMessage(msg.payload, msg.fid)
 					if err != nil {
-						log.Printf("Leader.listen(): Encounter error when processing message %s. Error %s. Terminate",
+						log.Errorf("Leader.listen(): Encounter error when processing message %s. Error %s. Terminate",
 							msg.fid, err.Error())
 						return
 					}
 				} else {
-					log.Printf("Leader.listen(): Leader is closed. Terminate message processing loop.")
+					log.Infof("Leader.listen(): Leader is closed. Terminate message processing loop.")
 					return
 				}
 			} else {
 				// The channel is closed.
-				log.Printf("Leader.listen(): message channel closed. Terminate message processing loop for leader.")
+				log.Infof("Leader.listen(): message channel closed. Terminate message processing loop for leader.")
 				return
 			}
 		}
@@ -518,7 +518,7 @@ func (l *Leader) handleMessage(msg common.Packet, follower string) (err error) {
 		l.sendResponse(request)
 	default:
 		// TODO: Should throw exception.  There is a possiblity that there is another leader.
-		log.Printf("Leader.handleMessage(): Leader unable to process message of type %s. Ignore message.", request.Name())
+		log.Infof("Leader.handleMessage(): Leader unable to process message of type %s. Ignore message.", request.Name())
 	}
 	return err
 }

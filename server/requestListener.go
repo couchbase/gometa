@@ -18,7 +18,7 @@ package server
 import (
 	"fmt"
 	"github.com/couchbase/gometa/common"
-	"log"
+	"github.com/couchbase/gometa/log"
 	"net"
 	http "net/http"
 	rpc "net/rpc"

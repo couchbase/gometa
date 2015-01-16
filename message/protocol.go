@@ -17,7 +17,7 @@ package message
 
 import (
 	"code.google.com/p/goprotobuf/proto"
-	"log"
+	"github.com/couchbase/gometa/log"
 	"strconv"
 )
 

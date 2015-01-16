@@ -17,7 +17,7 @@ package protocol
 
 import (
 	"github.com/couchbase/gometa/common"
-	"log"
+	"github.com/couchbase/gometa/log"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -130,18 +130,18 @@ func runOnce(peer string,
 	// Catch panic at the main entry point for WatcherServer
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in WatcherServer.runOnce() : %s\n", r)
-			log.Printf("%s", debug.Stack())
+			log.Errorf("panic in WatcherServer.runOnce() : %s\n", r)
+			log.Errorf("%s", debug.Stack())
 		} else if common.Debug() {
-			log.Printf("WatcherServer.runOnce() terminates : Diagnostic Stack ...")
-			log.Printf("%s", debug.Stack())
+			log.Debugf("WatcherServer.runOnce() terminates : Diagnostic Stack ...")
+			log.Debugf("%s", debug.Stack())
 		}
 	}()
 
 	// create connection with a peer
 	conn, err := createConnection(peer)
 	if err != nil {
-		log.Printf("WatcherServer.runOnce() error : %s", err)
+		log.Errorf("WatcherServer.runOnce() error : %s", err)
 		return false
 	}
 	pipe := common.NewPeerPipe(conn)
@@ -162,12 +162,12 @@ func runOnce(peer string,
 	// run watcher after synchronization
 	if success {
 		if !runWatcher(pipe, requestMgr, handler, factory, killch, readych, once) {
-			log.Printf("WatcherServer.runOnce() : Watcher terminated unexpectedly.")
+			log.Errorf("WatcherServer.runOnce() : Watcher terminated unexpectedly.")
 			return false
 		}
 
 	} else if !isKilled {
-		log.Printf("WatcherServer.runOnce() : Watcher fail to synchronized with peer %s", peer)
+		log.Errorf("WatcherServer.runOnce() : Watcher fail to synchronized with peer %s", peer)
 		return false
 	}
 
@@ -202,7 +202,7 @@ func syncWithPeer(pipe *common.PeerPipe,
 	case <-killch:
 		// simply return. The pipe will eventually be closed and
 		// cause WatcherSyncProxy to err out.
-		log.Printf("WatcherServer.syncWithPeer(): Recieve kill singal.  Synchronization with peer (TCP %s) terminated.",
+		log.Infof("WatcherServer.syncWithPeer(): Recieve kill singal.  Synchronization with peer (TCP %s) terminated.",
 			pipe.GetAddr())
 		return false, true
 	}
@@ -220,18 +220,18 @@ func findPeerToConnect(host string,
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in findPeerToConnect() : %s\n", r)
-			log.Printf("%s", debug.Stack())
+			log.Errorf("panic in findPeerToConnect() : %s\n", r)
+			log.Errorf("%s", debug.Stack())
 		} else if common.Debug() {
-			log.Printf("findPeerToConnect() terminates : Diagnostic Stack ...")
-			log.Printf("%s", debug.Stack())
+			log.Debugf("findPeerToConnect() terminates : Diagnostic Stack ...")
+			log.Debugf("%s", debug.Stack())
 		}
 	}()
 
 	// Run master election to figure out who is the leader.  Only connect to leader for now.
 	site, err := CreateElectionSite(host, peerUDP, factory, handler, true)
 	if err != nil {
-		log.Printf("WatcherServer.findPeerToConnect() error : %s", err)
+		log.Errorf("WatcherServer.findPeerToConnect() error : %s", err)
 		return "", false
 	}
 
@@ -244,14 +244,14 @@ func findPeerToConnect(host string,
 
 	resultCh := site.StartElection()
 	if resultCh == nil {
-		log.Printf("WatcherServer.findPeerToConnect: Election Site is in progress or is closed.")
+		log.Errorf("WatcherServer.findPeerToConnect: Election Site is in progress or is closed.")
 		return "", false
 	}
 
 	select {
 	case leader, ok := <-resultCh:
 		if !ok {
-			log.Printf("WatcherServer.findPeerToConnect: Election Fails")
+			log.Errorf("WatcherServer.findPeerToConnect: Election Fails")
 			return "", false
 		}
 
@@ -261,7 +261,7 @@ func findPeerToConnect(host string,
 			}
 		}
 
-		log.Printf("WatcherServer.findPeerToConnect : Cannot find matching port for peer. Peer UPD port = %s", leader)
+		log.Errorf("WatcherServer.findPeerToConnect : Cannot find matching port for peer. Peer UPD port = %s", leader)
 		return "", false
 
 	case <-killch:
@@ -309,20 +309,20 @@ func runWatcher(pipe *common.PeerPipe,
 
 				// forward the request to the leader
 				if !watcher.ForwardRequest(handle.Request) {
-					log.Printf("WatcherServer.processRequest(): fail to send client request to leader. Terminate.")
+					log.Errorf("WatcherServer.processRequest(): fail to send client request to leader. Terminate.")
 					return
 				}
 			} else {
-				log.Printf("WatcherServer.processRequest(): channel for receiving client request is closed. Terminate.")
+				log.Infof("WatcherServer.processRequest(): channel for receiving client request is closed. Terminate.")
 				return
 			}
 		case <-killch:
 			// server is being explicitly terminated.  Terminate the watcher go-rountine as well.
-			log.Printf("WatcherServer.runTillEnd(): receive kill signal. Terminate.")
+			log.Infof("WatcherServer.runTillEnd(): receive kill signal. Terminate.")
 			return true
 		case <-donech:
 			// watcher is done.  Just return.
-			log.Printf("WatcherServer.runTillEnd(): Watcher go-routine terminates. Terminate.")
+			log.Infof("WatcherServer.runTillEnd(): Watcher go-routine terminates. Terminate.")
 			return false
 		}
 	}

@@ -18,7 +18,7 @@ package protocol
 import (
 	"fmt"
 	"github.com/couchbase/gometa/common"
-	"log"
+	"github.com/couchbase/gometa/log"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -328,9 +328,9 @@ func (l *LeaderSyncProxy) Start(o *observer) bool {
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in LeaderSyncProxy.Start() : %s\n", r)
-			log.Printf("LeaderSyncProxy.Start() terminates : Diagnostic Stack ...")
-			log.Printf("%s", debug.Stack())
+			log.Errorf("panic in LeaderSyncProxy.Start() : %s\n", r)
+			log.Errorf("LeaderSyncProxy.Start() terminates : Diagnostic Stack ...")
+			log.Errorf("%s", debug.Stack())
 
 			l.abort() // ensure proper cleanup and unblock caller
 		}
@@ -355,10 +355,10 @@ func (l *LeaderSyncProxy) Start(o *observer) bool {
 		l.donech <- success
 		return success
 	case <-timeout:
-		log.Printf("LeaderSyncProxy.Start(): Synchronization timeout for peer (TCP %s). Terminate.", l.follower.GetAddr())
+		log.Infof("LeaderSyncProxy.Start(): Synchronization timeout for peer (TCP %s). Terminate.", l.follower.GetAddr())
 		l.abort()
 	case <-l.killch:
-		log.Printf("LeaderSyncProxy.Start(): Receive kill signal for peer (TCP %s).  Terminate.", l.follower.GetAddr())
+		log.Infof("LeaderSyncProxy.Start(): Receive kill signal for peer (TCP %s).  Terminate.", l.follower.GetAddr())
 		l.abort()
 	}
 
@@ -465,9 +465,9 @@ func (l *LeaderSyncProxy) execute(donech chan bool, o *observer) {
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in LeaderSyncProxy.execute() : %s\n", r)
-			log.Printf("LeaderSyncProxy.execute() terminates : Diagnostic Stack ...")
-			log.Printf("%s", debug.Stack())
+			log.Errorf("panic in LeaderSyncProxy.execute() : %s\n", r)
+			log.Errorf("LeaderSyncProxy.execute() terminates : Diagnostic Stack ...")
+			log.Errorf("%s", debug.Stack())
 
 			donech <- false // unblock caller
 		}
@@ -481,7 +481,7 @@ func (l *LeaderSyncProxy) execute(donech chan bool, o *observer) {
 			{
 				err := l.updateAcceptedEpochAfterQuorum()
 				if err != nil {
-					log.Printf("LeaderSyncProxy.updateAcceptEpochAfterQuorum(): Error encountered = %s", err.Error())
+					log.Errorf("LeaderSyncProxy.updateAcceptEpochAfterQuorum(): Error encountered = %s", err.Error())
 					safeSend("LeaderSyncProxy:execute()", donech, false)
 					return
 				}
@@ -491,7 +491,7 @@ func (l *LeaderSyncProxy) execute(donech chan bool, o *observer) {
 			{
 				err := l.notifyNewEpoch()
 				if err != nil {
-					log.Printf("LeaderSyncProxy.notifyNewEpoch(): Error encountered = %s", err.Error())
+					log.Errorf("LeaderSyncProxy.notifyNewEpoch(): Error encountered = %s", err.Error())
 					safeSend("LeaderSyncProxy:execute()", donech, false)
 					return
 				}
@@ -501,7 +501,7 @@ func (l *LeaderSyncProxy) execute(donech chan bool, o *observer) {
 			{
 				err := l.updateCurrentEpochAfterQuorum()
 				if err != nil {
-					log.Printf("LeaderSyncProxy.updateCurrentEpochAfterQuorum(): Error encountered = %s", err.Error())
+					log.Errorf("LeaderSyncProxy.updateCurrentEpochAfterQuorum(): Error encountered = %s", err.Error())
 					safeSend("LeaderSyncProxy:execute()", donech, false)
 					return
 				}
@@ -511,7 +511,7 @@ func (l *LeaderSyncProxy) execute(donech chan bool, o *observer) {
 			{
 				err := l.syncWithLeader(o)
 				if err != nil {
-					log.Printf("LeaderSyncProxy.syncWithLeader(): Error encountered = %s", err.Error())
+					log.Errorf("LeaderSyncProxy.syncWithLeader(): Error encountered = %s", err.Error())
 					safeSend("LeaderSyncProxy:execute()", donech, false)
 					return
 				}
@@ -521,7 +521,7 @@ func (l *LeaderSyncProxy) execute(donech chan bool, o *observer) {
 			{
 				err := l.declareNewLeaderAfterQuorum()
 				if err != nil {
-					log.Printf("LeaderSyncProxy.declareNewLeaderAfterQuorum(): Error encountered = %s", err.Error())
+					log.Errorf("LeaderSyncProxy.declareNewLeaderAfterQuorum(): Error encountered = %s", err.Error())
 					safeSend("LeaderSyncProxy:execute()", donech, false)
 					return
 				}
@@ -878,9 +878,9 @@ func (f *FollowerSyncProxy) Start() bool {
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in FollowerSyncProxy.Start() : %s\n", r)
-			log.Printf("FollowerSyncProxy.Start() terminates : Diagnostic Stack ...")
-			log.Printf("%s", debug.Stack())
+			log.Errorf("panic in FollowerSyncProxy.Start() : %s\n", r)
+			log.Errorf("FollowerSyncProxy.Start() terminates : Diagnostic Stack ...")
+			log.Errorf("%s", debug.Stack())
 
 			f.abort() // ensure proper cleanup and unblock caller
 		}
@@ -904,10 +904,10 @@ func (f *FollowerSyncProxy) Start() bool {
 		f.donech <- success
 		return success
 	case <-timeout:
-		log.Printf("FollowerSyncProxy.Start(): Synchronization timeout for peer %s. Terminate.", f.leader.GetAddr())
+		log.Infof("FollowerSyncProxy.Start(): Synchronization timeout for peer %s. Terminate.", f.leader.GetAddr())
 		f.abort()
 	case <-f.killch:
-		log.Printf("FollowerSyncProxy.Start(): Receive kill signal for peer %s.  Terminate.", f.leader.GetAddr())
+		log.Infof("FollowerSyncProxy.Start(): Receive kill signal for peer %s.  Terminate.", f.leader.GetAddr())
 		f.abort()
 	}
 
@@ -975,9 +975,9 @@ func (l *FollowerSyncProxy) execute(donech chan bool) {
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in FollowerSyncProxy.execute() : %s\n", r)
-			log.Printf("FollowerSyncProxy.execute() terminates : Diagnostic Stack ...")
-			log.Printf("%s", debug.Stack())
+			log.Errorf("panic in FollowerSyncProxy.execute() : %s\n", r)
+			log.Errorf("FollowerSyncProxy.execute() terminates : Diagnostic Stack ...")
+			log.Errorf("%s", debug.Stack())
 
 			donech <- false // unblock caller
 		}
@@ -991,7 +991,7 @@ func (l *FollowerSyncProxy) execute(donech chan bool) {
 			{
 				err := l.sendFollowerInfo()
 				if err != nil {
-					log.Printf("FollowerSyncProxy.sendFollowerInfo(): Error encountered = %s", err.Error())
+					log.Errorf("FollowerSyncProxy.sendFollowerInfo(): Error encountered = %s", err.Error())
 					safeSend("FollowerSyncProxy:execute()", donech, false)
 					return
 				}
@@ -1001,7 +1001,7 @@ func (l *FollowerSyncProxy) execute(donech chan bool) {
 			{
 				err := l.receiveAndUpdateAcceptedEpoch()
 				if err != nil {
-					log.Printf("FollowerSyncProxy.receiveAndUpdateAcceptedEpoch(): Error encountered = %s", err.Error())
+					log.Errorf("FollowerSyncProxy.receiveAndUpdateAcceptedEpoch(): Error encountered = %s", err.Error())
 					safeSend("FollowerSyncProxy:execute()", donech, false)
 					return
 				}
@@ -1011,7 +1011,7 @@ func (l *FollowerSyncProxy) execute(donech chan bool) {
 			{
 				err := l.syncReceive()
 				if err != nil {
-					log.Printf("FollowerSyncProxy.syncReceive(): Error encountered = %s", err.Error())
+					log.Errorf("FollowerSyncProxy.syncReceive(): Error encountered = %s", err.Error())
 					safeSend("FollowerSyncProxy:execute()", donech, false)
 					return
 				}
@@ -1021,7 +1021,7 @@ func (l *FollowerSyncProxy) execute(donech chan bool) {
 			{
 				err := l.receiveAndUpdateCurrentEpoch()
 				if err != nil {
-					log.Printf("FollowerSyncProxy.receiveAndUpdateCurrentEpoch(): Error encountered = %s", err.Error())
+					log.Errorf("FollowerSyncProxy.receiveAndUpdateCurrentEpoch(): Error encountered = %s", err.Error())
 					safeSend("FollowerSyncProxy:execute()", donech, false)
 					return
 				}

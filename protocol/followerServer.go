@@ -18,7 +18,7 @@ package protocol
 import (
 	"fmt"
 	"github.com/couchbase/gometa/common"
-	"log"
+	"github.com/couchbase/gometa/log"
 	"net"
 	"runtime/debug"
 )
@@ -56,12 +56,12 @@ func RunFollowerServer(naddr string,
 	// Catch panic at the main entry point for FollowerServer
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in RunFollowerServer() : %s\n", r)
-			log.Printf("%s", debug.Stack())
+			log.Errorf("panic in RunFollowerServer() : %s\n", r)
+			log.Errorf("%s", debug.Stack())
 			err = r.(error)
 		} else if common.Debug() {
-			log.Printf("RunFollowerServer terminates : Diagnostic Stack ...")
-			log.Printf("%s", debug.Stack())
+			log.Debugf("RunFollowerServer terminates : Diagnostic Stack ...")
+			log.Debugf("%s", debug.Stack())
 		}
 	}()
 
@@ -131,7 +131,7 @@ func syncWithLeader(naddr string,
 	case <-killch:
 		// simply return. The pipe will eventually be closed and
 		// cause FollowerSyncProxy to err out.
-		log.Printf("FollowerServer.syncWithLeader(): Recieve kill singal.  Synchronization with leader (TCP %s) terminated.",
+		log.Infof("FollowerServer.syncWithLeader(): Recieve kill singal.  Synchronization with leader (TCP %s) terminated.",
 			pipe.GetAddr())
 	}
 
@@ -183,20 +183,20 @@ func (s *FollowerServer) processRequest(handler ActionHandler,
 
 				// forward the request to the leader
 				if !s.follower.ForwardRequest(handle.Request) {
-					log.Printf("FollowerServer.processRequest(): fail to send client request to leader. Terminate.")
+					log.Errorf("FollowerServer.processRequest(): fail to send client request to leader. Terminate.")
 					return
 				}
 			} else {
-				log.Printf("FollowerServer.processRequest(): channel for receiving client request is closed. Terminate.")
+				log.Infof("FollowerServer.processRequest(): channel for receiving client request is closed. Terminate.")
 				return
 			}
 		case <-killch:
 			// server is being explicitly terminated.  Terminate the follower go-rountine as well.
-			log.Printf("FollowerServer.processRequest(): receive kill signal. Terminate.")
+			log.Infof("FollowerServer.processRequest(): receive kill signal. Terminate.")
 			return
 		case <-donech:
 			// follower is done.  Just return.
-			log.Printf("FollowerServer.processRequest(): Follower go-routine terminates. Terminate.")
+			log.Infof("FollowerServer.processRequest(): Follower go-routine terminates. Terminate.")
 			return
 		}
 	}

@@ -16,7 +16,7 @@
 package common
 
 import (
-	"log"
+	"github.com/couchbase/gometa/log"
 	"net"
 	"runtime/debug"
 	"sync"
@@ -127,7 +127,7 @@ func (l *PeerListener) Close() bool {
 func (l *PeerListener) listen() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in PeerListener.listen() : %s\n", r)
+			log.Errorf("panic in PeerListener.listen() : %s\n", r)
 		}
 
 		// This will close the connection channel
@@ -138,7 +138,7 @@ func (l *PeerListener) listen() {
 		conn, err := l.listener.Accept()
 		if err != nil {
 			// if there is error, just terminate the listener loop.
-			log.Printf("PeerListener.listen(): Error in accepting new connection.  Error = %s. Terminate.", err.Error())
+			log.Errorf("PeerListener.listen(): Error in accepting new connection.  Error = %s. Terminate.", err.Error())
 			break
 		}
 

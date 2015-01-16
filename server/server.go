@@ -22,7 +22,7 @@ import (
 	"github.com/couchbase/gometa/message"
 	"github.com/couchbase/gometa/protocol"
 	r "github.com/couchbase/gometa/repository"
-	"log"
+	"github.com/couchbase/gometa/log"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -323,7 +323,7 @@ func RunOnce() int {
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in Server.runOnce() : %s\n", r)
+			log.Errorf("panic in Server.runOnce() : %s\n", r)
 		}
 
 		log.Printf("RunOnce() terminates : Diagnostic Stack ...")
@@ -348,7 +348,7 @@ func RunOnce() int {
 		// will continue to run to responds to other peer election request
 		leader, err := gServer.runElection()
 		if err != nil {
-			log.Printf("Server.RunOnce() : Error Encountered During Election : %s", err.Error())
+			log.Errorf("Server.RunOnce() : Error Encountered During Election : %s", err.Error())
 			pauseTime = 100
 		} else {
 
@@ -357,12 +357,12 @@ func RunOnce() int {
 				// runServer() is done if there is an error	or being terminated explicitly (killch)
 				err := gServer.runServer(leader)
 				if err != nil {
-					log.Printf("Server.RunOnce() : Error Encountered From Server : %s", err.Error())
+					log.Errorf("Server.RunOnce() : Error Encountered From Server : %s", err.Error())
 				}
 			}
 		}
 	} else {
-		log.Printf("Server.RunOnce(): Server has been terminated explicitly. Terminate.")
+		log.Infof("Server.RunOnce(): Server has been terminated explicitly. Terminate.")
 	}
 
 	return pauseTime

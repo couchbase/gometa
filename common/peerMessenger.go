@@ -16,7 +16,7 @@
 package common
 
 import (
-	"log"
+	"github.com/couchbase/gometa/log"
 	"net"
 	"runtime/debug"
 	"sync"
@@ -227,7 +227,7 @@ func (p *PeerMessenger) Multicast(packet Packet, peers []net.Addr) bool {
 func (p *PeerMessenger) doSend() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in PeerMessenger.doSend() : %s\n", r)
+			log.Errorf("panic in PeerMessenger.doSend() : %s\n", r)
 		}
 
 		// This will close the Send and Receive channel
@@ -238,7 +238,7 @@ func (p *PeerMessenger) doSend() {
 		msg, ok := <-p.sendch
 		if !ok {
 			// channel close.  Terminate the loop.
-			log.Printf("PeerMessenger.doSend() : Send channel closed.  Terminate.")
+			log.Infof("PeerMessenger.doSend() : Send channel closed.  Terminate.")
 			break
 		}
 
@@ -247,7 +247,7 @@ func (p *PeerMessenger) doSend() {
 
 		serialized, err := Marshall(msg.Content)
 		if err != nil {
-			log.Printf("PeerMessenger.doSend() : Fail to marshall message to Peer %s", msg.Peer.String())
+			log.Infof("PeerMessenger.doSend() : Fail to marshall message to Peer %s", msg.Peer.String())
 			continue
 		}
 		size := len(serialized)
@@ -269,7 +269,7 @@ func (p *PeerMessenger) doSend() {
 func (p *PeerMessenger) doReceive() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in PeerMessenger.doReceive() : %s\n", r)
+			log.Errorf("panic in PeerMessenger.doReceive() : %s\n", r)
 		}
 
 		// This will close the Send and Receive channel
@@ -282,7 +282,7 @@ func (p *PeerMessenger) doReceive() {
 		buf := make([]byte, MAX_DATAGRAM_SIZE)
 		n, peer, err := p.conn.ReadFrom(buf)
 		if err != nil {
-			log.Printf("PeerMessenger.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Terminate.",
+			log.Errorf("PeerMessenger.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Terminate.",
 				err.Error())
 			return
 		}
@@ -292,7 +292,7 @@ func (p *PeerMessenger) doReceive() {
 		// skip the first 8 bytes (total len)
 		packet, err := UnMarshall(buf[8:n])
 		if err != nil {
-			log.Printf("PeerMessenger.doRecieve() : ecounter error when unmarshalling mesasage from Peer.  Error = %s. Terminate.",
+			log.Errorf("PeerMessenger.doRecieve() : ecounter error when unmarshalling mesasage from Peer.  Error = %s. Terminate.",
 				err.Error())
 			break
 		}

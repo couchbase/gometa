@@ -19,7 +19,7 @@ import (
 	"bytes"
 	json "encoding/json"
 	"github.com/couchbase/gometa/common"
-	"log"
+	"github.com/couchbase/gometa/log"
 	"net"
 	"os"
 	"strings"

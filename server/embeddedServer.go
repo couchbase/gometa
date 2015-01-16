@@ -22,7 +22,7 @@ import (
 	"github.com/couchbase/gometa/message"
 	"github.com/couchbase/gometa/protocol"
 	r "github.com/couchbase/gometa/repository"
-	"log"
+	"github.com/couchbase/gometa/log"
 	"runtime/debug"
 	"time"
 )
@@ -68,7 +68,7 @@ func RunEmbeddedServerWithCustomHandler(msgAddr string, notifier action.EventNot
 	server.reqHandler = reqHandler
 
 	if err := server.bootstrap(); err != nil {
-		log.Printf("EmbeddedServer.boostrap: error : %v\n", err)
+		log.Errorf("EmbeddedServer.boostrap: error : %v\n", err)
 		return nil, err
 	}
 
@@ -243,8 +243,8 @@ func (s *EmbeddedServer) bootstrap() (err error) {
 	defer func() {
 		r := recover()
 		if r != nil {
-			log.Printf("panic in EmbeddedServer.bootstrap() : %s\n", r)
-			log.Printf("%s", debug.Stack())
+			log.Errorf("panic in EmbeddedServer.bootstrap() : %s\n", r)
+			log.Errorf("%s", debug.Stack())
 		}
 
 		if err != nil || r != nil {
@@ -309,7 +309,7 @@ func (s *EmbeddedServer) run() {
 
 			if !s.IsDone() {
 				if err := s.bootstrap(); err != nil {
-					log.Printf("EmbeddedServer.boostrap: error : %v\n", err)
+					log.Errorf("EmbeddedServer.boostrap: error : %v\n", err)
 				}
 			}
 		} else {
@@ -384,9 +384,9 @@ func (s *EmbeddedServer) runOnce() {
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in EmbeddedServer.runOnce() : %v\n", r)
-			log.Printf("Diagnostic Stack ...")
-			log.Printf("%s", debug.Stack())
+			log.Errorf("panic in EmbeddedServer.runOnce() : %v\n", r)
+			log.Errorf("Diagnostic Stack ...")
+			log.Errorf("%s", debug.Stack())
 		}
 
 		common.SafeRun("EmbeddedServer.cleanupState()",
@@ -402,10 +402,10 @@ func (s *EmbeddedServer) runOnce() {
 		s.state.setStatus(protocol.LEADING)
 		if err := protocol.RunLeaderServerWithCustomHandler(
 			s.msgAddr, s.listener, s.state, s.handler, s.factory, s.reqHandler, s.skillch); err != nil {
-			log.Printf("EmbeddedServer.RunOnce() : Error Encountered From Server : %s", err.Error())
+			log.Errorf("EmbeddedServer.RunOnce() : Error Encountered From Server : %s", err.Error())
 		}
 	} else {
-		log.Printf("EmbeddedServer.RunOnce(): Server has been terminated explicitly. Terminate.")
+		log.Infof("EmbeddedServer.RunOnce(): Server has been terminated explicitly. Terminate.")
 	}
 }
 
