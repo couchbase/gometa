@@ -19,10 +19,10 @@ import (
 	"errors"
 	"github.com/couchbase/gometa/action"
 	"github.com/couchbase/gometa/common"
+	"github.com/couchbase/gometa/log"
 	"github.com/couchbase/gometa/message"
 	"github.com/couchbase/gometa/protocol"
 	r "github.com/couchbase/gometa/repository"
-	"github.com/couchbase/gometa/log"
 	"runtime/debug"
 	"time"
 )
@@ -132,7 +132,10 @@ func (s *EmbeddedServer) DeleteValue(key string) {
 //
 func (s *EmbeddedServer) Set(key string, value []byte) error {
 
-	id := uint64(time.Now().UnixNano())
+	id, err := common.NewUUID()
+	if err != nil {
+		return err
+	}
 
 	request := s.factory.CreateRequest(id,
 		uint32(common.OPCODE_SET),
@@ -160,7 +163,10 @@ func (s *EmbeddedServer) Set(key string, value []byte) error {
 //
 func (s *EmbeddedServer) MakeRequest(op common.OpCode, key string, value []byte) error {
 
-	id := uint64(time.Now().UnixNano())
+	id, err := common.NewUUID()
+	if err != nil {
+		return err
+	}
 
 	request := s.factory.CreateRequest(id,
 		uint32(op),
@@ -188,7 +194,10 @@ func (s *EmbeddedServer) MakeRequest(op common.OpCode, key string, value []byte)
 //
 func (s *EmbeddedServer) Delete(key string) error {
 
-	id := uint64(time.Now().UnixNano())
+	id, err := common.NewUUID()
+	if err != nil {
+		return err
+	}
 
 	request := s.factory.CreateRequest(id,
 		uint32(common.OPCODE_DELETE),
