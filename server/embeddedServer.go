@@ -225,7 +225,7 @@ func (s *EmbeddedServer) Delete(key string) error {
 //
 func (s *EmbeddedServer) GetIterator(startKey, endKey string) (*r.RepoIterator, error) {
 
-	return s.repo.NewIterator(startKey, endKey)
+	return s.repo.NewIterator(r.MAIN, startKey, endKey)
 }
 
 func (s *EmbeddedServer) SetConfigValue(key string, value string) error {

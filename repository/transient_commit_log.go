@@ -20,7 +20,6 @@ import (
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/message"
 	fdb "github.com/couchbaselabs/goforestdb"
-	"strings"
 	"sync"
 )
 
@@ -99,7 +98,7 @@ func (r *TransientCommitLog) Delete(txid common.Txnid) error {
 func (r *TransientCommitLog) MarkCommitted(txid common.Txnid) error {
 
 	delete(r.logs, txid)
-	if err := r.repo.CreateSnapshot(txid); err != nil {
+	if err := r.repo.CreateSnapshot(MAIN, txid); err != nil {
 		return err
 	}
 
@@ -131,7 +130,7 @@ func (r *TransientCommitLog) NewIterator(txid1, txid2 common.Txnid) (CommitLogIt
 	}
 
 	// iter can be nil if nothing has been logged
-	txnid, iter, err := r.repo.AcquireSnapshot()
+	txnid, iter, err := r.repo.AcquireSnapshot(MAIN)
 	if err != nil {
 		return nil, err
 	}
@@ -151,12 +150,7 @@ func (r *TransientCommitLog) NewIterator(txid1, txid2 common.Txnid) (CommitLogIt
 		curError:   nil}
 
 	if result.iter != nil {
-		for {
-			result.curKey, result.curContent, result.curError = result.iter.Next()
-			if result.curError != nil || strings.Contains(result.curKey, common.PREFIX_DATA_PATH) {
-				break
-			}
-		}
+		result.curKey, result.curContent, result.curError = result.iter.Next()
 	}
 
 	return result, nil
@@ -177,20 +171,8 @@ func (i *TransientLogIterator) Next() (txnid common.Txnid, op common.OpCode, key
 	content = i.curContent
 	txnid = i.curTxnid
 
-	// TODO: Check if fdb and iterator is closed
 	i.curTxnid = common.Txnid(uint64(i.curTxnid) + 1)
-
-	for {
-		i.curKey, i.curContent, i.curError = i.iter.Next()
-		if i.curError != nil || strings.Contains(i.curKey, common.PREFIX_DATA_PATH) {
-			break
-		}
-	}
-
-	idx := strings.Index(key, common.PREFIX_DATA_PATH)
-	if idx != -1 {
-		key = key[idx+len(common.PREFIX_DATA_PATH):]
-	}
+	i.curKey, i.curContent, i.curError = i.iter.Next()
 
 	if i.curError == nil {
 		// it is not the last entry. Does not matter what is the actual txnid as long as it is
@@ -209,5 +191,5 @@ func (i *TransientLogIterator) Close() {
 	if i.iter != nil {
 		i.iter.Close()
 	}
-	i.repo.ReleaseSnapshot(i.txnid)
+	i.repo.ReleaseSnapshot(MAIN, i.txnid)
 }
