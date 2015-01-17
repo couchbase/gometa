@@ -99,7 +99,7 @@ func (r *ServerConfig) SetLastCommittedTxid(lastCommittedTxid common.Txnid) erro
 func (r *ServerConfig) LogStr(key string, content string) error {
 
 	k := createConfigKey(key)
-	return r.repo.Set(k, []byte(content))
+	return r.repo.Set(SERVER_CONFIG, k, []byte(content))
 }
 
 //
@@ -108,7 +108,7 @@ func (r *ServerConfig) LogStr(key string, content string) error {
 func (r *ServerConfig) LogInt(key string, content uint64) error {
 
 	k := createConfigKey(key)
-	return r.repo.Set(k, []byte(strconv.FormatUint(content, 10)))
+	return r.repo.Set(SERVER_CONFIG, k, []byte(strconv.FormatUint(content, 10)))
 }
 
 //
@@ -117,7 +117,7 @@ func (r *ServerConfig) LogInt(key string, content uint64) error {
 func (r *ServerConfig) GetStr(key string) (string, error) {
 
 	k := createConfigKey(key)
-	data, err := r.repo.Get(k)
+	data, err := r.repo.Get(SERVER_CONFIG, k)
 	if err != nil {
 		return "", common.WrapError(common.SERVER_CONFIG_ERROR, "Key = "+key, err)
 	}
@@ -131,7 +131,7 @@ func (r *ServerConfig) GetStr(key string) (string, error) {
 func (r *ServerConfig) GetInt(key string) (uint64, error) {
 
 	k := createConfigKey(key)
-	data, err := r.repo.Get(k)
+	data, err := r.repo.Get(SERVER_CONFIG, k)
 	if err != nil {
 		return 0, common.WrapError(common.SERVER_CONFIG_ERROR, "Key = "+key, err)
 	}
@@ -145,7 +145,7 @@ func (r *ServerConfig) GetInt(key string) (uint64, error) {
 func (r *ServerConfig) Delete(key string) error {
 
 	k := createConfigKey(key)
-	return r.repo.Delete(k)
+	return r.repo.Delete(SERVER_CONFIG, k)
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -153,7 +153,7 @@ func (r *ServerConfig) Delete(key string) error {
 /////////////////////////////////////////////////////////////////////////////
 
 func createConfigKey(key string) string {
-	return common.PREFIX_SERVER_CONFIG_PATH + key
+	return key
 }
 
 func (r *ServerConfig) bootstrap() {

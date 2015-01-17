@@ -352,14 +352,11 @@ func (a *ServerAction) LogAndCommit(txid common.Txnid, op uint32, key string, co
 /////////////////////////////////////////////////////////////////////////////
 
 func (a *ServerAction) Get(key string) ([]byte, error) {
-
-	newKey := fmt.Sprintf("%s%s", common.PREFIX_DATA_PATH, key)
-	return a.repo.Get(newKey)
+	return a.repo.Get(repo.MAIN, key)
 }
 
 func (a *ServerAction) Set(key string, content []byte) error {
-	newKey := fmt.Sprintf("%s%s", common.PREFIX_DATA_PATH, key)
-	return a.repo.Set(newKey, content)
+	return a.repo.Set(repo.MAIN, key, content)
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -368,18 +365,16 @@ func (a *ServerAction) Set(key string, content []byte) error {
 
 func (a *ServerAction) persistChange(op common.OpCode, key string, content []byte) error {
 
-	newKey := fmt.Sprintf("%s%s", common.PREFIX_DATA_PATH, key)
-
 	if op == common.OPCODE_ADD {
-		return a.repo.Set(newKey, content)
+		return a.repo.Set(repo.MAIN, key, content)
 	}
 
 	if op == common.OPCODE_SET {
-		return a.repo.Set(newKey, content)
+		return a.repo.Set(repo.MAIN, key, content)
 	}
 
 	if op == common.OPCODE_DELETE {
-		return a.repo.Delete(newKey)
+		return a.repo.Delete(repo.MAIN, key)
 	}
 
 	return common.NewError(common.PROTOCOL_ERROR, fmt.Sprintf("ServerAction.persistChange() : Unknown op code %d", op))

@@ -18,9 +18,8 @@ package repository
 import (
 	"fmt"
 	"github.com/couchbase/gometa/common"
-	"github.com/couchbase/gometa/message"
 	"github.com/couchbase/gometa/log"
-	"strings"
+	"github.com/couchbase/gometa/message"
 	"sync"
 )
 
@@ -76,7 +75,7 @@ func (r *CommitLog) Log(txid common.Txnid, op common.OpCode, key string, content
 		return err
 	}
 
-	err = r.repo.Set(k, data)
+	err = r.repo.Set(COMMIT_LOG, k, data)
 	if err != nil {
 		return err
 	}
@@ -90,7 +89,7 @@ func (r *CommitLog) Log(txid common.Txnid, op common.OpCode, key string, content
 func (r *CommitLog) Get(txid common.Txnid) (common.OpCode, string, []byte, error) {
 
 	k := createLogKey(txid)
-	data, err := r.repo.Get(k)
+	data, err := r.repo.Get(COMMIT_LOG, k)
 	if err != nil {
 		return common.OPCODE_INVALID, "", nil, err
 	}
@@ -108,7 +107,7 @@ func (r *CommitLog) Get(txid common.Txnid) (common.OpCode, string, []byte, error
 func (r *CommitLog) Delete(txid common.Txnid) error {
 
 	k := createLogKey(txid)
-	return r.repo.Delete(k)
+	return r.repo.Delete(COMMIT_LOG, k)
 }
 
 //
@@ -134,7 +133,7 @@ func (r *CommitLog) NewIterator(txid1, txid2 common.Txnid) (CommitLogIterator, e
 		endKey = createLogKey(txid2)
 	}
 
-	iter, err := r.repo.NewIterator(startKey, endKey)
+	iter, err := r.repo.NewIterator(COMMIT_LOG, startKey, endKey)
 	if err != nil {
 		return nil, err
 	}
@@ -158,9 +157,6 @@ func (i *LogIterator) Next() (txnid common.Txnid, op common.OpCode, key string, 
 	// Since actual data is stored in the same repository, make sure
 	// we don't read them.
 	log.Printf("CommitLog.Next() : Iterator read key %s", key)
-	if !strings.HasPrefix(key, common.PREFIX_COMMIT_LOG_PATH) {
-		return 0, common.OPCODE_INVALID, "", nil, common.NewError(common.REPO_ERROR, "Iteration for commit log done")
-	}
 
 	entry, err := unmarshall(content)
 	if err != nil {
@@ -185,7 +181,7 @@ func (i *LogIterator) Close() {
 
 func createLogKey(txid common.Txnid) string {
 
-	return fmt.Sprintf("%s%d", common.PREFIX_COMMIT_LOG_PATH, int64(txid))
+	return fmt.Sprintf("%d", int64(txid))
 }
 
 func unmarshall(data []byte) (*message.LogEntry, error) {
