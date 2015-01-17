@@ -23,7 +23,6 @@ import (
 	http "net/http"
 	rpc "net/rpc"
 	"sync"
-	"time"
 )
 
 /////////////////////////////////////////////////
@@ -154,7 +153,10 @@ func (s *RequestReceiver) NewRequest(req *Request, reply **Reply) error {
 			req.Value = ([]byte)("")
 		}
 
-		id := uint64(time.Now().UnixNano())
+		id, err := common.NewUUID()
+		if err != nil {
+			return err
+		}
 		request := s.server.factory.CreateRequest(id,
 			uint32(common.GetOpCode(req.OpCode)),
 			req.Key,
