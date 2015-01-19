@@ -337,6 +337,10 @@ func (l *Leader) RemoveObserver(id string) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
+	observer, ok := l.observers[id]
+	if ok {
+		observer.close()
+	}
 	delete(l.observers, id)
 }
 
