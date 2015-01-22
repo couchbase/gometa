@@ -189,6 +189,27 @@ func (s *EmbeddedServer) MakeRequest(op common.OpCode, key string, value []byte)
 	return handle.Err
 }
 
+func (s *EmbeddedServer) MakeAsyncRequest(op common.OpCode, key string, value []byte) error {
+
+	id, err := common.NewUUID()
+	if err != nil {
+		return err
+	}
+
+	request := s.factory.CreateRequest(id,
+		uint32(op),
+		key,
+		value)
+
+	handle := newRequestHandle(request)
+
+	// push the request to a channel
+	log.Printf("Handing new request to server. Key %s", key)
+	s.state.incomings <- handle
+
+	return nil
+}
+
 //
 // Delete value
 //
