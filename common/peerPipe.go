@@ -175,7 +175,7 @@ func (p *PeerPipe) doSend() {
 		if n < size || err != nil {
 			// Network error. Close the loop.  The pipe will
 			// close and cause subsequent Send() to fail.
-			log.Errorf("PeerPipe.doSend() : ecounter error when sending mesasage to Peer %s.  Error = %s.  Terminate.",
+			log.Debugf("PeerPipe.doSend() : ecounter error when sending mesasage to Peer %s.  Error = %s.  Terminate.",
 				p.GetAddr(), err.Error())
 			return
 		}
@@ -204,7 +204,7 @@ func (p *PeerPipe) doReceive() {
 		log.Printf("PeerPipe.doRecieve() : Receiving message from Peer %s, bytes read %d", p.GetAddr(), n)
 		if n < 8 || err != nil {
 			// if encountering an error, kill the pipe.
-			log.Errorf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Kill Pipe.",
+			log.Debugf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Kill Pipe.",
 				err.Error())
 			return
 		}
@@ -215,7 +215,7 @@ func (p *PeerPipe) doReceive() {
 		n, err = p.conn.Read(buf)
 		if uint64(n) < size || err != nil {
 			// if encountering an error, kill the pipe.
-			log.Errorf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Kill Pipe.",
+			log.Debugf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Kill Pipe.",
 				err.Error())
 			return
 		}

@@ -67,6 +67,8 @@ func OpenRepository() (*Repository, error) {
 
 func OpenRepositoryWithName(name string) (repo *Repository, err error) {
 
+	log.Printf("Repo.OpenRepositoryWithName(): open repo with name %s", name)
+
 	config := fdb.DefaultConfig()
 	config.SetBufferCacheSize(1024 * 1024)
 	dbfile, err := fdb.Open(name, config)
