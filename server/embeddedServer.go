@@ -32,6 +32,7 @@ import (
 /////////////////////////////////////////////////////////////////////////////
 
 type EmbeddedServer struct {
+	repoName   string
 	msgAddr    string
 	repo       *r.Repository
 	log        r.CommitLogger
@@ -57,15 +58,19 @@ func RunEmbeddedServer(msgAddr string) (*EmbeddedServer, error) {
 
 func RunEmbeddedServerWithNotifier(msgAddr string, notifier action.EventNotifier) (*EmbeddedServer, error) {
 
-	return RunEmbeddedServerWithCustomHandler(msgAddr, notifier, nil)
+	return RunEmbeddedServerWithCustomHandler(msgAddr, notifier, nil, common.REPOSITORY_NAME)
 }
 
-func RunEmbeddedServerWithCustomHandler(msgAddr string, notifier action.EventNotifier, reqHandler protocol.CustomRequestHandler) (*EmbeddedServer, error) {
+func RunEmbeddedServerWithCustomHandler(msgAddr string,
+	notifier action.EventNotifier,
+	reqHandler protocol.CustomRequestHandler,
+	repoName string) (*EmbeddedServer, error) {
 
 	server := new(EmbeddedServer)
 	server.msgAddr = msgAddr
 	server.notifier = notifier
 	server.reqHandler = reqHandler
+	server.repoName = repoName
 
 	if err := server.bootstrap(); err != nil {
 		log.Errorf("EmbeddedServer.boostrap: error : %v\n", err)
@@ -289,7 +294,7 @@ func (s *EmbeddedServer) bootstrap() (err error) {
 	s.state = newServerState()
 
 	// Initialize repository service
-	s.repo, err = r.OpenRepository()
+	s.repo, err = r.OpenRepositoryWithName(s.repoName)
 	if err != nil {
 		return err
 	}
