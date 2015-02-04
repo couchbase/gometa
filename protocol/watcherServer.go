@@ -136,6 +136,10 @@ func runOnce(peer string,
 			log.Debugf("WatcherServer.runOnce() terminates : Diagnostic Stack ...")
 			log.Debugf("%s", debug.Stack())
 		}
+		
+		if requestMgr != nil {
+			requestMgr.CleanupOnError()
+		}
 	}()
 
 	// create connection with a peer
