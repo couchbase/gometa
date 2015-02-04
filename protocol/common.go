@@ -250,15 +250,17 @@ type LogEntryMsg interface {
 /////////////////////////////////////////////////////////////////////////////
 
 type RequestHandle struct {
-	Request RequestMsg
-	Err     error
-	Mutex   sync.Mutex
-	CondVar *sync.Cond
+	Request   RequestMsg
+	Err       error
+	Mutex     sync.Mutex
+	CondVar   *sync.Cond
+	StartTime int64
 }
 
 type RequestMgr interface {
 	GetRequestChannel() <-chan *RequestHandle
 	AddPendingRequest(handle *RequestHandle)
+	CleanupOnError()
 }
 
 type CustomRequestHandler interface {

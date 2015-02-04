@@ -425,6 +425,11 @@ func (s *ServerState) GetRequestChannel() <-chan *protocol.RequestHandle {
 	return (<-chan *protocol.RequestHandle)(s.incomings)
 }
 
+func (s *ServerState) CleanupOnError() {
+	// no-op.  Server will cleanup upon termination of LeaderServer or FollowerServer.
+}
+
+
 /////////////////////////////////////////////////////////////////////////////
 // Request Handle
 /////////////////////////////////////////////////////////////////////////////
