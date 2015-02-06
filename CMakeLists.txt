@@ -36,5 +36,4 @@ GoInstall (TARGET gometa PACKAGE github.com/couchbase/gometa/cmd/gometa
   ${_forestdb_dep}
   CGO_INCLUDE_DIRS "${FORESTDB_INCLUDE_DIR}"
   CGO_LIBRARY_DIRS "${FORESTDB_LIBRARY_DIR}"
-  NOCONSOLE
   INSTALL_PATH bin OUTPUT gometa)
