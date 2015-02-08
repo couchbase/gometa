@@ -29,7 +29,7 @@ import (
 
 type ServerCallback interface {
 	GetStatus() protocol.PeerStatus
-	UpdateStateOnRespond(fid string, reqId uint64, err string)
+	UpdateStateOnRespond(fid string, reqId uint64, err string, content []byte)
 	UpdateStateOnNewProposal(proposal protocol.ProposalMsg)
 	UpdateStateOnCommit(txnid common.Txnid, key string)
 	UpdateWinningEpoch(epoch uint32)
@@ -194,12 +194,12 @@ func (a *ServerAction) LogProposal(p protocol.ProposalMsg) error {
 }
 
 func (a *ServerAction) Abort(fid string, reqId uint64, err string) error {
-	a.server.UpdateStateOnRespond(fid, reqId, err)
+	a.server.UpdateStateOnRespond(fid, reqId, err, nil)
 	return nil
 }
 
-func (a *ServerAction) Respond(fid string, reqId uint64, err string) error {
-	a.server.UpdateStateOnRespond(fid, reqId, err)
+func (a *ServerAction) Respond(fid string, reqId uint64, err string, content []byte) error {
+	a.server.UpdateStateOnRespond(fid, reqId, err, content)
 	return nil
 }
 

@@ -125,9 +125,10 @@ func (req *Response) Decode(data []byte) (err error) {
 
 func (req *Response) Print() {
 	log.Printf("Response Message:")
-	log.Printf("	Fid    : %s", req.GetFid())
-	log.Printf("	ReqId  : %d", req.GetReqId())
-	log.Printf("	Error : %s", req.GetError())
+	log.Printf("	Fid         : %s", req.GetFid())
+	log.Printf("	ReqId       : %d", req.GetReqId())
+	log.Printf("	Error       : %s", req.GetError())
+	log.Printf("	len(Content): %d", len(req.GetContent()))
 }
 
 //

@@ -510,7 +510,7 @@ func (l *Leader) handleMessage(msg common.Packet, follower string) (err error) {
 				l.reqHandler.OnNewRequest(follower, request)
 			} else {
 				log.Printf("Leader.handleMessage(): No custom request handler registered to handle custom request.")
-				response := l.factory.CreateResponse(follower, request.GetReqId(), "No custom request handler")
+				response := l.factory.CreateResponse(follower, request.GetReqId(), "No custom request handler", nil)
 				l.sendResponse(response)
 			}
 		} else {
@@ -704,7 +704,7 @@ func (l *Leader) sendResponse(msg ResponseMsg) {
 	}
 
 	if l.GetFollowerId() == msg.GetFid() {
-		l.handler.Respond(msg.GetFid(), msg.GetReqId(), msg.GetError())
+		l.handler.Respond(msg.GetFid(), msg.GetReqId(), msg.GetError(), msg.GetContent())
 	}
 }
 

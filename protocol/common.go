@@ -100,7 +100,7 @@ type ActionHandler interface {
 
 	Abort(fid string, reqId uint64, err string) error
 
-	Respond(fid string, reqId uint64, err string) error
+	Respond(fid string, reqId uint64, err string, content []byte) error
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -141,7 +141,7 @@ type MsgFactory interface {
 
 	CreateRequest(id uint64, opCode uint32, key string, content []byte) RequestMsg
 
-	CreateResponse(fid string, reqId uint64, err string) ResponseMsg
+	CreateResponse(fid string, reqId uint64, err string, content []byte) ResponseMsg
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -189,6 +189,7 @@ type ResponseMsg interface {
 	GetFid() string
 	GetReqId() uint64
 	GetError() string
+	GetContent() []byte 
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -255,6 +256,7 @@ type RequestHandle struct {
 	Mutex     sync.Mutex
 	CondVar   *sync.Cond
 	StartTime int64
+	Content   []byte
 }
 
 type RequestMgr interface {

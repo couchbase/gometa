@@ -471,7 +471,7 @@ func (s *Server) UpdateStateOnNewProposal(proposal protocol.ProposalMsg) {
 	}
 }
 
-func (s *Server) UpdateStateOnRespond(fid string, reqId uint64, err string) {
+func (s *Server) UpdateStateOnRespond(fid string, reqId uint64, err string, content []byte) {
 
 	// If this host is the one that sends the request to the leader
 	if fid == s.handler.GetFollowerId() {

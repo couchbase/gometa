@@ -480,7 +480,7 @@ func (s *EmbeddedServer) UpdateStateOnNewProposal(proposal protocol.ProposalMsg)
 	}
 }
 
-func (s *EmbeddedServer) UpdateStateOnRespond(fid string, reqId uint64, err string) {
+func (s *EmbeddedServer) UpdateStateOnRespond(fid string, reqId uint64, err string, content []byte) {
 
 	// If this host is the one that sends the request to the leader
 	if fid == s.handler.GetFollowerId() {

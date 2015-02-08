@@ -501,6 +501,7 @@ type Response struct {
 	ReqId            *uint64 `protobuf:"varint,2,req,name=reqId" json:"reqId,omitempty"`
 	Fid              *string `protobuf:"bytes,3,req,name=fid" json:"fid,omitempty"`
 	Error            *string `protobuf:"bytes,4,opt,name=error" json:"error,omitempty"`
+	Content          []byte  `protobuf:"bytes,5,opt,name=content" json:"content,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
@@ -534,6 +535,13 @@ func (m *Response) GetError() string {
 		return *m.Error
 	}
 	return ""
+}
+
+func (m *Response) GetContent() []byte {
+	if m != nil {
+		return m.Content
+	}
+	return nil
 }
 
 func init() {

@@ -102,4 +102,5 @@ message Response {
     required uint64          reqId     = 2;
     required string          fid       = 3;
     optional string          error     = 4;
+    optional bytes           content   = 5;
 }
