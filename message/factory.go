@@ -78,12 +78,13 @@ func (f *ConcreteMsgFactory) CreateAbort(fid string,
 }
 
 func (f *ConcreteMsgFactory) CreateResponse(fid string,
-	reqId uint64, err string) protocol.ResponseMsg {
+	reqId uint64, err string, content []byte) protocol.ResponseMsg {
 
 	return &Response{Version: proto.Uint32(ProtoVersion()),
-		Fid:   proto.String(fid),
-		ReqId: proto.Uint64(reqId),
-		Error: proto.String(err)}
+		Fid:     proto.String(fid),
+		ReqId:   proto.Uint64(reqId),
+		Error:   proto.String(err),
+		Content: content}
 }
 
 func (f *ConcreteMsgFactory) CreateVote(round uint64,

@@ -181,16 +181,18 @@ func (f *Follower) close() {
 // Handle message from the leader.
 //
 func (f *Follower) handleMessage(msg common.Packet) (err error) {
+	log.Debugf("Follower.handleMessage(): message %s.", msg.Name())
+	
 	err = nil
 	switch request := msg.(type) {
 	case ProposalMsg:
 		err = f.handleProposal(request)
-	case CommitMsg:
+	case CommitMsg: // Commit has to be after Proposal
 		err = f.handleCommit(request)
-	case AbortMsg:
-		err = f.handleAbort(request)
 	case ResponseMsg:
 		err = f.handleResponse(request)
+	case AbortMsg: // Abort has to be after Proposal
+		err = f.handleAbort(request)
 	default:
 		log.Infof("Follower.handleMessage(): unrecognized message %s.  Ignore.", msg.Name())
 	}
@@ -202,6 +204,7 @@ func (f *Follower) handleMessage(msg common.Packet) (err error) {
 //
 func (f *Follower) handleProposal(msg ProposalMsg) error {
 	// TODO : Check if the txnid is the next one (last txnid + 1)
+	log.Debugf("Follower.handleProposal(): reqId %d", msg.GetReqId())
 
 	// Call service to log the proposal
 	err := f.handler.LogProposal(msg)
@@ -225,6 +228,8 @@ func (f *Follower) handleProposal(msg ProposalMsg) error {
 //
 func (f *Follower) handleCommit(msg CommitMsg) error {
 
+	log.Debugf("Follower.handleCommit(): txnId %d", msg.GetTxnid())
+	
 	// If there is pending propsoal in memory, then make sure
 	// that the commit are processed in order.  If there is no
 	// pending proposal, we may still receive commit since commit
@@ -263,6 +268,8 @@ func (f *Follower) handleCommit(msg CommitMsg) error {
 //
 func (f *Follower) handleAbort(msg AbortMsg) error {
 
+	log.Debugf("Follower.handleAbort(): reqId %d", msg.GetReqId())
+	
 	return f.handler.Abort(msg.GetFid(), msg.GetReqId(), msg.GetError())
 }
 
@@ -271,7 +278,9 @@ func (f *Follower) handleAbort(msg AbortMsg) error {
 //
 func (f *Follower) handleResponse(msg ResponseMsg) error {
 
-	return f.handler.Respond(msg.GetFid(), msg.GetReqId(), msg.GetError())
+	log.Infof("Follower.handleResponse(): reqId %d, len(msg.Content) %d", msg.GetReqId(), len(msg.GetContent()))
+
+	return f.handler.Respond(msg.GetFid(), msg.GetReqId(), msg.GetError(), msg.GetContent())
 }
 
 //
