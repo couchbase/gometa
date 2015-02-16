@@ -21,6 +21,7 @@ import (
 	"net"
 	"runtime/debug"
 	"sync"
+	"bytes"
 )
 
 /////////////////////////////////////////////////
@@ -198,29 +199,26 @@ func (p *PeerPipe) doReceive() {
 	}()
 
 	for {
-		// read the size of the packet (uint64)
-		var lenBuf []byte = make([]byte, 8)
-		n, err := p.conn.Read(lenBuf)
-		log.Printf("PeerPipe.doRecieve() : Receiving message from Peer %s, bytes read %d", p.GetAddr(), n)
-		if n < 8 || err != nil {
+
+		// read packet len	
+		lenBuf, err := p.readBytes(8)
+		if err != nil {
 			// if encountering an error, kill the pipe.
 			log.Debugf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Kill Pipe.",
 				err.Error())
 			return
 		}
-
+			
 		// read the content
 		size := binary.BigEndian.Uint64(lenBuf)
-		buf := make([]byte, size)
-		n, err = p.conn.Read(buf)
-		if uint64(n) < size || err != nil {
+		buf, err := p.readBytes(size)
+		if err != nil {
 			// if encountering an error, kill the pipe.
 			log.Debugf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Kill Pipe.",
 				err.Error())
 			return
-		}
-		log.Printf("PeerPipe.doRecieve() : Receiving message from Peer %s, bytes read %d", p.GetAddr(), n)
-
+		}		
+		
 		// unmarshall the content and put it in the channel
 		packet, err := UnMarshall(buf)
 		if err != nil {
@@ -249,4 +247,32 @@ func (p *PeerPipe) queue(packet Packet) {
 	if !p.isClosed {
 		p.receivech <- packet
 	}
+}
+
+func (p *PeerPipe) readBytes(len uint64) ([]byte, error) {
+
+	result := new(bytes.Buffer)
+	remaining := len 
+	
+	for {
+		// read the size of the packet (uint64)
+		buf := make([]byte, remaining)
+		n, err := p.conn.Read(buf)
+		log.Printf("PeerPipe.readBytes() : Receiving message from Peer %s, bytes read %d", p.GetAddr(), n)
+
+		if n != 0 {		
+			result.Write(buf[0:n])
+		 	remaining = remaining - uint64(n)
+		 	
+			if remaining == 0 {
+				return result.Bytes(), nil
+			}
+		}
+			
+		if err != nil {
+			return nil, err
+		}
+	}
+	
+	return result.Bytes(), nil
 }
