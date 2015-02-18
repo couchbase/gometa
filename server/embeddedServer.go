@@ -23,7 +23,6 @@ import (
 	"github.com/couchbase/gometa/message"
 	"github.com/couchbase/gometa/protocol"
 	r "github.com/couchbase/gometa/repository"
-	"runtime/debug"
 	"time"
 )
 
@@ -73,7 +72,7 @@ func RunEmbeddedServerWithCustomHandler(msgAddr string,
 	server.repoName = repoName
 
 	if err := server.bootstrap(); err != nil {
-		log.Errorf("EmbeddedServer.boostrap: error : %v\n", err)
+		log.Current.Errorf("EmbeddedServer.boostrap: error : %v\n", err)
 		return nil, err
 	}
 
@@ -153,12 +152,12 @@ func (s *EmbeddedServer) Set(key string, value []byte) error {
 	defer handle.CondVar.L.Unlock()
 
 	// push the request to a channel
-	log.Printf("Handing new request to server. Key %s", key)
+	log.Current.Debugf("Handing new request to server. Key %s", key)
 	s.state.incomings <- handle
 
 	// This goroutine will wait until the request has been processed.
 	handle.CondVar.Wait()
-	log.Printf("Receive Response for request. Key %s", key)
+	log.Current.Debugf("Receive Response for request. Key %s", key)
 
 	return handle.Err
 }
@@ -184,12 +183,12 @@ func (s *EmbeddedServer) MakeRequest(op common.OpCode, key string, value []byte)
 	defer handle.CondVar.L.Unlock()
 
 	// push the request to a channel
-	log.Printf("Handing new request to server. Key %s", key)
+	log.Current.Debugf("Handing new request to server. Key %s", key)
 	s.state.incomings <- handle
 
 	// This goroutine will wait until the request has been processed.
 	handle.CondVar.Wait()
-	log.Printf("Receive Response for request. Key %s", key)
+	log.Current.Debugf("Receive Response for request. Key %s", key)
 
 	return handle.Err
 }
@@ -209,7 +208,7 @@ func (s *EmbeddedServer) MakeAsyncRequest(op common.OpCode, key string, value []
 	handle := newRequestHandle(request)
 
 	// push the request to a channel
-	log.Printf("Handing new request to server. Key %s", key)
+	log.Current.Debugf("Handing new request to server. Key %s", key)
 	s.state.incomings <- handle
 
 	return nil
@@ -236,12 +235,12 @@ func (s *EmbeddedServer) Delete(key string) error {
 	defer handle.CondVar.L.Unlock()
 
 	// push the request to a channel
-	log.Printf("Handing new request to server. Key %s", key)
+	log.Current.Debugf("Handing new request to server. Key %s", key)
 	s.state.incomings <- handle
 
 	// This goroutine will wait until the request has been processed.
 	handle.CondVar.Wait()
-	log.Printf("Receive Response for request. Key %s", key)
+	log.Current.Debugf("Receive Response for request. Key %s", key)
 
 	return handle.Err
 }
@@ -278,8 +277,8 @@ func (s *EmbeddedServer) bootstrap() (err error) {
 	defer func() {
 		r := recover()
 		if r != nil {
-			log.Errorf("panic in EmbeddedServer.bootstrap() : %s\n", r)
-			log.Errorf("%s", debug.Stack())
+			log.Current.Errorf("panic in EmbeddedServer.bootstrap() : %s\n", r)
+			log.Current.Errorf("%s", log.Current.StackTrace())
 		}
 
 		if err != nil || r != nil {
@@ -344,7 +343,7 @@ func (s *EmbeddedServer) run() {
 
 			if !s.IsDone() {
 				if err := s.bootstrap(); err != nil {
-					log.Errorf("EmbeddedServer.boostrap: error : %v\n", err)
+					log.Current.Errorf("EmbeddedServer.boostrap: error : %v\n", err)
 				}
 			}
 		} else {
@@ -415,13 +414,13 @@ func (s *EmbeddedServer) cleanupState() {
 //
 func (s *EmbeddedServer) runOnce() {
 
-	log.Printf("EmbeddedServer.runOnce() : Start Running Server")
+	log.Current.Debugf("EmbeddedServer.runOnce() : Start Running Server")
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorf("panic in EmbeddedServer.runOnce() : %v\n", r)
-			log.Errorf("Diagnostic Stack ...")
-			log.Errorf("%s", debug.Stack())
+			log.Current.Errorf("panic in EmbeddedServer.runOnce() : %v\n", r)
+			log.Current.Errorf("Diagnostic Stack ...")
+			log.Current.Errorf("%s", log.Current.StackTrace())
 		}
 
 		common.SafeRun("EmbeddedServer.cleanupState()",
@@ -437,10 +436,10 @@ func (s *EmbeddedServer) runOnce() {
 		s.state.setStatus(protocol.LEADING)
 		if err := protocol.RunLeaderServerWithCustomHandler(
 			s.msgAddr, s.listener, s.state, s.handler, s.factory, s.reqHandler, s.skillch); err != nil {
-			log.Errorf("EmbeddedServer.RunOnce() : Error Encountered From Server : %s", err.Error())
+			log.Current.Errorf("EmbeddedServer.RunOnce() : Error Encountered From Server : %s", err.Error())
 		}
 	} else {
-		log.Infof("EmbeddedServer.RunOnce(): Server has been terminated explicitly. Terminate.")
+		log.Current.Infof("EmbeddedServer.RunOnce(): Server has been terminated explicitly. Terminate.")
 	}
 }
 
@@ -510,7 +509,7 @@ func (s *EmbeddedServer) UpdateStateOnRespond(fid string, reqId uint64, err stri
 //
 func (s *EmbeddedServer) UpdateStateOnCommit(txnid common.Txnid, key string) {
 
-	log.Printf("EmbeddedServer.UpdateStateOnCommit(): Committing proposal %d key %s.", txnid, key)
+	log.Current.Debugf("EmbeddedServer.UpdateStateOnCommit(): Committing proposal %d key %s.", txnid, key)
 
 	s.state.mutex.Lock()
 	defer s.state.mutex.Unlock()
@@ -521,7 +520,7 @@ func (s *EmbeddedServer) UpdateStateOnCommit(txnid common.Txnid, key string) {
 	handle, ok := s.state.proposals[txnid]
 
 	if ok {
-		log.Printf("EmbeddedServer.UpdateStateOnCommit(): Notify client for proposal %d", txnid)
+		log.Current.Debugf("EmbeddedServer.UpdateStateOnCommit(): Notify client for proposal %d", txnid)
 
 		delete(s.state.proposals, txnid)
 

@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
-	"runtime/debug"
 	"sync"
 )
 
@@ -240,10 +239,10 @@ func (l *Leader) AddWatcher(fid string,
 		switch request := packet.(type) {
 		case ProposalMsg:
 			txid := common.Txnid(request.GetTxnid())
-			log.Printf("Leader.AddWatcher() : send observer's packet %s, txid %d", packet.Name(), txid)
+			log.Current.Debugf("Leader.AddWatcher() : send observer's packet %s, txid %d", packet.Name(), txid)
 		case CommitMsg:
 			txid := common.Txnid(request.GetTxnid())
-			log.Printf("Leader.AddWatcher() : send observer's packet %s, txid %d", packet.Name(), txid)
+			log.Current.Debugf("Leader.AddWatcher() : send observer's packet %s, txid %d", packet.Name(), txid)
 		}
 
 		peer.Send(packet)
@@ -258,7 +257,7 @@ func (l *Leader) AddWatcher(fid string,
 
 	// kill the old message listener
 	if ok && oldListener != nil {
-		log.Printf("Leader.AddWatcher() : old Listener found for watcher %s.  Terminating old listener", fid)
+		log.Current.Debugf("Leader.AddWatcher() : old Listener found for watcher %s.  Terminating old listener", fid)
 		oldListener.terminate()
 	}
 }
@@ -284,10 +283,10 @@ func (l *Leader) AddFollower(fid string,
 		switch request := packet.(type) {
 		case ProposalMsg:
 			txid := common.Txnid(request.GetTxnid())
-			log.Printf("Leader.AddFollower() : send observer's packet %s, txid %d", packet.Name(), txid)
+			log.Current.Debugf("Leader.AddFollower() : send observer's packet %s, txid %d", packet.Name(), txid)
 		case CommitMsg:
 			txid := common.Txnid(request.GetTxnid())
-			log.Printf("Leader.AddFollower() : send observer's packet %s, txid %d", packet.Name(), txid)
+			log.Current.Debugf("Leader.AddFollower() : send observer's packet %s, txid %d", packet.Name(), txid)
 		}
 
 		peer.Send(packet)
@@ -302,7 +301,7 @@ func (l *Leader) AddFollower(fid string,
 
 	// kill the old message listener
 	if ok && oldListener != nil {
-		log.Printf("Leader.AddFollower() : old Listener found for follower %s.  Terminating old listener", fid)
+		log.Current.Debugf("Leader.AddFollower() : old Listener found for follower %s.  Terminating old listener", fid)
 		oldListener.terminate()
 	} else {
 		// notify a brand new follower (not just replacing an existing one)
@@ -379,11 +378,11 @@ func (l *messageListener) start() {
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorf("panic in messageListener.start() : %s\n", r)
-			log.Errorf("%s", debug.Stack())
-		} else if common.Debug() {
-			log.Debugf("leader's messageListener.start() terminates : Diagnostic Stack ...")
-			log.Debugf("%s", debug.Stack())
+			log.Current.Errorf("panic in messageListener.start() : %s\n", r)
+			log.Current.Errorf("%s", log.Current.StackTrace())
+		} else {
+			log.Current.Debugf("leader's messageListener.start() terminates : Diagnostic Stack ...")
+			log.Current.LazyDebug(log.Current.StackTrace)
 		}
 
 		common.SafeRun("messageListener.start()",
@@ -397,7 +396,7 @@ func (l *messageListener) start() {
 			})
 	}()
 
-	log.Printf("messageListener.start(): start listening to message from peer %s", l.fid)
+	log.Current.Debugf("messageListener.start(): start listening to message from peer %s", l.fid)
 	reqch := l.pipe.ReceiveChannel()
 
 	for {
@@ -409,11 +408,11 @@ func (l *messageListener) start() {
 				l.leader.QueueRequest(l.fid, req)
 			} else {
 				// The channel is closed.  Need to shutdown the listener.
-				log.Infof("messageListener.start(): message channel closed. Remove peer %s as follower.", l.fid)
+				log.Current.Infof("messageListener.start(): message channel closed. Remove peer %s as follower.", l.fid)
 				return
 			}
 		case <-l.killch:
-			log.Infof("messageListener.start(): Listener for %s receive kill signal. Terminate.", l.fid)
+			log.Current.Infof("messageListener.start(): Listener for %s receive kill signal. Terminate.", l.fid)
 			return
 
 		}
@@ -453,11 +452,11 @@ func (l *Leader) removeListener(peer *messageListener) {
 func (l *Leader) listen() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorf("panic in Leader.listen() : %s\n", r)
-			log.Errorf("%s", debug.Stack())
-		} else if common.Debug() {
-			log.Debugf("Leader.listen() terminates : Diagnostic Stack ...")
-			log.Debugf("%s", debug.Stack())
+			log.Current.Errorf("panic in Leader.listen() : %s\n", r)
+			log.Current.Errorf("%s", log.Current.StackTrace())
+		} else {
+			log.Current.Debugf("Leader.listen() terminates : Diagnostic Stack ...")
+			log.Current.LazyDebug(log.Current.StackTrace)
 		}
 
 		common.SafeRun("Leader.listen()",
@@ -466,7 +465,7 @@ func (l *Leader) listen() {
 			})
 	}()
 
-	log.Printf("Leader.listen(): start listening to message for leader")
+	log.Current.Debugf("Leader.listen(): start listening to message for leader")
 
 	for {
 		select {
@@ -475,17 +474,17 @@ func (l *Leader) listen() {
 				if !l.IsClosed() {
 					err := l.handleMessage(msg.payload, msg.fid)
 					if err != nil {
-						log.Errorf("Leader.listen(): Encounter error when processing message %s. Error %s. Terminate",
+						log.Current.Errorf("Leader.listen(): Encounter error when processing message %s. Error %s. Terminate",
 							msg.fid, err.Error())
 						return
 					}
 				} else {
-					log.Infof("Leader.listen(): Leader is closed. Terminate message processing loop.")
+					log.Current.Infof("Leader.listen(): Leader is closed. Terminate message processing loop.")
 					return
 				}
 			} else {
 				// The channel is closed.
-				log.Infof("Leader.listen(): message channel closed. Terminate message processing loop for leader.")
+				log.Current.Infof("Leader.listen(): message channel closed. Terminate message processing loop for leader.")
 				return
 			}
 		}
@@ -509,7 +508,7 @@ func (l *Leader) handleMessage(msg common.Packet, follower string) (err error) {
 			if l.reqHandler != nil {
 				l.reqHandler.OnNewRequest(follower, request)
 			} else {
-				log.Printf("Leader.handleMessage(): No custom request handler registered to handle custom request.")
+				log.Current.Debugf("Leader.handleMessage(): No custom request handler registered to handle custom request.")
 				response := l.factory.CreateResponse(follower, request.GetReqId(), "No custom request handler", nil)
 				l.sendResponse(response)
 			}
@@ -522,7 +521,7 @@ func (l *Leader) handleMessage(msg common.Packet, follower string) (err error) {
 		l.sendResponse(request)
 	default:
 		// TODO: Should throw exception.  There is a possiblity that there is another leader.
-		log.Infof("Leader.handleMessage(): Leader unable to process message of type %s. Ignore message.", request.Name())
+		log.Current.Infof("Leader.handleMessage(): Leader unable to process message of type %s. Ignore message.", request.Name())
 	}
 	return err
 }
@@ -541,7 +540,7 @@ func (l *Leader) createProposal(host string, req RequestMsg) error {
 	// the leader and forces a new election for getting a new epoch. ZK has the
 	// same behavior.
 	txnid := l.handler.GetNextTxnId()
-	log.Printf("Leader.createProposal(): New Proposal : Txnid %d (Epoch %d, Counter %d)",
+	log.Current.Debugf("Leader.createProposal(): New Proposal : Txnid %d (Epoch %d, Counter %d)",
 		txnid, txnid.GetEpoch(), txnid.GetCounter())
 
 	// Create a new proposal
@@ -653,7 +652,7 @@ func (l *Leader) sendProposal(proposal ProposalMsg) {
 //
 func (l *Leader) sendAbort(fid string, reqId uint64, err string) {
 
-	log.Printf("leader.sendAbort(): Send Abort to %s", fid)
+	log.Current.Debugf("leader.sendAbort(): Send Abort to %s", fid)
 
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
@@ -684,7 +683,7 @@ func (l *Leader) sendAbort(fid string, reqId uint64, err string) {
 //
 func (l *Leader) sendResponse(msg ResponseMsg) {
 
-	log.Printf("leader.sendResponse(): Send Response to %s", msg.GetFid())
+	log.Current.Debugf("leader.sendResponse(): Send Response to %s", msg.GetFid())
 
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
@@ -757,7 +756,7 @@ func (l *Leader) updateQuorum(txid common.Txnid, fid string) {
 	if l.quorums[txid] == nil {
 		l.quorums[txid] = make([]string, 0, common.MAX_FOLLOWERS)
 	}
-	log.Printf("Leader.updateQuorum: current quorum for txid %d : %d", uint64(txid), len(l.quorums[txid]))
+	log.Current.Debugf("Leader.updateQuorum: current quorum for txid %d : %d", uint64(txid), len(l.quorums[txid]))
 
 	// Just to double check if the follower has already voted on this proposal.
 	var found bool
@@ -773,7 +772,7 @@ func (l *Leader) updateQuorum(txid common.Txnid, fid string) {
 		l.quorums[txid] = append(l.quorums[txid], fid)
 	}
 
-	log.Printf("Leader.updateQuorum: new quorum for txid %d : %d", uint64(txid), len(l.quorums[txid]))
+	log.Current.Debugf("Leader.updateQuorum: new quorum for txid %d : %d", uint64(txid), len(l.quorums[txid]))
 }
 
 //
@@ -784,7 +783,7 @@ func (l *Leader) hasQuorum(txid common.Txnid) bool {
 	// hierarchy quorums for scalability (servers are put into different
 	// groups and quorums are obtained within a group).
 
-	log.Printf("Leader.hasQuorum: accepted response for txid %d = %d, ensemble size = %d",
+	log.Current.Debugf("Leader.hasQuorum: accepted response for txid %d = %d, ensemble size = %d",
 		uint64(txid), len(l.quorums[txid]), l.handler.GetEnsembleSize())
 
 	accepted, ok := l.quorums[txid]
@@ -810,7 +809,7 @@ func (l *Leader) commit(txid common.Txnid) error {
 	// a fatal condition due to protocol error.
 	//
 	if !common.IsNextInSequence(txid, l.lastCommitted) {
-		log.Printf("Proposal must committed in sequential order for the same leader term. "+
+		log.Current.Debugf("Proposal must committed in sequential order for the same leader term. "+
 			"Found out-of-order commit. Leader last committed txid %d, commit msg %d", l.lastCommitted, txid)
 
 		return common.NewError(common.PROTOCOL_ERROR,

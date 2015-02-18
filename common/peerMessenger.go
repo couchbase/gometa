@@ -18,7 +18,6 @@ package common
 import (
 	"github.com/couchbase/gometa/log"
 	"net"
-	"runtime/debug"
 	"sync"
 )
 
@@ -129,11 +128,9 @@ func (p *PeerMessenger) Close() bool {
 
 	if !p.isClosed {
 
-		log.Printf("PeerMessenger.Close() : Local Addr %s", p.GetLocalAddr())
-		if Debug() {
-			log.Printf("PeerMessenger.Close() : Diagnostic Stack ...")
-			log.Printf("%s", debug.Stack())
-		}
+		log.Current.Debugf("PeerMessenger.Close() : Local Addr %s", p.GetLocalAddr())
+		log.Current.Debugf("%s", "PeerMessenger.Close() : Diagnostic Stack ...")
+		log.Current.LazyDebug(log.Current.StackTrace)
 
 		p.isClosed = true
 
@@ -227,7 +224,7 @@ func (p *PeerMessenger) Multicast(packet Packet, peers []net.Addr) bool {
 func (p *PeerMessenger) doSend() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorf("panic in PeerMessenger.doSend() : %s\n", r)
+			log.Current.Errorf("panic in PeerMessenger.doSend() : %s\n", r)
 		}
 
 		// This will close the Send and Receive channel
@@ -238,25 +235,25 @@ func (p *PeerMessenger) doSend() {
 		msg, ok := <-p.sendch
 		if !ok {
 			// channel close.  Terminate the loop.
-			log.Infof("PeerMessenger.doSend() : Send channel closed.  Terminate.")
+			log.Current.Infof("PeerMessenger.doSend() : Send channel closed.  Terminate.")
 			break
 		}
 
-		log.Printf("PeerMessenger.doSend() : Preparing message %s to Peer %s", msg.Content.Name(), msg.Peer.String())
-		msg.Content.Print()
+		log.Current.Debugf("PeerMessenger.doSend() : Preparing message %s to Peer %s", msg.Content.Name(), msg.Peer.String())
+		log.Current.LazyDebug(msg.Content.String)
 
 		serialized, err := Marshall(msg.Content)
 		if err != nil {
-			log.Infof("PeerMessenger.doSend() : Fail to marshall message to Peer %s", msg.Peer.String())
+			log.Current.Infof("PeerMessenger.doSend() : Fail to marshall message to Peer %s", msg.Peer.String())
 			continue
 		}
 		size := len(serialized)
 
 		// write the packet
-		log.Printf("PeerMessenger.doSend() : Sending message %s (len %d) to Peer %s", msg.Content.Name(), size, msg.Peer.String())
+		log.Current.Debugf("PeerMessenger.doSend() : Sending message %s (len %d) to Peer %s", msg.Content.Name(), size, msg.Peer.String())
 		n, err := p.conn.WriteTo(serialized, msg.Peer)
 		if n < size || err != nil {
-			log.Printf("PeerMessenger.doSend() : ecounter error when sending mesasage to Peer %s.  Error = %s",
+			log.Current.Debugf("PeerMessenger.doSend() : ecounter error when sending mesasage to Peer %s.  Error = %s",
 				msg.Peer.String(), err.Error())
 		}
 	}
@@ -269,7 +266,7 @@ func (p *PeerMessenger) doSend() {
 func (p *PeerMessenger) doReceive() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorf("panic in PeerMessenger.doReceive() : %s\n", r)
+			log.Current.Errorf("panic in PeerMessenger.doReceive() : %s\n", r)
 		}
 
 		// This will close the Send and Receive channel
@@ -282,22 +279,24 @@ func (p *PeerMessenger) doReceive() {
 		buf := make([]byte, MAX_DATAGRAM_SIZE)
 		n, peer, err := p.conn.ReadFrom(buf)
 		if err != nil {
-			log.Errorf("PeerMessenger.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Terminate.",
+			log.Current.Errorf(
+				"PeerMessenger.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Terminate.",
 				err.Error())
 			return
 		}
-		log.Printf("PeerMessenger.doRecieve() : Receiving message from Peer %s, bytes read %d", peer.String(), n)
+		log.Current.Debugf("PeerMessenger.doRecieve() : Receiving message from Peer %s, bytes read %d", peer.String(), n)
 
 		// unmarshall the content and put it in the channel
 		// skip the first 8 bytes (total len)
 		packet, err := UnMarshall(buf[8:n])
 		if err != nil {
-			log.Errorf("PeerMessenger.doRecieve() : ecounter error when unmarshalling mesasage from Peer.  Error = %s. Terminate.",
+			log.Current.Errorf(
+				"PeerMessenger.doRecieve() : ecounter error when unmarshalling mesasage from Peer.  Error = %s. Terminate.",
 				err.Error())
 			break
 		}
-		log.Printf("PeerMessenger.doRecieve() : Message decoded.  Packet = %s", packet.Name())
-		packet.Print()
+		log.Current.Debugf("PeerMessenger.doRecieve() : Message decoded.  Packet = %s", packet.Name())
+		log.Current.LazyDebug(packet.String)
 
 		// This can block if the reciever of the channel is slow or terminated premauturely (which cause channel to filled up).
 		// In this case, this can cause the UDP connection to fail such that other nodes will no longer send message to this node.

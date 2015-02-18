@@ -29,7 +29,7 @@ type FuncToRun func()
 func SafeRun(funcName string, f FuncToRun) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorf("panic in %s() : %s\n", funcName, r)
+			log.Current.Errorf("panic in %s() : %s\n", funcName, r)
 		}
 	}()
 

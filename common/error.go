@@ -75,7 +75,3 @@ func codeToStr(code ErrorCode) string {
 
 	return "Undefined Error"
 }
-
-func Debug() bool {
-	return false
-}

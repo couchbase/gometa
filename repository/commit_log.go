@@ -156,7 +156,7 @@ func (i *LogIterator) Next() (txnid common.Txnid, op common.OpCode, key string, 
 
 	// Since actual data is stored in the same repository, make sure
 	// we don't read them.
-	log.Printf("CommitLog.Next() : Iterator read key %s", key)
+	log.Current.Debugf("CommitLog.Next() : Iterator read key %s", key)
 
 	entry, err := unmarshall(content)
 	if err != nil {

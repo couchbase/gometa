@@ -17,10 +17,13 @@ package main
 
 import (
 	"flag"
-	"github.com/couchbase/gometa/server"
 	"github.com/couchbase/gometa/log"
+	"github.com/couchbase/gometa/server"
 	"os"
 )
+
+// Temporary dependency until logging moves out. Avoids stub methods.
+import "github.com/couchbase/indexing/secondary/logging"
 
 func stdinWatcher() {
 	b := make([]byte, 1)
@@ -28,12 +31,12 @@ func stdinWatcher() {
 	for {
 		_, err := os.Stdin.Read(b)
 		if err != nil {
-			log.Errorf("Got %s when reading stdin. Terminating.", err.Error())
+			log.Current.Errorf("Got %s when reading stdin. Terminating.", err.Error())
 			break
 		}
 
 		if b[0] == '\n' || b[0] == '\r' {
-			log.Errorf("Got new line on a stdin. Terminating.")
+			log.Current.Errorf("Got new line on a stdin. Terminating.")
 			break
 		}
 	}
@@ -49,6 +52,9 @@ func main() {
 	var isWatcher bool
 	var config string
 	var watchStdin bool
+
+	// Temporary dependency until logging moves out. Avoids stub methods.
+	log.Current = &logging.SystemLogger
 
 	flag.BoolVar(&isClient, "client", false, "run as test client")
 	flag.BoolVar(&isWatcher, "watcher", false, "run as watcher")
@@ -73,7 +79,7 @@ func main() {
 
 	err := server.RunServer(config)
 	if err != nil {
-		log.Errorf("Encounter Error = %s. Terminate server", err.Error())
+		log.Current.Errorf("Encounter Error = %s. Terminate server", err.Error())
 		os.Exit(1)
 	}
 

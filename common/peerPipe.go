@@ -16,12 +16,11 @@
 package common
 
 import (
+	"bytes"
 	"encoding/binary"
 	"github.com/couchbase/gometa/log"
 	"net"
-	"runtime/debug"
 	"sync"
-	"bytes"
 )
 
 /////////////////////////////////////////////////
@@ -92,11 +91,9 @@ func (p *PeerPipe) Close() bool {
 
 	if !p.isClosed {
 
-		log.Printf("PeerPipe.Close(): Remote Address %s", p.GetAddr())
-		if Debug() {
-			log.Printf("PeerPipe.Close() : Diagnostic Stack ...")
-			log.Printf("%s", debug.Stack())
-		}
+		log.Current.Debugf("PeerPipe.Close(): Remote Address %s", p.GetAddr())
+		log.Current.Debugf("%s", "PeerPipe.Close() : Diagnostic Stack ...")
+		log.Current.LazyDebug(log.Current.StackTrace)
 
 		p.isClosed = true
 
@@ -144,8 +141,8 @@ func (p *PeerPipe) Send(packet Packet) bool {
 func (p *PeerPipe) doSend() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorf("panic in PeerPipe.doSend() : %s\n", r)
-			log.Errorf("%s", debug.Stack())
+			log.Current.Errorf("panic in PeerPipe.doSend() : %s\n", r)
+			log.Current.Errorf("%s", log.Current.StackTrace())
 		}
 
 		// This will close the Send and Receive channel
@@ -156,27 +153,27 @@ func (p *PeerPipe) doSend() {
 		packet, ok := <-p.sendch
 		if !ok {
 			// channel close.  Terminate the loop.
-			log.Infof("PeerPipe.doSend() : Send channel closed.  Terminate.")
+			log.Current.Infof("%s", "PeerPipe.doSend() : Send channel closed.  Terminate.")
 			return
 		}
 
-		log.Printf("PeerPipe.doSend() : Prepare to send message %s to Peer %s", packet.Name(), p.GetAddr())
-		packet.Print()
+		log.Current.Debugf("PeerPipe.doSend() : Prepare to send message %s to Peer %s", packet.Name(), p.GetAddr())
+		log.Current.LazyDebug(packet.String)
 
 		msg, err := Marshall(packet)
 		if err != nil {
-			log.Errorf("PeerPipe.doSend() : Fail to marshall message %s to Peer %s. Terminate.", packet.Name(), p.GetAddr())
+			log.Current.Errorf("PeerPipe.doSend() : Fail to marshall message %s to Peer %s. Terminate.", packet.Name(), p.GetAddr())
 			return
 		}
 		size := len(msg)
 
 		// write the packet
-		log.Printf("PeerPipe.doSend() : Sending message %s (len %d) to Peer %s", packet.Name(), size, p.GetAddr())
+		log.Current.Debugf("PeerPipe.doSend() : Sending message %s (len %d) to Peer %s", packet.Name(), size, p.GetAddr())
 		n, err := p.conn.Write(msg)
 		if n < size || err != nil {
 			// Network error. Close the loop.  The pipe will
 			// close and cause subsequent Send() to fail.
-			log.Debugf("PeerPipe.doSend() : ecounter error when sending mesasage to Peer %s.  Error = %s.  Terminate.",
+			log.Current.Debugf("PeerPipe.doSend() : ecounter error when sending mesasage to Peer %s.  Error = %s.  Terminate.",
 				p.GetAddr(), err.Error())
 			return
 		}
@@ -190,8 +187,8 @@ func (p *PeerPipe) doSend() {
 func (p *PeerPipe) doReceive() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorf("panic in PeerPipe.doReceive() : %s\n", r)
-			log.Errorf("%s", debug.Stack())
+			log.Current.Errorf("panic in PeerPipe.doReceive() : %s\n", r)
+			log.Current.Errorf("%s", log.Current.StackTrace())
 		}
 
 		// This will close the Send and Receive channel
@@ -199,35 +196,33 @@ func (p *PeerPipe) doReceive() {
 	}()
 
 	for {
-
-		// read packet len	
+		// read packet len
 		lenBuf, err := p.readBytes(8)
 		if err != nil {
 			// if encountering an error, kill the pipe.
-			log.Debugf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Kill Pipe.",
+			log.Current.Debugf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Kill Pipe.",
 				err.Error())
 			return
 		}
-			
+
 		// read the content
 		size := binary.BigEndian.Uint64(lenBuf)
 		buf, err := p.readBytes(size)
 		if err != nil {
 			// if encountering an error, kill the pipe.
-			log.Debugf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Kill Pipe.",
-				err.Error())
-			return
-		}		
-		
-		// unmarshall the content and put it in the channel
-		packet, err := UnMarshall(buf)
-		if err != nil {
-			log.Errorf("PeerPipe.doRecieve() : ecounter error when unmarshalling mesasage from Peer.  Error = %s. Terminate.",
+			log.Current.Debugf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer.  Error = %s. Kill Pipe.",
 				err.Error())
 			return
 		}
-		log.Printf("PeerPipe.doRecieve() : Message decoded.  Packet = %s", packet.Name())
-		packet.Print()
+		// unmarshall the content and put it in the channel
+		packet, err := UnMarshall(buf)
+		if err != nil {
+			log.Current.Errorf("PeerPipe.doRecieve() : ecounter error when unmarshalling mesasage from Peer.  Error = %s. Terminate.",
+				err.Error())
+			return
+		}
+		log.Current.Debugf("PeerPipe.doRecieve() : Message decoded.  Packet = %s", packet.Name())
+		log.Current.LazyDebug(packet.String)
 
 		// This can block if the reciever of the channel is slow or terminated premauturely (which cause channel to fill up).
 		// In this case, this can cause the TCP connection to fail.  The other end of the pipe will close as a result
@@ -252,27 +247,27 @@ func (p *PeerPipe) queue(packet Packet) {
 func (p *PeerPipe) readBytes(len uint64) ([]byte, error) {
 
 	result := new(bytes.Buffer)
-	remaining := len 
-	
+	remaining := len
+
 	for {
 		// read the size of the packet (uint64)
 		buf := make([]byte, remaining)
 		n, err := p.conn.Read(buf)
-		log.Printf("PeerPipe.readBytes() : Receiving message from Peer %s, bytes read %d", p.GetAddr(), n)
+		log.Current.Debugf("PeerPipe.readBytes() : Receiving message from Peer %s, bytes read %d", p.GetAddr(), n)
 
-		if n != 0 {		
+		if n != 0 {
 			result.Write(buf[0:n])
-		 	remaining = remaining - uint64(n)
-		 	
+			remaining = remaining - uint64(n)
+
 			if remaining == 0 {
 				return result.Bytes(), nil
 			}
 		}
-			
+
 		if err != nil {
 			return nil, err
 		}
 	}
-	
+
 	return result.Bytes(), nil
 }

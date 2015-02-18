@@ -17,8 +17,9 @@ package message
 
 import (
 	"code.google.com/p/goprotobuf/proto"
-	"github.com/couchbase/gometa/log"
 	"strconv"
+	"bytes"
+	"fmt"
 )
 
 //
@@ -36,13 +37,15 @@ func (req *Proposal) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
-func (req *Proposal) Print() {
-	log.Printf("Proposal Message:")
-	log.Printf("	Txnid  : %d", req.GetTxnid())
-	log.Printf("	Fid    : %s", req.GetFid())
-	log.Printf("	ReqId  : %d", req.GetReqId())
-	log.Printf("	OpCode : %d", req.GetOpCode())
-	log.Printf("	Key    : %s", req.GetKey())
+func (req *Proposal) DebugString() string {
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf("Proposal Message:"))
+	buf.WriteString(fmt.Sprintf("	Txnid  : %d", req.GetTxnid()))
+	buf.WriteString(fmt.Sprintf("	Fid    : %s", req.GetFid()))
+	buf.WriteString(fmt.Sprintf("	ReqId  : %d", req.GetReqId()))
+	buf.WriteString(fmt.Sprintf("	OpCode : %d", req.GetOpCode()))
+	buf.WriteString(fmt.Sprintf("	Key    : %s", req.GetKey()))
+	return buf.String()
 }
 
 //
@@ -60,10 +63,12 @@ func (req *Accept) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
-func (req *Accept) Print() {
-	log.Printf("Accept Message:")
-	log.Printf("	Txnid : %d", req.GetTxnid())
-	log.Printf("	Fid   : %s", req.GetFid())
+func (req *Accept) DebugString() string {
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf("Accept Message:"))
+	buf.WriteString(fmt.Sprintf("	Txnid : %d", req.GetTxnid()))
+	buf.WriteString(fmt.Sprintf("	Fid   : %s", req.GetFid()))
+	return buf.String()
 }
 
 //
@@ -81,9 +86,11 @@ func (req *Commit) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
-func (req *Commit) Print() {
-	log.Printf("Commit Message:")
-	log.Printf("	Txnid : %d", req.GetTxnid())
+func (req *Commit) DebugString() string {
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf("Commit Message:"))
+	buf.WriteString(fmt.Sprintf("	Txnid : %d", req.GetTxnid()))
+	return buf.String()
 }
 
 //
@@ -101,11 +108,13 @@ func (req *Abort) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
-func (req *Abort) Print() {
-	log.Printf("Abort Message:")
-	log.Printf("	Fid    : %s", req.GetFid())
-	log.Printf("	ReqId  : %d", req.GetReqId())
-	log.Printf("	Error : %s", req.GetError())
+func (req *Abort) DebugString() string {
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf("Abort Message:"))
+	buf.WriteString(fmt.Sprintf("	Fid    : %s", req.GetFid()))
+	buf.WriteString(fmt.Sprintf("	ReqId  : %d", req.GetReqId()))
+	buf.WriteString(fmt.Sprintf("	Error : %s", req.GetError()))
+	return buf.String()
 }
 
 //
@@ -123,12 +132,14 @@ func (req *Response) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
-func (req *Response) Print() {
-	log.Printf("Response Message:")
-	log.Printf("	Fid         : %s", req.GetFid())
-	log.Printf("	ReqId       : %d", req.GetReqId())
-	log.Printf("	Error       : %s", req.GetError())
-	log.Printf("	len(Content): %d", len(req.GetContent()))
+func (req *Response) DebugString() string {
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf("Response Message:"))
+	buf.WriteString(fmt.Sprintf("	Fid         : %s", req.GetFid()))
+	buf.WriteString(fmt.Sprintf("	ReqId       : %d", req.GetReqId()))
+	buf.WriteString(fmt.Sprintf("	Error       : %s", req.GetError()))
+	buf.WriteString(fmt.Sprintf("	len(Content): %d", len(req.GetContent())))
+	return buf.String()
 }
 
 //
@@ -146,15 +157,17 @@ func (req *Vote) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
-func (req *Vote) Print() {
-	log.Printf("Vote Message:")
-	log.Printf("	Round           : %d", req.GetRound())
-	log.Printf("	Status          : %d", req.GetStatus())
-	log.Printf("	Epoch           : %d", req.GetEpoch())
-	log.Printf("	Candidate Id    : %s", req.GetCndId())
-	log.Printf("	Logged TxnId    : %d", req.GetCndLoggedTxnId())
-	log.Printf("	Committed TxnId : %d", req.GetCndCommittedTxnId())
-	log.Printf("	SolicitOnly     : %s", strconv.FormatBool(req.GetSolicit()))
+func (req *Vote) DebugString() string {
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf("Vote Message:"))
+	buf.WriteString(fmt.Sprintf("	Round           : %d", req.GetRound()))
+	buf.WriteString(fmt.Sprintf("	Status          : %d", req.GetStatus()))
+	buf.WriteString(fmt.Sprintf("	Epoch           : %d", req.GetEpoch()))
+	buf.WriteString(fmt.Sprintf("	Candidate Id    : %s", req.GetCndId()))
+	buf.WriteString(fmt.Sprintf("	Logged TxnId    : %d", req.GetCndLoggedTxnId()))
+	buf.WriteString(fmt.Sprintf("	Committed TxnId : %d", req.GetCndCommittedTxnId()))
+	buf.WriteString(fmt.Sprintf("	SolicitOnly     : %s", strconv.FormatBool(req.GetSolicit())))
+	return buf.String()
 }
 
 //
@@ -172,11 +185,13 @@ func (req *LogEntry) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
-func (req *LogEntry) Print() {
-	log.Printf("LogEntry Message:")
-	log.Printf("	Txnid  : %d", req.GetTxnid())
-	log.Printf("	Key    : %s", req.GetKey())
-	log.Printf("	OpCode : %d", req.GetOpCode())
+func (req *LogEntry) DebugString() string {
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf("LogEntry Message:"))
+	buf.WriteString(fmt.Sprintf("	Txnid  : %d", req.GetTxnid()))
+	buf.WriteString(fmt.Sprintf("	Key    : %s", req.GetKey()))
+	buf.WriteString(fmt.Sprintf("	OpCode : %d", req.GetOpCode()))
+	return buf.String()
 }
 
 //
@@ -194,10 +209,12 @@ func (req *FollowerInfo) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
-func (req *FollowerInfo) Print() {
-	log.Printf("FollowerInfo Message:")
-	log.Printf("	AcceptedEpoch : %d", req.GetAcceptedEpoch())
-	log.Printf("	Voting        : %s", strconv.FormatBool(req.GetVoting()))
+func (req *FollowerInfo) DebugString() string {
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf("FollowerInfo Message:"))
+	buf.WriteString(fmt.Sprintf("	AcceptedEpoch : %d", req.GetAcceptedEpoch()))
+	buf.WriteString(fmt.Sprintf("	Voting        : %s", strconv.FormatBool(req.GetVoting())))
+	return buf.String()
 }
 
 //
@@ -215,10 +232,12 @@ func (req *EpochAck) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
-func (req *EpochAck) Print() {
-	log.Printf("EpochAck Message:")
-	log.Printf("	LastLoggedTxid : %d", req.GetLastLoggedTxid())
-	log.Printf("	CurrentEpoch : %d", req.GetCurrentEpoch())
+func (req *EpochAck) DebugString() string {
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf("EpochAck Message:"))
+	buf.WriteString(fmt.Sprintf("	LastLoggedTxid : %d", req.GetLastLoggedTxid()))
+	buf.WriteString(fmt.Sprintf("	CurrentEpoch : %d", req.GetCurrentEpoch()))
+	return buf.String()
 }
 
 //
@@ -236,9 +255,11 @@ func (req *LeaderInfo) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
-func (req *LeaderInfo) Print() {
-	log.Printf("LeaderInfo Message:")
-	log.Printf("	AcceptedEpoch : %d", req.GetAcceptedEpoch())
+func (req *LeaderInfo) DebugString() string {
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf("LeaderInfo Message:"))
+	buf.WriteString(fmt.Sprintf("	AcceptedEpoch : %d", req.GetAcceptedEpoch()))
+	return buf.String()
 }
 
 //
@@ -256,9 +277,11 @@ func (req *NewLeader) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
-func (req *NewLeader) Print() {
-	log.Printf("NewLeader Message:")
-	log.Printf("	CurrentEpoch : %d", req.GetCurrentEpoch())
+func (req *NewLeader) DebugString() string {
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf("NewLeader Message:"))
+	buf.WriteString(fmt.Sprintf("	CurrentEpoch : %d", req.GetCurrentEpoch()))
+	return buf.String()
 }
 
 //
@@ -276,8 +299,10 @@ func (req *NewLeaderAck) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
-func (req *NewLeaderAck) Print() {
-	log.Printf("NewLeaderAck Message: No field to print")
+func (req *NewLeaderAck) DebugString() string {
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf("NewLeaderAck Message: No field to print"))
+	return buf.String()
 }
 
 //
@@ -295,9 +320,11 @@ func (req *Request) Decode(data []byte) (err error) {
 	return proto.Unmarshal(data, req)
 }
 
-func (req *Request) Print() {
-	log.Printf("Request Message:")
-	log.Printf("	ReqId  : %d", req.GetReqId())
-	log.Printf("	OpCode : %d", req.GetOpCode())
-	log.Printf("	Key    : %s", req.GetKey())
+func (req *Request) DebugString() string {
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf("Request Message:"))
+	buf.WriteString(fmt.Sprintf("	ReqId  : %d", req.GetReqId()))
+	buf.WriteString(fmt.Sprintf("	OpCode : %d", req.GetOpCode()))
+	buf.WriteString(fmt.Sprintf("	Key    : %s", req.GetKey()))
+	return buf.String()
 }

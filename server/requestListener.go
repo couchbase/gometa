@@ -130,8 +130,8 @@ func (s *RequestReceiver) NewRequest(req *Request, reply **Reply) error {
 		return common.NewError(common.SERVER_ERROR, "Server is terminated. Cannot process new request.")
 	}
 
-	log.Printf("RequestReceiver.NewRequest(): Receive request from client")
-	log.Printf("RequestReceiver.NewRequest(): opCode %s key %s value %s", req.OpCode, req.Key, req.Value)
+	log.Current.Debugf("RequestReceiver.NewRequest(): Receive request from client")
+	log.Current.Debugf("RequestReceiver.NewRequest(): opCode %s key %s value %s", req.OpCode, req.Key, req.Value)
 
 	opCode := common.GetOpCode(req.OpCode)
 	if opCode == common.OPCODE_GET {
@@ -140,7 +140,7 @@ func (s *RequestReceiver) NewRequest(req *Request, reply **Reply) error {
 		if err != nil {
 			return err
 		}
-		log.Printf("RequestReceiver.NewRequest(): Receive response from server, len(value) = %d", len(result))
+		log.Current.Debugf("RequestReceiver.NewRequest(): Receive response from server, len(value) = %d", len(result))
 
 		*reply = &Reply{Result: result}
 		return nil
@@ -168,12 +168,12 @@ func (s *RequestReceiver) NewRequest(req *Request, reply **Reply) error {
 		defer handle.CondVar.L.Unlock()
 
 		// push the request to a channel
-		log.Printf("Handing new request to server. Key %s", req.Key)
+		log.Current.Debugf("Handing new request to server. Key %s", req.Key)
 		s.server.state.incomings <- handle
 
 		// This goroutine will wait until the request has been processed.
 		handle.CondVar.Wait()
-		log.Printf("Receive Response for request. Key %s", req.Key)
+		log.Current.Debugf("Receive Response for request. Key %s", req.Key)
 
 		*reply = &Reply{Result: nil}
 		return handle.Err

@@ -18,7 +18,6 @@ package protocol
 import (
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
-	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -79,17 +78,17 @@ func RunLeaderServerWithCustomHandler(naddr string,
 	reqHandler CustomRequestHandler,
 	killch <-chan bool) (err error) {
 
-	log.Printf("LeaderServer.RunLeaderServer(): start leader server %s", naddr)
+	log.Current.Debugf("LeaderServer.RunLeaderServer(): start leader server %s", naddr)
 
 	// Catch panic at the main entry point for LeaderServer
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorf("panic in RunLeaderServer() : %s\n", r)
-			log.Errorf("%s", debug.Stack())
+			log.Current.Errorf("panic in RunLeaderServer() : %s\n", r)
+			log.Current.Errorf("%s", log.Current.StackTrace())
 			err = r.(error)
-		} else if common.Debug() {
-			log.Debugf("RunLeaderServer terminates : Diagnostic Stack ...")
-			log.Debugf("%s", debug.Stack())
+		} else {
+			log.Current.Debugf("RunLeaderServer terminates : Diagnostic Stack ...")
+			log.Current.LazyDebug(log.Current.StackTrace)
 		}
 	}()
 
@@ -130,7 +129,7 @@ func RunLeaderServerWithCustomHandler(naddr string,
 	// synchronized with it.
 	err = server.processRequest(killch, listenerState, reqHandler)
 
-	log.Printf("LeaderServer.RunLeaderServer(): leader server %s terminate", naddr)
+	log.Current.Debugf("LeaderServer.RunLeaderServer(): leader server %s terminate", naddr)
 
 	return err
 }
@@ -148,11 +147,11 @@ func (l *LeaderServer) listenFollower(listenerState *ListenerState) {
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorf("panic in LeaderServer.listenFollower() : %s\n", r)
-			log.Errorf("%s", debug.Stack())
-		} else if common.Debug() {
-			log.Debugf("LeaderServer.listenFollower() terminates : Diagnostic Stack ...")
-			log.Debugf("%s", debug.Stack())
+			log.Current.Errorf("panic in LeaderServer.listenFollower() : %s\n", r)
+			log.Current.Errorf("%s", log.Current.StackTrace())
+		} else {
+			log.Current.Debugf("LeaderServer.listenFollower() terminates : Diagnostic Stack ...")
+			log.Current.LazyDebug(log.Current.StackTrace)
 		}
 
 		common.SafeRun("LeaderServer.listenFollower()",
@@ -176,7 +175,7 @@ func (l *LeaderServer) listenFollower(listenerState *ListenerState) {
 	// for the server to be ready to process request.
 	if l.handler.GetEnsembleSize() == 1 {
 		if err := l.incrementEpoch(); err != nil {
-			log.Errorf("LeaderServer.listenFollower(): Error when boostraping leader with ensembleSize=1. Error = %s", err)
+			log.Current.Errorf("LeaderServer.listenFollower(): Error when boostraping leader with ensembleSize=1. Error = %s", err)
 			return
 		}
 
@@ -198,17 +197,17 @@ func (l *LeaderServer) listenFollower(listenerState *ListenerState) {
 				// 2) Even if the leader receives votes from the leader, the leader cannot tell for sure that the follower does
 				//    not change its vote.  Only if the follower connects, the leader can confirm the follower's alliance.
 				//
-				log.Printf("LeaderServer.listenFollower(): Receive connection request from follower %s", conn.RemoteAddr())
+				log.Current.Debugf("LeaderServer.listenFollower(): Receive connection request from follower %s", conn.RemoteAddr())
 				if l.registerOutstandingProxy(conn.RemoteAddr().String()) {
 					pipe := common.NewPeerPipe(conn)
 					go l.startProxy(pipe)
 				} else {
-					log.Infof("LeaderServer.listenFollower(): Sync Proxy already running for %s. Ignore new request.", conn.RemoteAddr())
+					log.Current.Infof("LeaderServer.listenFollower(): Sync Proxy already running for %s. Ignore new request.", conn.RemoteAddr())
 					conn.Close()
 				}
 			}
 		case <-listenerState.killch:
-			log.Infof("LeaderServer.listenFollower(): Receive kill signal. Terminate.")
+			log.Current.Infof("LeaderServer.listenFollower(): Receive kill signal. Terminate.")
 			return
 		}
 	}
@@ -222,11 +221,11 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorf("panic in LeaderServer.startProxy() : %s\n", r)
-			log.Errorf("%s", debug.Stack())
-		} else if common.Debug() {
-			log.Debugf("LeaderServer.startProxy() : Diagnostic Stack ...")
-			log.Debugf("%s", debug.Stack())
+			log.Current.Errorf("panic in LeaderServer.startProxy() : %s\n", r)
+			log.Current.Errorf("%s", log.Current.StackTrace())
+		} else {
+			log.Current.Debugf("LeaderServer.startProxy() : Diagnostic Stack ...")
+			log.Current.LazyDebug(log.Current.StackTrace)
 		}
 
 		// deregister the proxy with the leader Server upon exit
@@ -234,7 +233,7 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 	}()
 
 	// create a proxy that will sycnhronize with the peer.
-	log.Printf("LeaderServer.startProxy(): Start synchronization with follower. Peer TCP connection (%s)", peer.GetAddr())
+	log.Current.Debugf("LeaderServer.startProxy(): Start synchronization with follower. Peer TCP connection (%s)", peer.GetAddr())
 	proxy := NewLeaderSyncProxy(l.leader, l.consentState, peer, l.handler, l.factory)
 	donech := proxy.GetDoneChannel()
 
@@ -252,8 +251,8 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 	// Get the killch for this go-routine
 	killch := l.getProxyKillChan(peer.GetAddr())
 	if killch == nil {
-		log.Printf("LeaderServer.startProxy(): Cannot find killch for proxy (TCP connection = %s).", peer.GetAddr())
-		log.Printf("LeaderServer.startProxy(): Cannot start follower sync.")
+		log.Current.Debugf("LeaderServer.startProxy(): Cannot find killch for proxy (TCP connection = %s).", peer.GetAddr())
+		log.Current.Debugf("LeaderServer.startProxy(): Cannot start follower sync.")
 		return
 	}
 
@@ -268,7 +267,7 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 			fid := proxy.GetFid()
 			if proxy.CanFollowerVote() {
 				l.leader.AddFollower(fid, peer, o)
-				log.Printf("LeaderServer.startProxy(): Synchronization with follower %s done (TCP conn = %s).  Add follower.",
+				log.Current.Debugf("LeaderServer.startProxy(): Synchronization with follower %s done (TCP conn = %s).  Add follower.",
 					fid, peer.GetAddr())
 
 				// At this point, the follower has voted this server as the leader.
@@ -276,14 +275,14 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 				l.notifyReady()
 			} else {
 				l.leader.AddWatcher(fid, peer, o)
-				log.Printf("LeaderServer.startProxy(): Sync with watcher done.  Add Watcher %s (TCP conn = %s)",
+				log.Current.Debugf("LeaderServer.startProxy(): Sync with watcher done.  Add Watcher %s (TCP conn = %s)",
 					fid, peer.GetAddr())
 			}
 		} else {
-			log.Errorf("LeaderServer:startProxy(): Leader Fail to synchronization with follower (TCP conn = %s)", peer.GetAddr())
+			log.Current.Errorf("LeaderServer:startProxy(): Leader Fail to synchronization with follower (TCP conn = %s)", peer.GetAddr())
 		}
 	case <-killch:
-		log.Infof("LeaderServer:startProxy(): Sync proxy is killed while synchronizing with follower (TCP conn == %s)",
+		log.Current.Infof("LeaderServer:startProxy(): Sync proxy is killed while synchronizing with follower (TCP conn == %s)",
 			peer.GetAddr())
 	}
 }
@@ -313,7 +312,7 @@ func (l *LeaderServer) incrementEpoch() error {
 
 	epoch = common.CompareAndIncrementEpoch(epoch, epoch)
 
-	log.Printf("LeaderServer.incrementEpoch(): new epoch %d", epoch)
+	log.Current.Debugf("LeaderServer.incrementEpoch(): new epoch %d", epoch)
 
 	if err := l.handler.NotifyNewAcceptedEpoch(epoch); err != nil {
 		return err
@@ -339,12 +338,12 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorf("panic in LeaderServer.processRequest() : %s\n", r)
-			log.Errorf("%s", debug.Stack())
+			log.Current.Errorf("panic in LeaderServer.processRequest() : %s\n", r)
+			log.Current.Errorf("%s", log.Current.StackTrace())
 			err = r.(error)
-		} else if common.Debug() {
-			log.Debugf("LeaderServer.processRequest() : Diagnostic Stack ...")
-			log.Debugf("%s", debug.Stack())
+		} else {
+			log.Current.Debugf("LeaderServer.processRequest() : Diagnostic Stack ...")
+			log.Current.LazyDebug(log.Current.StackTrace)
 		}
 
 		common.SafeRun("LeaderServer.processRequest()",
@@ -363,7 +362,7 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 	// At this point, the leader has gotten a majority of followers to follow, so it
 	// can proceed.  It is possible that it may loose quorum of followers. But in that
 	// case, the leader will not be able to process any request.
-	log.Printf("LeaderServer.processRequest(): Leader Server is ready to proces request")
+	log.Current.Debugf("LeaderServer.processRequest(): Leader Server is ready to proces request")
 
 	// Leader is ready at this time.  This implies that there is a quorum of follower has
 	// followed this leader.  Get the change channel to keep track of  number of followers.
@@ -392,7 +391,7 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 				s.leader.QueueRequest(s.leader.GetFollowerId(), handle.Request)
 			} else {
 				// server shutdown.
-				log.Infof("LeaderServer.processRequest(): channel for receiving client request is closed. Terminate.")
+				log.Current.Infof("LeaderServer.processRequest(): channel for receiving client request is closed. Terminate.")
 				return nil
 			}
 		case msg, ok := <-outgoings:
@@ -400,15 +399,15 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 				// forward msg to the leader
 				s.leader.QueueResponse(msg)
 			} else {
-				log.Infof("LeaderServer.processRequest(): channel for receiving custom response is closed. Ignore.")
+				log.Current.Infof("LeaderServer.processRequest(): channel for receiving custom response is closed. Ignore.")
 			}
 		case <-killch:
 			// server shutdown
-			log.Infof("LeaderServer.processRequest(): receive kill signal. Stop Client request processing.")
+			log.Current.Infof("LeaderServer.processRequest(): receive kill signal. Stop Client request processing.")
 			return nil
 		case <-listenerState.donech:
 			// listener is down.  Terminate this request processing loop as well.
-			log.Infof("LeaderServer.processRequest(): follower listener terminates. Stop client request processing.")
+			log.Current.Infof("LeaderServer.processRequest(): follower listener terminates. Stop client request processing.")
 			return nil
 		case <-leaderchangech:
 			// Listen to any change to the leader's active ensemble, and to ensure that the leader maintain majority.
@@ -416,7 +415,7 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 			numFollowers := s.leader.GetActiveEnsembleSize()
 			if numFollowers <= int(ensembleSize/2) {
 				// leader looses majority of follower.
-				log.Infof("LeaderServer.processRequest(): leader looses majority of follower. Stop client request processing.")
+				log.Current.Infof("LeaderServer.processRequest(): leader looses majority of follower. Stop client request processing.")
 				return nil
 			}
 		}
@@ -456,7 +455,7 @@ func (s *LeaderServer) waitTillReady() bool {
 		return true
 
 	case <-timeout:
-		log.Infof("LeaderServer.waitTillReady(): Leader cannot get quorum of followers to follow before timing out. Termiate.")
+		log.Current.Infof("LeaderServer.waitTillReady(): Leader cannot get quorum of followers to follow before timing out. Termiate.")
 		return false
 	}
 }
