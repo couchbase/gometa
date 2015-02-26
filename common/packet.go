@@ -35,8 +35,8 @@ type Packet interface {
 	// Decode function shall unmarshal byte array back to message.
 	Decode(data []byte) (err error)
 
-	// Debug Print
-	Print()
+	// Debug Representation
+	String() string
 }
 
 type PacketRegistry struct {

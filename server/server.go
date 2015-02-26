@@ -23,7 +23,6 @@ import (
 	"github.com/couchbase/gometa/protocol"
 	r "github.com/couchbase/gometa/repository"
 	"github.com/couchbase/gometa/log"
-	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -159,10 +158,10 @@ func (s *Server) runElection() (leader string, err error) {
 	peers := GetPeerUDPAddr()
 
 	// Create an election site to start leader election.
-	log.Printf("Server.runElection(): Local Server %s start election", host)
-	log.Printf("Server.runElection(): Peer in election")
+	log.Current.Debugf("Server.runElection(): Local Server %s start election", host)
+	log.Current.Debugf("Server.runElection(): Peer in election")
 	for _, peer := range peers {
-		log.Printf("	peer : %s", peer)
+		log.Current.Debugf("	peer : %s", peer)
 	}
 
 	s.site, err = protocol.CreateElectionSite(host, peers, s.factory, s.handler, false)
@@ -193,11 +192,11 @@ func (s *Server) runServer(leader string) (err error) {
 	// If this host is the leader, then start the leader server.
 	// Otherwise, start the followerServer.
 	if leader == host {
-		log.Printf("Server.runServer() : Local Server %s is elected as leader. Leading ...", leader)
+		log.Current.Debugf("Server.runServer() : Local Server %s is elected as leader. Leading ...", leader)
 		s.state.setStatus(protocol.LEADING)
 		err = protocol.RunLeaderServer(GetHostTCPAddr(), s.listener, s.state, s.handler, s.factory, s.skillch)
 	} else {
-		log.Printf("Server.runServer() : Remote Server %s is elected as leader. Following ...", leader)
+		log.Current.Debugf("Server.runServer() : Remote Server %s is elected as leader. Following ...", leader)
 		s.state.setStatus(protocol.FOLLOWING)
 		leaderAddr := findMatchingPeerTCPAddr(leader)
 		if len(leaderAddr) == 0 {
@@ -316,18 +315,18 @@ func (s *Server) cleanupState() {
 //
 func RunOnce() int {
 
-	log.Printf("Server.RunOnce() : Start Running Server")
+	log.Current.Debugf("Server.RunOnce() : Start Running Server")
 
 	pauseTime := 0
 	gServer = new(Server)
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorf("panic in Server.runOnce() : %s\n", r)
+			log.Current.Errorf("panic in Server.runOnce() : %s\n", r)
 		}
 
-		log.Printf("RunOnce() terminates : Diagnostic Stack ...")
-		log.Printf("%s", debug.Stack())
+		log.Current.Debugf("RunOnce() terminates : Diagnostic Stack ...")
+		log.Current.LazyDebug(log.Current.StackTrace)
 
 		common.SafeRun("Server.cleanupState()",
 			func() {
@@ -348,7 +347,7 @@ func RunOnce() int {
 		// will continue to run to responds to other peer election request
 		leader, err := gServer.runElection()
 		if err != nil {
-			log.Errorf("Server.RunOnce() : Error Encountered During Election : %s", err.Error())
+			log.Current.Errorf("Server.RunOnce() : Error Encountered During Election : %s", err.Error())
 			pauseTime = 100
 		} else {
 
@@ -357,12 +356,12 @@ func RunOnce() int {
 				// runServer() is done if there is an error	or being terminated explicitly (killch)
 				err := gServer.runServer(leader)
 				if err != nil {
-					log.Errorf("Server.RunOnce() : Error Encountered From Server : %s", err.Error())
+					log.Current.Errorf("Server.RunOnce() : Error Encountered From Server : %s", err.Error())
 				}
 			}
 		}
 	} else {
-		log.Infof("Server.RunOnce(): Server has been terminated explicitly. Terminate.")
+		log.Current.Infof("Server.RunOnce(): Server has been terminated explicitly. Terminate.")
 	}
 
 	return pauseTime
@@ -501,7 +500,7 @@ func (s *Server) UpdateStateOnRespond(fid string, reqId uint64, err string, cont
 //
 func (s *Server) UpdateStateOnCommit(txnid common.Txnid, key string) {
 
-	log.Printf("Server.UpdateStateOnCommit(): Committing proposal %d key %s.", txnid, key)
+	log.Current.Debugf("Server.UpdateStateOnCommit(): Committing proposal %d key %s.", txnid, key)
 
 	s.state.mutex.Lock()
 	defer s.state.mutex.Unlock()
@@ -512,7 +511,7 @@ func (s *Server) UpdateStateOnCommit(txnid common.Txnid, key string) {
 	handle, ok := s.state.proposals[txnid]
 
 	if ok {
-		log.Printf("Server.UpdateStateOnCommit(): Notify client for proposal %d", txnid)
+		log.Current.Debugf("Server.UpdateStateOnCommit(): Notify client for proposal %d", txnid)
 
 		delete(s.state.proposals, txnid)
 

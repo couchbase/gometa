@@ -67,7 +67,7 @@ func OpenRepository() (*Repository, error) {
 
 func OpenRepositoryWithName(name string) (repo *Repository, err error) {
 
-	log.Printf("Repo.OpenRepositoryWithName(): open repo with name %s", name)
+	log.Current.Debugf("Repo.OpenRepositoryWithName(): open repo with name %s", name)
 
 	config := fdb.DefaultConfig()
 	config.SetBufferCacheSize(1024 * 1024)
@@ -118,7 +118,7 @@ func (r *Repository) Set(kind RepoKind, key string, content []byte) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
-	log.Printf("Repo.Set(): key %s, len(content) %d", key, len(content))
+	log.Current.Debugf("Repo.Set(): key %s, len(content) %d", key, len(content))
 
 	//convert key to its collatejson encoded byte representation
 	k, err := CollateString(key)
@@ -158,7 +158,7 @@ func (r *Repository) CreateSnapshot(kind RepoKind, txnid common.Txnid) error {
 
 	r.snapshots[kind] = append(r.snapshots[kind], snapshot)
 
-	log.Printf("Repo.CreateSnapshot(): txnid %v, forestdb seqnum %v", txnid, info.LastSeqNum())
+	log.Current.Debugf("Repo.CreateSnapshot(): txnid %v, forestdb seqnum %v", txnid, info.LastSeqNum())
 	return nil
 }
 
@@ -216,7 +216,7 @@ func (r *Repository) SetNoCommit(kind RepoKind, key string, content []byte) erro
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
-	log.Printf("Repo.SetNoCommit(): key %s, len(content) %d", key, len(content))
+	log.Current.Debugf("Repo.SetNoCommit(): key %s, len(content) %d", key, len(content))
 
 	//convert key to its collatejson encoded byte representation
 	k, err := CollateString(key)
@@ -240,7 +240,7 @@ func (r *Repository) Get(kind RepoKind, key string) ([]byte, error) {
 	}
 
 	value, err := r.stores[kind].GetKV(k)
-	log.Printf("Repo.Get(): key %s, found=%v", key, err == nil)
+	log.Current.Debugf("Repo.Get(): key %s, found=%v", key, err == nil)
 	return value, err
 }
 

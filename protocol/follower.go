@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
-	"runtime/debug"
 	"sync"
 )
 
@@ -90,7 +89,7 @@ func (f *Follower) GetFollowerId() string {
 // Forward the request to the leader
 //
 func (f *Follower) ForwardRequest(request RequestMsg) bool {
-	log.Printf("Follower.ForwardRequest(): Follower %s forward request to leader (TCP %s)",
+	log.Current.Debugf("Follower.ForwardRequest(): Follower %s forward request to leader (TCP %s)",
 		f.GetFollowerId(), f.pipe.GetAddr())
 	return f.pipe.Send(request)
 
@@ -130,11 +129,11 @@ func (f *Follower) startListener() {
 	defer func() {
 
 		if r := recover(); r != nil {
-			log.Errorf("panic in Follower.startListener() : %s\n", r)
-			log.Errorf("%s", debug.Stack())
-		} else if common.Debug() {
-			log.Infof("Follower.startListener() terminates: Diagnostic Stack ...")
-			log.Infof("%s", debug.Stack())
+			log.Current.Errorf("panic in Follower.startListener() : %s\n", r)
+			log.Current.Errorf("%s", log.Current.StackTrace())
+		} else {
+			log.Current.Debugf("Follower.startListener() terminates: Diagnostic Stack ...")
+			log.Current.LazyDebug(log.Current.StackTrace)
 		}
 
 		common.SafeRun("Follower.startListener()",
@@ -153,12 +152,12 @@ func (f *Follower) startListener() {
 				err := f.handleMessage(msg.(common.Packet))
 				if err != nil {
 					// If there is an error, terminate
-					log.Errorf("Follower.startListener(): There is an error in handling leader message.  Error = %s.  Terminate.",
+					log.Current.Errorf("Follower.startListener(): There is an error in handling leader message.  Error = %s.  Terminate.",
 						err.Error())
 					return
 				}
 			} else {
-				log.Infof("Follower.startListener(): message channel closed.  Terminate.")
+				log.Current.Infof("Follower.startListener(): message channel closed.  Terminate.")
 				return
 			}
 		case <-f.killch:
@@ -181,7 +180,7 @@ func (f *Follower) close() {
 // Handle message from the leader.
 //
 func (f *Follower) handleMessage(msg common.Packet) (err error) {
-	log.Debugf("Follower.handleMessage(): message %s.", msg.Name())
+	log.Current.Debugf("Follower.handleMessage(): message %s.", msg.Name())
 	
 	err = nil
 	switch request := msg.(type) {
@@ -194,7 +193,7 @@ func (f *Follower) handleMessage(msg common.Packet) (err error) {
 	case AbortMsg: // Abort has to be after Proposal
 		err = f.handleAbort(request)
 	default:
-		log.Infof("Follower.handleMessage(): unrecognized message %s.  Ignore.", msg.Name())
+		log.Current.Infof("Follower.handleMessage(): unrecognized message %s.  Ignore.", msg.Name())
 	}
 	return err
 }
@@ -204,7 +203,7 @@ func (f *Follower) handleMessage(msg common.Packet) (err error) {
 //
 func (f *Follower) handleProposal(msg ProposalMsg) error {
 	// TODO : Check if the txnid is the next one (last txnid + 1)
-	log.Debugf("Follower.handleProposal(): reqId %d", msg.GetReqId())
+	log.Current.Debugf("Follower.handleProposal(): reqId %d", msg.GetReqId())
 
 	// Call service to log the proposal
 	err := f.handler.LogProposal(msg)
@@ -228,7 +227,7 @@ func (f *Follower) handleProposal(msg ProposalMsg) error {
 //
 func (f *Follower) handleCommit(msg CommitMsg) error {
 
-	log.Debugf("Follower.handleCommit(): txnId %d", msg.GetTxnid())
+	log.Current.Debugf("Follower.handleCommit(): txnId %d", msg.GetTxnid())
 	
 	// If there is pending propsoal in memory, then make sure
 	// that the commit are processed in order.  If there is no
@@ -240,7 +239,7 @@ func (f *Follower) handleCommit(msg CommitMsg) error {
 		// All commits are processed sequentially to ensure serializability.
 		p := f.pendings[0]
 		if p == nil || p.GetTxnid() != msg.GetTxnid() {
-			log.Errorf("Proposal must committed in sequential order for the same leader term. "+
+			log.Current.Errorf("Proposal must committed in sequential order for the same leader term. "+
 				"Found out-of-order commit. Last proposal txid %d, commit msg %d", p.GetTxnid(), msg.GetTxnid())
 
 			return common.NewError(common.PROTOCOL_ERROR,
@@ -268,7 +267,7 @@ func (f *Follower) handleCommit(msg CommitMsg) error {
 //
 func (f *Follower) handleAbort(msg AbortMsg) error {
 
-	log.Debugf("Follower.handleAbort(): reqId %d", msg.GetReqId())
+	log.Current.Debugf("Follower.handleAbort(): reqId %d", msg.GetReqId())
 	
 	return f.handler.Abort(msg.GetFid(), msg.GetReqId(), msg.GetError())
 }
@@ -278,7 +277,7 @@ func (f *Follower) handleAbort(msg AbortMsg) error {
 //
 func (f *Follower) handleResponse(msg ResponseMsg) error {
 
-	log.Infof("Follower.handleResponse(): reqId %d, len(msg.Content) %d", msg.GetReqId(), len(msg.GetContent()))
+	log.Current.Infof("Follower.handleResponse(): reqId %d, len(msg.Content) %d", msg.GetReqId(), len(msg.GetContent()))
 
 	return f.handler.Respond(msg.GetFid(), msg.GetReqId(), msg.GetError(), msg.GetContent())
 }

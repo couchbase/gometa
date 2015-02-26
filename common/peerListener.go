@@ -18,7 +18,6 @@ package common
 import (
 	"github.com/couchbase/gometa/log"
 	"net"
-	"runtime/debug"
 	"sync"
 )
 
@@ -93,11 +92,9 @@ func (l *PeerListener) Close() bool {
 	if !l.isClosed {
 		l.isClosed = true
 
-		log.Printf("PeerListener.Close(): local address %s", l.naddr)
-		if Debug() {
-			log.Printf("PeerListener.Close() : Diagnostic Stack ...")
-			log.Printf("%s", debug.Stack())
-		}
+		log.Current.Debugf("PeerListener.Close(): local address %s", l.naddr)
+		log.Current.Debugf("%s", "PeerListener.Close() : Diagnostic Stack ...")
+		log.Current.LazyDebug(log.Current.StackTrace)
 
 		SafeRun("PeerListener.Close()",
 			func() {
@@ -127,7 +124,7 @@ func (l *PeerListener) Close() bool {
 func (l *PeerListener) listen() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorf("panic in PeerListener.listen() : %s\n", r)
+			log.Current.Errorf("panic in PeerListener.listen() : %s\n", r)
 		}
 
 		// This will close the connection channel
@@ -138,7 +135,7 @@ func (l *PeerListener) listen() {
 		conn, err := l.listener.Accept()
 		if err != nil {
 			// if there is error, just terminate the listener loop.
-			log.Errorf("PeerListener.listen(): Error in accepting new connection.  Error = %s. Terminate.", err.Error())
+			log.Current.Errorf("PeerListener.listen(): Error in accepting new connection.  Error = %s. Terminate.", err.Error())
 			break
 		}
 
