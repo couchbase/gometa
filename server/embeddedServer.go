@@ -439,7 +439,7 @@ func (s *EmbeddedServer) runOnce() {
 			log.Current.Errorf("EmbeddedServer.RunOnce() : Error Encountered From Server : %s", err.Error())
 		}
 	} else {
-		log.Current.Infof("EmbeddedServer.RunOnce(): Server has been terminated explicitly. Terminate.")
+		log.Current.Debugf("EmbeddedServer.RunOnce(): Server has been terminated explicitly. Terminate.")
 	}
 }
 

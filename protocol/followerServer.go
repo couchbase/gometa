@@ -130,7 +130,7 @@ func syncWithLeader(naddr string,
 	case <-killch:
 		// simply return. The pipe will eventually be closed and
 		// cause FollowerSyncProxy to err out.
-		log.Current.Infof("FollowerServer.syncWithLeader(): Recieve kill singal.  Synchronization with leader (TCP %s) terminated.",
+		log.Current.Debugf("FollowerServer.syncWithLeader(): Recieve kill singal.  Synchronization with leader (TCP %s) terminated.",
 			pipe.GetAddr())
 	}
 
@@ -186,16 +186,16 @@ func (s *FollowerServer) processRequest(handler ActionHandler,
 					return
 				}
 			} else {
-				log.Current.Infof("FollowerServer.processRequest(): channel for receiving client request is closed. Terminate.")
+				log.Current.Debugf("FollowerServer.processRequest(): channel for receiving client request is closed. Terminate.")
 				return
 			}
 		case <-killch:
 			// server is being explicitly terminated.  Terminate the follower go-rountine as well.
-			log.Current.Infof("FollowerServer.processRequest(): receive kill signal. Terminate.")
+			log.Current.Debugf("FollowerServer.processRequest(): receive kill signal. Terminate.")
 			return
 		case <-donech:
 			// follower is done.  Just return.
-			log.Current.Infof("FollowerServer.processRequest(): Follower go-routine terminates. Terminate.")
+			log.Current.Debugf("FollowerServer.processRequest(): Follower go-routine terminates. Terminate.")
 			return
 		}
 	}

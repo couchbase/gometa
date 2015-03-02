@@ -157,7 +157,7 @@ func (f *Follower) startListener() {
 					return
 				}
 			} else {
-				log.Current.Infof("Follower.startListener(): message channel closed.  Terminate.")
+				log.Current.Debugf("Follower.startListener(): message channel closed.  Terminate.")
 				return
 			}
 		case <-f.killch:
@@ -277,7 +277,7 @@ func (f *Follower) handleAbort(msg AbortMsg) error {
 //
 func (f *Follower) handleResponse(msg ResponseMsg) error {
 
-	log.Current.Infof("Follower.handleResponse(): reqId %d, len(msg.Content) %d", msg.GetReqId(), len(msg.GetContent()))
+	log.Current.Debugf("Follower.handleResponse(): reqId %d, len(msg.Content) %d", msg.GetReqId(), len(msg.GetContent()))
 
 	return f.handler.Respond(msg.GetFid(), msg.GetReqId(), msg.GetError(), msg.GetContent())
 }

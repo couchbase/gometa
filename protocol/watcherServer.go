@@ -205,7 +205,7 @@ func syncWithPeer(pipe *common.PeerPipe,
 	case <-killch:
 		// simply return. The pipe will eventually be closed and
 		// cause WatcherSyncProxy to err out.
-		log.Current.Infof("WatcherServer.syncWithPeer(): Recieve kill singal.  Synchronization with peer (TCP %s) terminated.",
+		log.Current.Debugf("WatcherServer.syncWithPeer(): Recieve kill singal.  Synchronization with peer (TCP %s) terminated.",
 			pipe.GetAddr())
 		return false, true
 	}
@@ -316,16 +316,16 @@ func runWatcher(pipe *common.PeerPipe,
 					return
 				}
 			} else {
-				log.Current.Infof("WatcherServer.processRequest(): channel for receiving client request is closed. Terminate.")
+				log.Current.Debugf("WatcherServer.processRequest(): channel for receiving client request is closed. Terminate.")
 				return
 			}
 		case <-killch:
 			// server is being explicitly terminated.  Terminate the watcher go-rountine as well.
-			log.Current.Infof("WatcherServer.runTillEnd(): receive kill signal. Terminate.")
+			log.Current.Debugf("WatcherServer.runTillEnd(): receive kill signal. Terminate.")
 			return true
 		case <-donech:
 			// watcher is done.  Just return.
-			log.Current.Infof("WatcherServer.runTillEnd(): Watcher go-routine terminates. Terminate.")
+			log.Current.Debugf("WatcherServer.runTillEnd(): Watcher go-routine terminates. Terminate.")
 			return false
 		}
 	}
