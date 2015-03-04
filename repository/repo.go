@@ -62,15 +62,19 @@ type Snapshot struct {
 // Open a repository
 //
 func OpenRepository() (*Repository, error) {
-	return OpenRepositoryWithName(common.REPOSITORY_NAME)
+	return OpenRepositoryWithName(common.REPOSITORY_NAME, uint64(0))
 }
 
-func OpenRepositoryWithName(name string) (repo *Repository, err error) {
+func OpenRepositoryWithName(name string, memory_quota uint64) (repo *Repository, err error) {
 
-	log.Current.Debugf("Repo.OpenRepositoryWithName(): open repo with name %s", name)
+	if memory_quota < common.MIN_FOREST_DB_CACHE_SIZE {
+		memory_quota = common.MIN_FOREST_DB_CACHE_SIZE
+	}
+
+	log.Current.Debugf("Repo.OpenRepositoryWithName(): open repo with name %s, buffer cache size %d", name, memory_quota)
 
 	config := fdb.DefaultConfig()
-	config.SetBufferCacheSize(1024 * 1024)
+	config.SetBufferCacheSize(memory_quota)
 	dbfile, err := fdb.Open(name, config)
 	if err != nil {
 		return nil, err
