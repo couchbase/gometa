@@ -55,3 +55,4 @@ var BOOTSTRAP_CURRENT_EPOCH uint32 = 0                           // Boostrap val
 var BOOTSTRAP_ACCEPTED_EPOCH uint32 = 0                          // Boostrap value of accepted epoch
 var TCP_KEEP_ALIVE_PERIOD time.Duration = 100 * time.Millisecond // TCP keep alive period
 var MIN_FOREST_DB_CACHE_SIZE = uint64(1024 * 1024)               // Minimum Forestdb size
+var XACT_COMMIT_WAIT_TIME time.Duration = 20 * time.Millisecond  // Time to wait for the commit log before returning an error

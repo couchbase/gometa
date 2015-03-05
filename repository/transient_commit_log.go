@@ -21,6 +21,7 @@ import (
 	"github.com/couchbase/gometa/message"
 	fdb "github.com/couchbaselabs/goforestdb"
 	"sync"
+	"time"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -130,12 +131,25 @@ func (r *TransientCommitLog) NewIterator(txid1, txid2 common.Txnid) (CommitLogIt
 	}
 
 	// iter can be nil if nothing has been logged
+	retry := true
+
+retryLabel:
 	txnid, iter, err := r.repo.AcquireSnapshot(MAIN)
 	if err != nil {
 		return nil, err
 	}
 
+	// The snapshot txnid must be at least match the ending txid (txid2).  If not, it will retry.
+	// This is to ensure that it takes care race condition in which the first msg in an observer's
+	// queue is a commit, and the caller asks for the state of the repository which is at least as
+	// recent as that commit msg (txid2).  If retry fails, return an error.
 	if txnid < txid2 {
+		if retry {
+			time.Sleep(common.XACT_COMMIT_WAIT_TIME)
+			retry = false
+			goto retryLabel
+		}
+
 		return nil, common.NewError(common.REPO_ERROR,
 			fmt.Sprintf("TransientLCommitLog.NewIterator: cannot support ending txid > %d", txnid))
 	}

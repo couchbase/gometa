@@ -302,7 +302,9 @@ func (r *Repository) Commit() error {
 // Close repository.
 //
 func (r *Repository) Close() {
-	// TODO: Does it need mutex?
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
 	if r.dbfile != nil {
 		for _, snapshot := range r.snapshots[MAIN] {
 			snapshot.snapshot.Close()
