@@ -153,7 +153,7 @@ func (p *PeerPipe) doSend() {
 		packet, ok := <-p.sendch
 		if !ok {
 			// channel close.  Terminate the loop.
-			log.Current.Infof("%s", "PeerPipe.doSend() : Send channel closed.  Terminate.")
+			log.Current.Debugf("%s", "PeerPipe.doSend() : Send channel closed.  Terminate.")
 			return
 		}
 

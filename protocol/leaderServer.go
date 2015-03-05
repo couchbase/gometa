@@ -207,7 +207,7 @@ func (l *LeaderServer) listenFollower(listenerState *ListenerState) {
 				}
 			}
 		case <-listenerState.killch:
-			log.Current.Infof("LeaderServer.listenFollower(): Receive kill signal. Terminate.")
+			log.Current.Debugf("LeaderServer.listenFollower(): Receive kill signal. Terminate.")
 			return
 		}
 	}
@@ -391,7 +391,7 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 				s.leader.QueueRequest(s.leader.GetFollowerId(), handle.Request)
 			} else {
 				// server shutdown.
-				log.Current.Infof("LeaderServer.processRequest(): channel for receiving client request is closed. Terminate.")
+				log.Current.Debugf("LeaderServer.processRequest(): channel for receiving client request is closed. Terminate.")
 				return nil
 			}
 		case msg, ok := <-outgoings:
@@ -403,7 +403,7 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 			}
 		case <-killch:
 			// server shutdown
-			log.Current.Infof("LeaderServer.processRequest(): receive kill signal. Stop Client request processing.")
+			log.Current.Debugf("LeaderServer.processRequest(): receive kill signal. Stop Client request processing.")
 			return nil
 		case <-listenerState.donech:
 			// listener is down.  Terminate this request processing loop as well.

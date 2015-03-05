@@ -361,7 +361,7 @@ func RunOnce() int {
 			}
 		}
 	} else {
-		log.Current.Infof("Server.RunOnce(): Server has been terminated explicitly. Terminate.")
+		log.Current.Debugf("Server.RunOnce(): Server has been terminated explicitly. Terminate.")
 	}
 
 	return pauseTime

@@ -33,6 +33,7 @@ import (
 type EmbeddedServer struct {
 	repoName   string
 	msgAddr    string
+	quota      uint64
 	repo       *r.Repository
 	log        r.CommitLogger
 	srvConfig  *r.ServerConfig
@@ -57,19 +58,21 @@ func RunEmbeddedServer(msgAddr string) (*EmbeddedServer, error) {
 
 func RunEmbeddedServerWithNotifier(msgAddr string, notifier action.EventNotifier) (*EmbeddedServer, error) {
 
-	return RunEmbeddedServerWithCustomHandler(msgAddr, notifier, nil, common.REPOSITORY_NAME)
+	return RunEmbeddedServerWithCustomHandler(msgAddr, notifier, nil, common.REPOSITORY_NAME, uint64(0))
 }
 
 func RunEmbeddedServerWithCustomHandler(msgAddr string,
 	notifier action.EventNotifier,
 	reqHandler protocol.CustomRequestHandler,
-	repoName string) (*EmbeddedServer, error) {
+	repoName string,
+	memory_quota uint64) (*EmbeddedServer, error) {
 
 	server := new(EmbeddedServer)
 	server.msgAddr = msgAddr
 	server.notifier = notifier
 	server.reqHandler = reqHandler
 	server.repoName = repoName
+	server.quota = memory_quota
 
 	if err := server.bootstrap(); err != nil {
 		log.Current.Errorf("EmbeddedServer.boostrap: error : %v\n", err)
@@ -293,7 +296,7 @@ func (s *EmbeddedServer) bootstrap() (err error) {
 	s.state = newServerState()
 
 	// Initialize repository service
-	s.repo, err = r.OpenRepositoryWithName(s.repoName)
+	s.repo, err = r.OpenRepositoryWithName(s.repoName, s.quota)
 	if err != nil {
 		return err
 	}
@@ -439,7 +442,7 @@ func (s *EmbeddedServer) runOnce() {
 			log.Current.Errorf("EmbeddedServer.RunOnce() : Error Encountered From Server : %s", err.Error())
 		}
 	} else {
-		log.Current.Infof("EmbeddedServer.RunOnce(): Server has been terminated explicitly. Terminate.")
+		log.Current.Debugf("EmbeddedServer.RunOnce(): Server has been terminated explicitly. Terminate.")
 	}
 }
 

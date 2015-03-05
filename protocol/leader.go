@@ -412,7 +412,7 @@ func (l *messageListener) start() {
 				return
 			}
 		case <-l.killch:
-			log.Current.Infof("messageListener.start(): Listener for %s receive kill signal. Terminate.", l.fid)
+			log.Current.Debugf("messageListener.start(): Listener for %s receive kill signal. Terminate.", l.fid)
 			return
 
 		}
@@ -479,12 +479,12 @@ func (l *Leader) listen() {
 						return
 					}
 				} else {
-					log.Current.Infof("Leader.listen(): Leader is closed. Terminate message processing loop.")
+					log.Current.Debugf("Leader.listen(): Leader is closed. Terminate message processing loop.")
 					return
 				}
 			} else {
 				// The channel is closed.
-				log.Current.Infof("Leader.listen(): message channel closed. Terminate message processing loop for leader.")
+				log.Current.Debugf("Leader.listen(): message channel closed. Terminate message processing loop for leader.")
 				return
 			}
 		}

@@ -235,7 +235,7 @@ func (p *PeerMessenger) doSend() {
 		msg, ok := <-p.sendch
 		if !ok {
 			// channel close.  Terminate the loop.
-			log.Current.Infof("PeerMessenger.doSend() : Send channel closed.  Terminate.")
+			log.Current.Debugf("PeerMessenger.doSend() : Send channel closed.  Terminate.")
 			break
 		}
 

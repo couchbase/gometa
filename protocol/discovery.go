@@ -357,7 +357,7 @@ func (l *LeaderSyncProxy) Start(o *observer) bool {
 		log.Current.Infof("LeaderSyncProxy.Start(): Synchronization timeout for peer (TCP %s). Terminate.", l.follower.GetAddr())
 		l.abort()
 	case <-l.killch:
-		log.Current.Infof("LeaderSyncProxy.Start(): Receive kill signal for peer (TCP %s).  Terminate.", l.follower.GetAddr())
+		log.Current.Debugf("LeaderSyncProxy.Start(): Receive kill signal for peer (TCP %s).  Terminate.", l.follower.GetAddr())
 		l.abort()
 	}
 
@@ -906,7 +906,7 @@ func (f *FollowerSyncProxy) Start() bool {
 		log.Current.Infof("FollowerSyncProxy.Start(): Synchronization timeout for peer %s. Terminate.", f.leader.GetAddr())
 		f.abort()
 	case <-f.killch:
-		log.Current.Infof("FollowerSyncProxy.Start(): Receive kill signal for peer %s.  Terminate.", f.leader.GetAddr())
+		log.Current.Debugf("FollowerSyncProxy.Start(): Receive kill signal for peer %s.  Terminate.", f.leader.GetAddr())
 		f.abort()
 	}
 
