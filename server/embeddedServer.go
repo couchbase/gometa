@@ -295,16 +295,17 @@ func (s *EmbeddedServer) bootstrap() (err error) {
 	// Initialize server state
 	s.state = newServerState()
 
+	// Create and initialize new txn state.
+	s.txn = common.NewTxnState()
+	
 	// Initialize repository service
 	s.repo, err = r.OpenRepositoryWithName(s.repoName, s.quota)
 	if err != nil {
 		return err
 	}
-	s.log = r.NewTransientCommitLog(s.repo)
-	s.srvConfig = r.NewServerConfig(s.repo)
 
-	// Create and initialize new txn state.
-	s.txn = common.NewTxnState()
+	// Initialize server config
+	s.srvConfig = r.NewServerConfig(s.repo)
 
 	// initialize the current transaction id to the lastLoggedTxid.  This
 	// is the txid that this node has seen so far.  If this node becomes
@@ -315,6 +316,16 @@ func (s *EmbeddedServer) bootstrap() (err error) {
 		return err
 	}
 	s.txn.InitCurrentTxnid(common.Txnid(lastLoggedTxid))
+
+	// Initialize commit log
+	lastCommittedTxid, err := s.srvConfig.GetLastCommittedTxnId()
+	if err != nil {
+		return err
+	}
+	s.log, err = r.NewTransientCommitLog(s.repo, lastCommittedTxid)
+	if err != nil {
+		return err
+	}
 
 	// Initialize various callback facility for leader election and
 	// voting protocol.
