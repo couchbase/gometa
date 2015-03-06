@@ -43,7 +43,8 @@ func RunWatcherServerWithRequest(leader string,
 	backoff := common.RETRY_BACKOFF
 	retry := true
 	for retry {
-		if runOnce(leader, requestMgr, handler, factory, killch, readych, once) {
+		log.Current.Debugf("WatcherServer.runWatcherServer() : runOnce() returns with error.  Retry ...")
+		if runOnce(leader, requestMgr, handler, factory, killch, readych, &once) {
 			retry = false
 		}
 
@@ -98,7 +99,7 @@ func RunWatcherServerWithElection(host string,
 			return
 		}
 
-		if peer != "" && runOnce(peer, requestMgr, handler, factory, killch, readych, once) {
+		if peer != "" && runOnce(peer, requestMgr, handler, factory, killch, readych, &once) {
 			retry = false
 		}
 
@@ -124,7 +125,7 @@ func runOnce(peer string,
 	factory MsgFactory,
 	killch <-chan bool,
 	readych chan<- bool,
-	once sync.Once) (isKilled bool) {
+	once *sync.Once) (isKilled bool) {
 
 	// Catch panic at the main entry point for WatcherServer
 	defer func() {
@@ -135,7 +136,7 @@ func runOnce(peer string,
 			log.Current.Debugf("WatcherServer.runOnce() terminates : Diagnostic Stack ...")
 			log.Current.LazyDebug(log.Current.StackTrace)
 		}
-		
+
 		if requestMgr != nil {
 			requestMgr.CleanupOnError()
 		}
@@ -285,7 +286,7 @@ func runWatcher(pipe *common.PeerPipe,
 	factory MsgFactory,
 	killch <-chan bool,
 	readych chan<- bool,
-	once sync.Once) (isKilled bool) {
+	once *sync.Once) (isKilled bool) {
 
 	// Create a watcher.  The watcher will start a go-rountine, listening to messages coming from peer.
 	log.Current.Debugf("WatcherServer.runWatcher(): Start Watcher Protocol")
@@ -295,6 +296,8 @@ func runWatcher(pipe *common.PeerPipe,
 
 	// notify that the watcher is starting to run.  Only do this once.
 	once.Do(func() { readych <- true })
+
+	log.Current.Debugf("WatcherServer.runWatcher(): Watcher is ready to process request")
 
 	var incomings <-chan *RequestHandle
 	if requestMgr != nil {
