@@ -18,6 +18,7 @@ package repository
 import (
 	"fmt"
 	"github.com/couchbase/gometa/common"
+	logging "github.com/couchbase/gometa/log"
 	"github.com/couchbase/gometa/message"
 	fdb "github.com/couchbaselabs/goforestdb"
 	"sync"
@@ -53,11 +54,21 @@ type TransientLogIterator struct {
 //
 // Create a new commit log
 //
-func NewTransientCommitLog(repo *Repository) CommitLogger {
-	return &TransientCommitLog{
+func NewTransientCommitLog(repo *Repository, lastCommittedTxnid common.Txnid) (CommitLogger, error) {
+
+	log := &TransientCommitLog{
 		repo:    repo,
 		factory: message.NewConcreteMsgFactory(),
 		logs:    make(map[common.Txnid]*message.LogEntry)}
+
+	if lastCommittedTxnid != common.BOOTSTRAP_LAST_COMMITTED_TXID {
+		if err := repo.CreateSnapshot(MAIN, lastCommittedTxnid); err != nil {
+			logging.Current.Errorf("NewTransientCommitLog: Cannot create initial snapshot")
+			return nil, err
+		}
+	}
+
+	return log, nil
 }
 
 //
