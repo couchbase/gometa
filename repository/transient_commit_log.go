@@ -20,7 +20,7 @@ import (
 	"github.com/couchbase/gometa/common"
 	logging "github.com/couchbase/gometa/log"
 	"github.com/couchbase/gometa/message"
-	fdb "github.com/couchbaselabs/goforestdb"
+	fdb "github.com/couchbase/goforestdb"
 	"sync"
 	"time"
 )
