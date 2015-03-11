@@ -18,7 +18,7 @@ package repository
 import (
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
-	//	fdb "github.com/couchbaselabs/goforestdb"
+	// fdb "github.com/couchbase/goforestdb"
 	fdb "github.com/couchbase/indexing/secondary/fdb"
 	"sync"
 )

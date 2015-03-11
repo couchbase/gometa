@@ -111,7 +111,7 @@ III) DEPENDENCY
 
 The metadata store uses forestdb.  You will need to get forestdb as well as goforestdb (forestdb GO wrapper).  It also uses protobuf for messaging.
 
-go get github.com/couchbaselabs/goforestdb
+go get github.com/couchbase/goforestdb
 
 go get -u code.google.com/p/goprotobuf/{proto,protoc-gen-go}
 
