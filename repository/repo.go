@@ -18,7 +18,8 @@ package repository
 import (
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
-	fdb "github.com/couchbaselabs/goforestdb"
+	//	fdb "github.com/couchbaselabs/goforestdb"
+	fdb "github.com/couchbase/indexing/secondary/fdb"
 	"sync"
 )
 
@@ -237,6 +238,9 @@ func (r *Repository) SetNoCommit(kind RepoKind, key string, content []byte) erro
 //
 func (r *Repository) Get(kind RepoKind, key string) ([]byte, error) {
 
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
 	//convert key to its collatejson encoded byte representation
 	k, err := CollateString(key)
 	if err != nil {
@@ -338,6 +342,9 @@ func (r *Repository) Close() {
 // Create a new iterator.  EndKey is inclusive.
 //
 func (r *Repository) NewIterator(kind RepoKind, startKey, endKey string) (*RepoIterator, error) {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
 	// TODO: Check if fdb is closed.
 
 	k1, err := CollateString(startKey)
