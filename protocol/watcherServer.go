@@ -50,7 +50,11 @@ func RunWatcherServerWithRequest(leader string,
 
 		if retry {
 			timer := time.NewTimer(backoff * time.Millisecond)
-			<-timer.C
+			select {
+				case <-timer.C:
+				case <-killch:
+					return
+			}
 
 			backoff += backoff
 			if backoff > common.MAX_RETRY_BACKOFF {
