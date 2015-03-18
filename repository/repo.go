@@ -18,7 +18,8 @@ package repository
 import (
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
-	fdb "github.com/couchbase/goforestdb"
+	// fdb "github.com/couchbase/goforestdb"
+	fdb "github.com/couchbase/indexing/secondary/fdb"
 	"sync"
 )
 
@@ -338,6 +339,7 @@ func (r *Repository) Close() {
 // Create a new iterator.  EndKey is inclusive.
 //
 func (r *Repository) NewIterator(kind RepoKind, startKey, endKey string) (*RepoIterator, error) {
+
 	// TODO: Check if fdb is closed.
 
 	k1, err := CollateString(startKey)
