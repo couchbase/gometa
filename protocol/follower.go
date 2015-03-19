@@ -132,8 +132,8 @@ func (f *Follower) startListener() {
 			log.Current.Errorf("panic in Follower.startListener() : %s\n", r)
 			log.Current.Errorf("%s", log.Current.StackTrace())
 		} else {
-			log.Current.Debugf("Follower.startListener() terminates: Diagnostic Stack ...")
-			log.Current.LazyDebug(log.Current.StackTrace)
+			log.Current.Debugf("Follower.startListener() terminates.")
+			log.Current.Tracef(log.Current.StackTrace())
 		}
 
 		common.SafeRun("Follower.startListener()",

@@ -155,12 +155,12 @@ func (s *EmbeddedServer) Set(key string, value []byte) error {
 	defer handle.CondVar.L.Unlock()
 
 	// push the request to a channel
-	log.Current.Debugf("Handing new request to server. Key %s", key)
+	log.Current.Tracef("EmbeddedServer.Set(): Handing new request to gometa leader. Key %s", key)
 	s.state.incomings <- handle
 
 	// This goroutine will wait until the request has been processed.
 	handle.CondVar.Wait()
-	log.Current.Debugf("Receive Response for request. Key %s", key)
+	log.Current.Tracef("EmbeddedServer.Set(): Receive Response from gometa leader. Key %s", key)
 
 	return handle.Err
 }
@@ -186,12 +186,12 @@ func (s *EmbeddedServer) MakeRequest(op common.OpCode, key string, value []byte)
 	defer handle.CondVar.L.Unlock()
 
 	// push the request to a channel
-	log.Current.Debugf("Handing new request to server. Key %s", key)
+	log.Current.Tracef("EmbeddedServer.MakeRequest(): Handing new request to gometa leader. Key %s", key)
 	s.state.incomings <- handle
 
 	// This goroutine will wait until the request has been processed.
 	handle.CondVar.Wait()
-	log.Current.Debugf("Receive Response for request. Key %s", key)
+	log.Current.Tracef("EmbeddedServer.MakeRequest(): Receive Response from gometa leader. Key %s", key)
 
 	return handle.Err
 }
@@ -211,7 +211,7 @@ func (s *EmbeddedServer) MakeAsyncRequest(op common.OpCode, key string, value []
 	handle := newRequestHandle(request)
 
 	// push the request to a channel
-	log.Current.Debugf("Handing new request to server. Key %s", key)
+	log.Current.Tracef("EmbeddedServer.MakeAsyncRequest(): Handing new request to gometa leader. Key %s", key)
 	s.state.incomings <- handle
 
 	return nil
@@ -238,12 +238,12 @@ func (s *EmbeddedServer) Delete(key string) error {
 	defer handle.CondVar.L.Unlock()
 
 	// push the request to a channel
-	log.Current.Debugf("Handing new request to server. Key %s", key)
+	log.Current.Tracef("Handing new request to server. Key %s", key)
 	s.state.incomings <- handle
 
 	// This goroutine will wait until the request has been processed.
 	handle.CondVar.Wait()
-	log.Current.Debugf("Receive Response for request. Key %s", key)
+	log.Current.Tracef("Receive Response for request. Key %s", key)
 
 	return handle.Err
 }

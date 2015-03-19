@@ -245,7 +245,7 @@ func (r *Repository) Get(kind RepoKind, key string) ([]byte, error) {
 	}
 
 	value, err := r.stores[kind].GetKV(k)
-	log.Current.Debugf("Repo.Get(): key %s, found=%v", key, err == nil)
+	log.Current.Tracef("Repo.Get(): key %s, found=%v", key, err == nil)
 	return value, err
 }
 

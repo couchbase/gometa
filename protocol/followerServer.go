@@ -59,8 +59,8 @@ func RunFollowerServer(naddr string,
 			log.Current.Errorf("%s", log.Current.StackTrace())
 			err = r.(error)
 		} else {
-			log.Current.Debugf("%s", "RunFollowerServer terminates : Diagnostic Stack ...")
-			log.Current.LazyDebug(log.Current.StackTrace)
+			log.Current.Debugf("%s", "RunFollowerServer terminates.")
+			log.Current.Tracef(log.Current.StackTrace())
 		}
 	}()
 

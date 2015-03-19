@@ -381,8 +381,8 @@ func (l *messageListener) start() {
 			log.Current.Errorf("panic in messageListener.start() : %s\n", r)
 			log.Current.Errorf("%s", log.Current.StackTrace())
 		} else {
-			log.Current.Debugf("leader's messageListener.start() terminates : Diagnostic Stack ...")
-			log.Current.LazyDebug(log.Current.StackTrace)
+			log.Current.Debugf("leader's messageListener.start() terminates.")
+			log.Current.Tracef(log.Current.StackTrace())
 		}
 
 		common.SafeRun("messageListener.start()",
@@ -455,8 +455,8 @@ func (l *Leader) listen() {
 			log.Current.Errorf("panic in Leader.listen() : %s\n", r)
 			log.Current.Errorf("%s", log.Current.StackTrace())
 		} else {
-			log.Current.Debugf("Leader.listen() terminates : Diagnostic Stack ...")
-			log.Current.LazyDebug(log.Current.StackTrace)
+			log.Current.Debugf("Leader.listen() terminates.")
+			log.Current.Tracef(log.Current.StackTrace())
 		}
 
 		common.SafeRun("Leader.listen()",
@@ -652,7 +652,7 @@ func (l *Leader) sendProposal(proposal ProposalMsg) {
 //
 func (l *Leader) sendAbort(fid string, reqId uint64, err string) {
 
-	log.Current.Debugf("leader.sendAbort(): Send Abort to %s", fid)
+	log.Current.Tracef("leader.sendAbort(): Send Abort to %s", fid)
 
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
@@ -683,7 +683,7 @@ func (l *Leader) sendAbort(fid string, reqId uint64, err string) {
 //
 func (l *Leader) sendResponse(msg ResponseMsg) {
 
-	log.Current.Debugf("leader.sendResponse(): Send Response to %s", msg.GetFid())
+	log.Current.Tracef("leader.sendResponse(): Send Response to %s", msg.GetFid())
 
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
@@ -756,7 +756,7 @@ func (l *Leader) updateQuorum(txid common.Txnid, fid string) {
 	if l.quorums[txid] == nil {
 		l.quorums[txid] = make([]string, 0, common.MAX_FOLLOWERS)
 	}
-	log.Current.Debugf("Leader.updateQuorum: current quorum for txid %d : %d", uint64(txid), len(l.quorums[txid]))
+	log.Current.Tracef("Leader.updateQuorum: current quorum for txid %d : %d", uint64(txid), len(l.quorums[txid]))
 
 	// Just to double check if the follower has already voted on this proposal.
 	var found bool
@@ -772,7 +772,7 @@ func (l *Leader) updateQuorum(txid common.Txnid, fid string) {
 		l.quorums[txid] = append(l.quorums[txid], fid)
 	}
 
-	log.Current.Debugf("Leader.updateQuorum: new quorum for txid %d : %d", uint64(txid), len(l.quorums[txid]))
+	log.Current.Tracef("Leader.updateQuorum: new quorum for txid %d : %d", uint64(txid), len(l.quorums[txid]))
 }
 
 //
@@ -783,7 +783,7 @@ func (l *Leader) hasQuorum(txid common.Txnid) bool {
 	// hierarchy quorums for scalability (servers are put into different
 	// groups and quorums are obtained within a group).
 
-	log.Current.Debugf("Leader.hasQuorum: accepted response for txid %d = %d, ensemble size = %d",
+	log.Current.Tracef("Leader.hasQuorum: accepted response for txid %d = %d, ensemble size = %d",
 		uint64(txid), len(l.quorums[txid]), l.handler.GetEnsembleSize())
 
 	accepted, ok := l.quorums[txid]
