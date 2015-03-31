@@ -87,8 +87,8 @@ func RunLeaderServerWithCustomHandler(naddr string,
 			log.Current.Errorf("%s", log.Current.StackTrace())
 			err = r.(error)
 		} else {
-			log.Current.Debugf("RunLeaderServer terminates : Diagnostic Stack ...")
-			log.Current.LazyDebug(log.Current.StackTrace)
+			log.Current.Debugf("RunLeaderServer terminates.")
+			log.Current.Tracef(log.Current.StackTrace())
 		}
 	}()
 
@@ -150,8 +150,8 @@ func (l *LeaderServer) listenFollower(listenerState *ListenerState) {
 			log.Current.Errorf("panic in LeaderServer.listenFollower() : %s\n", r)
 			log.Current.Errorf("%s", log.Current.StackTrace())
 		} else {
-			log.Current.Debugf("LeaderServer.listenFollower() terminates : Diagnostic Stack ...")
-			log.Current.LazyDebug(log.Current.StackTrace)
+			log.Current.Debugf("LeaderServer.listenFollower() terminates.")
+			log.Current.Tracef(log.Current.StackTrace())
 		}
 
 		common.SafeRun("LeaderServer.listenFollower()",
@@ -224,8 +224,8 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 			log.Current.Errorf("panic in LeaderServer.startProxy() : %s\n", r)
 			log.Current.Errorf("%s", log.Current.StackTrace())
 		} else {
-			log.Current.Debugf("LeaderServer.startProxy() : Diagnostic Stack ...")
-			log.Current.LazyDebug(log.Current.StackTrace)
+			log.Current.Debugf("LeaderServer.startProxy() : Terminates.")
+			log.Current.Tracef(log.Current.StackTrace())
 		}
 
 		// deregister the proxy with the leader Server upon exit
@@ -342,8 +342,8 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 			log.Current.Errorf("%s", log.Current.StackTrace())
 			err = r.(error)
 		} else {
-			log.Current.Debugf("LeaderServer.processRequest() : Diagnostic Stack ...")
-			log.Current.LazyDebug(log.Current.StackTrace)
+			log.Current.Debugf("LeaderServer.processRequest() : Terminates.")
+			log.Current.Tracef(log.Current.StackTrace())
 		}
 
 		common.SafeRun("LeaderServer.processRequest()",

@@ -1148,7 +1148,7 @@ func (l *FollowerSyncProxy) receiveAndUpdateCurrentEpoch() error {
 
 func (l *FollowerSyncProxy) syncReceive() error {
 
-	log.Current.Debugf("FollowerSyncProxy.syncReceive()")
+	log.Current.Tracef("FollowerSyncProxy.syncReceive()")
 
 	lastCommittedFromLeader := common.BOOTSTRAP_LAST_COMMITTED_TXID
 	pendingCommit := make([]LogEntryMsg, 0, common.MAX_PROPOSALS)
@@ -1236,7 +1236,7 @@ func listen(name string, pipe *common.PeerPipe) (common.Packet, error) {
 
 func send(packet common.Packet, pipe *common.PeerPipe) error {
 
-	log.Current.Debugf("SyncProxy.send(): sending packet %s to peer (TCP %s)", packet.Name(), pipe.GetAddr())
+	log.Current.Tracef("SyncProxy.send(): sending packet %s to peer (TCP %s)", packet.Name(), pipe.GetAddr())
 	if !pipe.Send(packet) {
 		return common.NewError(common.SERVER_ERROR, fmt.Sprintf("SyncProxy.listen(): Fail to send packet %s to peer (TCP %s)",
 			packet.Name(), pipe.GetAddr()))

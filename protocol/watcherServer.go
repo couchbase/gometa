@@ -137,8 +137,8 @@ func runOnce(peer string,
 			log.Current.Errorf("panic in WatcherServer.runOnce() : %s\n", r)
 			log.Current.Errorf("%s", log.Current.StackTrace())
 		} else {
-			log.Current.Debugf("WatcherServer.runOnce() terminates : Diagnostic Stack ...")
-			log.Current.LazyDebug(log.Current.StackTrace)
+			log.Current.Debugf("WatcherServer.runOnce() terminates.")
+			log.Current.Tracef(log.Current.StackTrace())
 		}
 
 		if requestMgr != nil {
