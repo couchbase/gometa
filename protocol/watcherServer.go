@@ -37,23 +37,25 @@ func RunWatcherServerWithRequest(leader string,
 	handler ActionHandler,
 	factory MsgFactory,
 	killch <-chan bool,
-	readych chan<- bool) {
+	readych chan<- bool,
+	alivech chan<- bool,
+	pingch <-chan bool) {
 
 	var once sync.Once
 	backoff := common.RETRY_BACKOFF
 	retry := true
 	for retry {
 		log.Current.Debugf("WatcherServer.runWatcherServer() : runOnce() returns with error.  Retry ...")
-		if runOnce(leader, requestMgr, handler, factory, killch, readych, &once) {
+		if runOnce(leader, requestMgr, handler, factory, killch, readych, alivech, pingch, &once) {
 			retry = false
 		}
 
 		if retry {
 			timer := time.NewTimer(backoff * time.Millisecond)
 			select {
-				case <-timer.C:
-				case <-killch:
-					return
+			case <-timer.C:
+			case <-killch:
+				return
 			}
 
 			backoff += backoff
@@ -76,7 +78,7 @@ func RunWatcherServer(leader string,
 	killch <-chan bool,
 	readych chan<- bool) {
 
-	RunWatcherServerWithRequest(leader, nil, handler, factory, killch, readych)
+	RunWatcherServerWithRequest(leader, nil, handler, factory, killch, readych, make(chan bool, 1), make(chan bool, 1))
 }
 
 //
@@ -103,7 +105,7 @@ func RunWatcherServerWithElection(host string,
 			return
 		}
 
-		if peer != "" && runOnce(peer, requestMgr, handler, factory, killch, readych, &once) {
+		if peer != "" && runOnce(peer, requestMgr, handler, factory, killch, readych, make(chan bool, 1), make(chan bool, 1), &once) {
 			retry = false
 		}
 
@@ -129,6 +131,8 @@ func runOnce(peer string,
 	factory MsgFactory,
 	killch <-chan bool,
 	readych chan<- bool,
+	alivech chan<- bool,
+	pingch <-chan bool,
 	once *sync.Once) (isKilled bool) {
 
 	// Catch panic at the main entry point for WatcherServer
@@ -169,7 +173,7 @@ func runOnce(peer string,
 
 	// run watcher after synchronization
 	if success {
-		if !runWatcher(pipe, requestMgr, handler, factory, killch, readych, once) {
+		if !runWatcher(pipe, requestMgr, handler, factory, killch, readych, alivech, pingch, once) {
 			log.Current.Errorf("WatcherServer.runOnce() : Watcher terminated unexpectedly.")
 			return false
 		}
@@ -290,6 +294,8 @@ func runWatcher(pipe *common.PeerPipe,
 	factory MsgFactory,
 	killch <-chan bool,
 	readych chan<- bool,
+	alivech chan<- bool,
+	pingch <-chan bool,
 	once *sync.Once) (isKilled bool) {
 
 	// Create a watcher.  The watcher will start a go-rountine, listening to messages coming from peer.
@@ -334,6 +340,10 @@ func runWatcher(pipe *common.PeerPipe,
 			// watcher is done.  Just return.
 			log.Current.Debugf("WatcherServer.runTillEnd(): Watcher go-routine terminates. Terminate.")
 			return false
+		case <-pingch:
+			if len(alivech) == 0 {
+				alivech <- true
+			}
 		}
 	}
 }
