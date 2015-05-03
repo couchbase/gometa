@@ -20,6 +20,7 @@ import (
 	"github.com/couchbase/gometa/log"
 	// fdb "github.com/couchbase/goforestdb"
 	fdb "github.com/couchbase/indexing/secondary/fdb"
+	"math"
 	"sync"
 )
 
@@ -159,7 +160,7 @@ func (r *Repository) CreateSnapshot(kind RepoKind, txnid common.Txnid) error {
 		txnid: txnid,
 		count: 0}
 
-	r.pruneSnapshot(kind)
+	r.pruneSnapshotNoLock(kind)
 
 	r.snapshots[kind] = append(r.snapshots[kind], snapshot)
 
@@ -179,11 +180,15 @@ func (r *Repository) AcquireSnapshot(kind RepoKind) (common.Txnid, *RepoIterator
 	snapshot := r.snapshots[kind][len(r.snapshots[kind])-1]
 	snapshot.count++
 
-	iter, err := snapshot.snapshot.IteratorInit(nil, nil, fdb.ITR_NO_DELETES)
+	// Create a snaphsot for iteration
+	var FORESTDB_INMEMSEQ = fdb.SeqNum(math.MaxUint64)
+	kvstore, err := snapshot.snapshot.SnapshotOpen(FORESTDB_INMEMSEQ)
+
+	iter, err := kvstore.IteratorInit(nil, nil, fdb.ITR_NO_DELETES)
 	if err != nil {
 		return common.Txnid(0), nil, err
 	}
-	return snapshot.txnid, &RepoIterator{iter: iter}, nil
+	return snapshot.txnid, &RepoIterator{iter: iter, store: kvstore}, nil
 }
 
 func (r *Repository) ReleaseSnapshot(kind RepoKind, txnid common.Txnid) {
@@ -198,7 +203,7 @@ func (r *Repository) ReleaseSnapshot(kind RepoKind, txnid common.Txnid) {
 	}
 }
 
-func (r *Repository) pruneSnapshot(kind RepoKind) {
+func (r *Repository) pruneSnapshotNoLock(kind RepoKind) {
 
 	var newList []*Snapshot = nil
 	for _, snapshot := range r.snapshots[kind] {
@@ -237,6 +242,9 @@ func (r *Repository) SetNoCommit(kind RepoKind, key string, content []byte) erro
 // Retrieve from repository
 //
 func (r *Repository) Get(kind RepoKind, key string) ([]byte, error) {
+
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
 
 	//convert key to its collatejson encoded byte representation
 	k, err := CollateString(key)
@@ -340,7 +348,8 @@ func (r *Repository) Close() {
 //
 func (r *Repository) NewIterator(kind RepoKind, startKey, endKey string) (*RepoIterator, error) {
 
-	// TODO: Check if fdb is closed.
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
 
 	k1, err := CollateString(startKey)
 	if err != nil {
@@ -352,11 +361,15 @@ func (r *Repository) NewIterator(kind RepoKind, startKey, endKey string) (*RepoI
 		return nil, err
 	}
 
-	iter, err := r.stores[kind].IteratorInit(k1, k2, fdb.ITR_NO_DELETES)
+	// Create a snaphsot for iteration
+	var FORESTDB_INMEMSEQ = fdb.SeqNum(math.MaxUint64)
+	snapshot, err := r.stores[kind].SnapshotOpen(FORESTDB_INMEMSEQ)
+
+	iter, err := snapshot.IteratorInit(k1, k2, fdb.ITR_NO_DELETES)
 	if err != nil {
 		return nil, err
 	}
-	result := &RepoIterator{iter: iter, store: r.stores[kind]}
+	result := &RepoIterator{iter: iter, store: snapshot}
 	return result, nil
 }
 
@@ -394,6 +407,11 @@ func (i *RepoIterator) Close() {
 	if i.iter != nil {
 		i.iter.Close()
 		i.iter = nil
+	}
+
+	if i.store != nil {
+		i.store.Close()
+		i.store = nil
 	}
 }
 
