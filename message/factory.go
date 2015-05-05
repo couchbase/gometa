@@ -16,7 +16,7 @@
 package message
 
 import (
-	"code.google.com/p/goprotobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/protocol"
 )

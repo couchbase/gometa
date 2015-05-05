@@ -113,7 +113,7 @@ The metadata store uses forestdb.  You will need to get forestdb as well as gofo
 
 go get github.com/couchbase/goforestdb
 
-go get -u code.google.com/p/goprotobuf/{proto,protoc-gen-go}
+go get -u github.com/golang/protobuf/{proto,protoc-gen-go}
 
 IV) KEY BACKLOG
 ----------------
