@@ -16,7 +16,7 @@
 package message
 
 import (
-	"code.google.com/p/goprotobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"strconv"
 	"bytes"
 	"fmt"
