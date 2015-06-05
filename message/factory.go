@@ -32,8 +32,11 @@ type ConcreteMsgFactory struct {
 // Public Function
 /////////////////////////////////////////////////////////////////////////////
 
-func NewConcreteMsgFactory() *ConcreteMsgFactory {
+func init() {
 	registerMessages()
+}
+
+func NewConcreteMsgFactory() *ConcreteMsgFactory {
 
 	return &ConcreteMsgFactory{}
 }
