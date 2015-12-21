@@ -93,7 +93,11 @@ func (r *TransientCommitLog) Get(txid common.Txnid) (common.OpCode, string, []by
 		return common.OPCODE_INVALID, "", nil, err
 	}
 
-	return common.GetOpCodeFromInt(msg.GetOpCode()), msg.GetKey(), msg.GetContent(), nil
+	// msg is a protobuf object. Directly pointing slices/strings into a struct
+	// may cause problems for cgo calls
+	key := string([]byte(msg.GetKey()))
+	content := []byte(string(msg.GetContent()))
+	return common.GetOpCodeFromInt(msg.GetOpCode()), key, content, nil
 }
 
 //
