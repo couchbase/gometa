@@ -18,22 +18,22 @@ PROJECT (gometa)
 #
 # FORESTDB_LIBRARY_DIR - should point to where libforestdb.so resides
 #
-# Optionally:
-#
-# FORESTDB_TARGET - if set, assumed to the the CMake target name which
-# builds libforestdb.so; will set dependencies to ensure it is build
-# before attempting to compile indexer
 
 INCLUDE (FindCouchbaseGo)
 
-SET (_forestdb_dep)
-IF (DEFINED FORESTDB_TARGET)
-  SET (_forestdb_dep DEPENDS ${FORESTDB_TARGET})
-ENDIF (DEFINED FORESTDB_TARGET)
+IF (TARGET forestdb)
+  LIST (APPEND _deps forestdb)
+ENDIF ()
+IF (TARGET breakpad_wrapper)
+  LIST (APPEND _deps breakpad_wrapper)
+ENDIF ()
+IF (NOT "${_deps}" STREQUAL "")
+  SET (_deps DEPENDS ${_deps})
+ENDIF ()
 
 GoInstall (TARGET gometa PACKAGE github.com/couchbase/gometa/cmd/gometa
   GOPATH "${PROJECT_SOURCE_DIR}/../../../.." "${GODEPSDIR}"
-  ${_forestdb_dep}
-  CGO_INCLUDE_DIRS "${FORESTDB_INCLUDE_DIR}"
-  CGO_LIBRARY_DIRS "${FORESTDB_LIBRARY_DIR}"
+  ${_deps}
+  CGO_INCLUDE_DIRS "${FORESTDB_INCLUDE_DIR};${Platform_SOURCE_DIR}/include"
+  CGO_LIBRARY_DIRS "${FORESTDB_LIBRARY_DIR};${Platform_BINARY_DIR}"
   INSTALL_PATH bin OUTPUT gometa)
