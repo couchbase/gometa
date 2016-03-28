@@ -24,9 +24,6 @@ INCLUDE (FindCouchbaseGo)
 IF (TARGET forestdb)
   LIST (APPEND _deps forestdb)
 ENDIF ()
-IF (TARGET breakpad_wrapper)
-  LIST (APPEND _deps breakpad_wrapper)
-ENDIF ()
 IF (NOT "${_deps}" STREQUAL "")
   SET (_deps DEPENDS ${_deps})
 ENDIF ()
@@ -34,6 +31,6 @@ ENDIF ()
 GoInstall (TARGET gometa PACKAGE github.com/couchbase/gometa/cmd/gometa
   GOPATH "${PROJECT_SOURCE_DIR}/../../../.." "${GODEPSDIR}"
   ${_deps}
-  CGO_INCLUDE_DIRS "${FORESTDB_INCLUDE_DIR};${Platform_SOURCE_DIR}/include"
-  CGO_LIBRARY_DIRS "${FORESTDB_LIBRARY_DIR};${Platform_BINARY_DIR}"
+  CGO_INCLUDE_DIRS "${FORESTDB_INCLUDE_DIR}"
+  CGO_LIBRARY_DIRS "${FORESTDB_LIBRARY_DIR}"
   INSTALL_PATH bin OUTPUT gometa)
