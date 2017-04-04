@@ -18,6 +18,8 @@ package common
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"github.com/couchbase/gometa/log"
 	"net"
 	"sync"
@@ -141,7 +143,7 @@ func (p *PeerPipe) Send(packet Packet) bool {
 func (p *PeerPipe) doSend() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Current.Errorf("panic in PeerPipe.doSend() : %s\n", r)
+			log.Current.Errorf("caught panic in PeerPipe.doSend() : %s.  Terminate connection upon panic.\n", r)
 			log.Current.Errorf("%s", log.Current.StackTrace())
 		}
 
@@ -198,17 +200,24 @@ func (p *PeerPipe) doReceive() {
 
 	for {
 		// read packet len
-		lenBuf, err := p.readBytes(8)
+		lenBuf, err := p.readBytes(8, nil)
 		if err != nil {
 			// if encountering an error, kill the pipe.
 			log.Current.Debugf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer %s.  Error = %s. Kill Pipe.",
 				p.GetAddr(), err.Error())
 			return
 		}
+		size := binary.BigEndian.Uint64(lenBuf)
 
 		// read the content
-		size := binary.BigEndian.Uint64(lenBuf)
-		buf, err := p.readBytes(size)
+		readahead, err := p.validateHeader(size)
+		if err != nil {
+			log.Current.Debugf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer %s.  Error = %s. Kill Pipe.",
+				p.GetAddr(), err.Error())
+			return
+		}
+
+		buf, err := p.readBytes(size, readahead)
 		if err != nil {
 			// if encountering an error, kill the pipe.
 			log.Current.Debugf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer %s.  Error = %s. Kill Pipe.",
@@ -245,10 +254,15 @@ func (p *PeerPipe) queue(packet Packet) {
 	}
 }
 
-func (p *PeerPipe) readBytes(len uint64) ([]byte, error) {
+func (p *PeerPipe) readBytes(size uint64, readahead []byte) ([]byte, error) {
 
 	result := new(bytes.Buffer)
-	remaining := len
+	remaining := size
+
+	if readahead != nil {
+		result.Write(readahead)
+		remaining -= uint64(len(readahead))
+	}
 
 	for {
 		// read the size of the packet (uint64)
@@ -268,6 +282,43 @@ func (p *PeerPipe) readBytes(len uint64) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	return result.Bytes(), nil
+}
+
+func (p *PeerPipe) validateHeader(size uint64) ([]byte, error) {
+
+	// validate the size of packet
+	if size > 20*1024*1024 {
+		return nil, errors.New(fmt.Sprintf("Validate packet header: Invalid size %v", size))
+	}
+
+	result := new(bytes.Buffer)
+
+	// read the type length
+	buf, err := p.readBytes(8, nil)
+	if err != nil {
+		return nil, err
+	}
+	result.Write(buf)
+
+	// validate the length of type string
+	tyLen := binary.BigEndian.Uint64(buf)
+	if tyLen > 2048 {
+		return nil, errors.New(fmt.Sprintf("Validate packet header: Invalid type length %v", tyLen))
+	}
+
+	// read the type string
+	buf, err = p.readBytes(tyLen, nil)
+	if err != nil {
+		return nil, err
+	}
+	result.Write(buf)
+
+	// validate type string
+	if !IsValidType(string(buf)) {
+		return nil, errors.New(fmt.Sprint("Validate packet header: Unrecognize packet type"))
 	}
 
 	return result.Bytes(), nil

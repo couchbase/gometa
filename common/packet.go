@@ -35,6 +35,8 @@ type Packet interface {
 	// Decode function shall unmarshal byte array back to message.
 	Decode(data []byte) (err error)
 
+	GetVersion() uint32
+
 	// Debug Representation
 	String() string
 }
@@ -66,4 +68,10 @@ func CreatePacketByName(name string) (Packet, error) {
 
 func FindPacketConcreteType(packet Packet) reflect.Type {
 	return reflect.ValueOf(packet).Elem().Type()
+}
+
+func IsValidType(name string) bool {
+
+	_, ok := gRegistry.mapping[name]
+	return ok
 }
