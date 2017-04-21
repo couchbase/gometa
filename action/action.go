@@ -160,12 +160,14 @@ func (a *ServerAction) Commit(txid common.Txnid) error {
 		a.notifier.OnCommit(txid, key)
 	}
 
-	if err := a.persistChange(opCode, key, content); err != nil {
-		return err
-	}
+	if common.IsTransactionalOpCode(opCode) {
+		if err := a.persistChange(opCode, key, content); err != nil {
+			return err
+		}
 
-	if err := a.config.SetLastCommittedTxid(txid); err != nil {
-		return err
+		if err := a.config.SetLastCommittedTxid(txid); err != nil {
+			return err
+		}
 	}
 
 	a.log.MarkCommitted(txid)
@@ -387,8 +389,10 @@ func (a *ServerAction) appendCommitLog(txnid common.Txnid, opCode common.OpCode,
 		return err
 	}
 
-	if err := a.config.SetLastLoggedTxid(txnid); err != nil {
-		return err
+	if common.IsTransactionalOpCode(opCode) {
+		if err := a.config.SetLastLoggedTxid(txnid); err != nil {
+			return err
+		}
 	}
 
 	return nil

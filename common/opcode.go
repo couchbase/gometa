@@ -31,6 +31,7 @@ const (
 	OPCODE_GET
 	OPCODE_STREAM_BEGIN_MARKER
 	OPCODE_STREAM_END_MARKER
+	OPCODE_BROADCAST
 	OPCODE_CUSTOM = 50
 )
 
@@ -48,6 +49,8 @@ func GetOpCodeStr(r OpCode) string {
 		return "StreamBegin"
 	case OPCODE_STREAM_END_MARKER:
 		return "StreamEnd"
+	case OPCODE_BROADCAST:
+		return "Broadcast"
 	default:
 		return "Custom"
 	}
@@ -81,4 +84,9 @@ func GetOpCodeFromInt(i uint32) OpCode {
 
 func IsCustomOpCode(opCode OpCode) bool {
 	return opCode > OPCODE_CUSTOM
+}
+
+func IsTransactionalOpCode(opCode OpCode) bool {
+	return opCode == OPCODE_ADD || opCode == OPCODE_SET ||
+		opCode == OPCODE_DELETE || opCode == OPCODE_GET
 }

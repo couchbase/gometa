@@ -147,7 +147,8 @@ func (s *RequestReceiver) NewRequest(req *Request, reply **Reply) error {
 
 	} else if opCode == common.OPCODE_ADD ||
 		opCode == common.OPCODE_SET ||
-		opCode == common.OPCODE_DELETE {
+		opCode == common.OPCODE_DELETE ||
+		opCode == common.OPCODE_BROADCAST {
 
 		if req.Value == nil {
 			req.Value = ([]byte)("")

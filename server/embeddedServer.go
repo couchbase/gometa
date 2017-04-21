@@ -166,6 +166,37 @@ func (s *EmbeddedServer) Set(key string, value []byte) error {
 }
 
 //
+// Broadcast value
+//
+func (s *EmbeddedServer) Broadcast(key string, value []byte) error {
+
+	id, err := common.NewUUID()
+	if err != nil {
+		return err
+	}
+
+	request := s.factory.CreateRequest(id,
+		uint32(common.OPCODE_BROADCAST),
+		key,
+		value)
+
+	handle := newRequestHandle(request)
+
+	handle.CondVar.L.Lock()
+	defer handle.CondVar.L.Unlock()
+
+	// push the request to a channel
+	log.Current.Tracef("EmbeddedServer.Broadcast(): Handing new request to gometa leader. Key %s", key)
+	s.state.incomings <- handle
+
+	// This goroutine will wait until the request has been processed.
+	handle.CondVar.Wait()
+	log.Current.Tracef("EmbeddedServer.Broadcast(): Receive Response from gometa leader. Key %s", key)
+
+	return handle.Err
+}
+
+//
 // Set value
 //
 func (s *EmbeddedServer) MakeRequest(op common.OpCode, key string, value []byte) error {
@@ -297,7 +328,7 @@ func (s *EmbeddedServer) bootstrap() (err error) {
 
 	// Create and initialize new txn state.
 	s.txn = common.NewTxnState()
-	
+
 	// Initialize repository service
 	s.repo, err = r.OpenRepositoryWithName(s.repoName, s.quota)
 	if err != nil {
