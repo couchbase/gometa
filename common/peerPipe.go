@@ -176,7 +176,7 @@ func (p *PeerPipe) doSend() {
 		if n < size || err != nil {
 			// Network error. Close the loop.  The pipe will
 			// close and cause subsequent Send() to fail.
-			log.Current.Debugf("PeerPipe.doSend() : ecounter error when sending mesasage to Peer %s.  Error = %s.  Terminate.",
+			log.Current.Errorf("PeerPipe.doSend() : ecounter error when sending mesasage to Peer %s.  Error = %s.  Terminate.",
 				p.GetAddr(), err.Error())
 			return
 		}
@@ -203,7 +203,7 @@ func (p *PeerPipe) doReceive() {
 		lenBuf, err := p.readBytes(8, nil)
 		if err != nil {
 			// if encountering an error, kill the pipe.
-			log.Current.Debugf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer %s.  Error = %s. Kill Pipe.",
+			log.Current.Errorf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer %s.  Error = %s. Kill Pipe.",
 				p.GetAddr(), err.Error())
 			return
 		}
@@ -212,7 +212,7 @@ func (p *PeerPipe) doReceive() {
 		// read the content
 		readahead, err := p.validateHeader(size)
 		if err != nil {
-			log.Current.Debugf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer %s.  Error = %s. Kill Pipe.",
+			log.Current.Errorf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer %s.  Error = %s. Kill Pipe.",
 				p.GetAddr(), err.Error())
 			return
 		}
@@ -220,7 +220,7 @@ func (p *PeerPipe) doReceive() {
 		buf, err := p.readBytes(size, readahead)
 		if err != nil {
 			// if encountering an error, kill the pipe.
-			log.Current.Debugf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer %s.  Error = %s. Kill Pipe.",
+			log.Current.Errorf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer %s.  Error = %s. Kill Pipe.",
 				p.GetAddr(), err.Error())
 			return
 		}
