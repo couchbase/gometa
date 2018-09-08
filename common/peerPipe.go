@@ -40,6 +40,7 @@ type PeerPipe struct {
 	receivech chan Packet
 	mutex     sync.Mutex
 	isClosed  bool
+	closech   chan bool
 }
 
 /////////////////////////////////////////////////
@@ -54,9 +55,10 @@ type PeerPipe struct {
 func NewPeerPipe(pconn net.Conn) *PeerPipe {
 
 	pipe := &PeerPipe{conn: pconn,
-		sendch:    make(chan Packet, MAX_PROPOSALS*2),
-		receivech: make(chan Packet, MAX_PROPOSALS*2),
-		isClosed:  false}
+		sendch:    make(chan Packet, MAX_PROPOSALS*5),
+		receivech: make(chan Packet, MAX_PROPOSALS*5),
+		isClosed:  false,
+		closech:   make(chan bool)}
 
 	go pipe.doSend()
 	go pipe.doReceive()
@@ -111,6 +113,10 @@ func (p *PeerPipe) Close() bool {
 			func() {
 				close(p.receivech)
 			})
+		SafeRun("PeerPipe.Close()",
+			func() {
+				close(p.closech)
+			})
 		return true
 	}
 
@@ -122,13 +128,17 @@ func (p *PeerPipe) Close() bool {
 // false if the pipe is already closed.
 //
 func (p *PeerPipe) Send(packet Packet) bool {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	defer func() {
+		recover()
+	}()
 
-	if !p.isClosed {
-		p.sendch <- packet
+	select {
+	case p.sendch <- packet:
 		return true
+	case <-p.closech:
+		return false
 	}
+
 	return false
 }
 
@@ -246,11 +256,15 @@ func (p *PeerPipe) doReceive() {
 // the channel has not been closed.
 //
 func (p *PeerPipe) queue(packet Packet) {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	defer func() {
+		recover()
+	}()
 
-	if !p.isClosed {
-		p.receivech <- packet
+	select {
+	case p.receivech <- packet:
+		return
+	case <-p.closech:
+		return
 	}
 }
 
