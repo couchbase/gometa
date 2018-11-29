@@ -438,6 +438,7 @@ func (l *Leader) removeListener(peer *messageListener) {
 	defer l.mutex.Unlock()
 
 	delete(l.followers, peer.fid)
+	delete(l.watchers, peer.fid)
 
 	l.changech <- true
 }
