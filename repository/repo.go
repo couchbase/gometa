@@ -69,6 +69,10 @@ func OpenRepository() (*Repository, error) {
 }
 
 func OpenRepositoryWithName(name string, memory_quota uint64) (repo *Repository, err error) {
+	return OpenRepositoryWithName2(name, memory_quota, uint64(600), uint8(30), uint64(0))
+}
+
+func OpenRepositoryWithName2(name string, memory_quota uint64, sleepDur uint64, threshold uint8, minFileSize uint64) (repo *Repository, err error) {
 
 	if memory_quota < common.MIN_FOREST_DB_CACHE_SIZE {
 		memory_quota = common.MIN_FOREST_DB_CACHE_SIZE
@@ -78,6 +82,17 @@ func OpenRepositoryWithName(name string, memory_quota uint64) (repo *Repository,
 
 	config := fdb.DefaultConfig()
 	config.SetBufferCacheSize(memory_quota)
+
+	config.SetCompactionMode(fdb.COMPACT_AUTO)
+	config.SetBlockReuseThreshold(uint8(0))
+
+	config.SetCompactorSleepDuration(sleepDur)
+	config.SetCompactionThreshold(threshold)
+
+	if minFileSize != 0 {
+		config.SetCompactionMinimumFilesize(minFileSize)
+	}
+
 	dbfile, err := fdb.Open(name, config)
 	if err != nil {
 		return nil, err

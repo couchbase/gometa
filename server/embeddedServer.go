@@ -49,6 +49,11 @@ type EmbeddedServer struct {
 	initialized bool
 	mutex       sync.RWMutex
 	resetCh     chan bool
+
+	//compaction
+	minFileSize uint64
+	sleepDur    uint64
+	threshold   uint8
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -71,12 +76,28 @@ func RunEmbeddedServerWithCustomHandler(msgAddr string,
 	repoName string,
 	memory_quota uint64) (*EmbeddedServer, error) {
 
+	return RunEmbeddedServerWithCustomHandler2(msgAddr, notifier, reqHandler, repoName, memory_quota, uint64(30), uint8(10), uint64(10000))
+	//return RunEmbeddedServerWithCustomHandler2(msgAddr, notifier, reqHandler, repoName, memory_quota, uint64(60*15), uint8(30), uint64(0))
+}
+
+func RunEmbeddedServerWithCustomHandler2(msgAddr string,
+	notifier action.EventNotifier,
+	reqHandler protocol.CustomRequestHandler,
+	repoName string,
+	memory_quota uint64,
+	sleepDur uint64,
+	threshold uint8,
+	minFileSize uint64) (*EmbeddedServer, error) {
+
 	server := new(EmbeddedServer)
 	server.msgAddr = msgAddr
 	server.notifier = notifier
 	server.reqHandler = reqHandler
 	server.repoName = repoName
 	server.quota = memory_quota
+	server.sleepDur = sleepDur
+	server.threshold = threshold
+	server.minFileSize = minFileSize
 
 	if err := server.bootstrap(); err != nil {
 		log.Current.Errorf("EmbeddedServer.boostrap: error : %v\n", err)
@@ -491,7 +512,7 @@ func (s *EmbeddedServer) bootstrap() (err error) {
 	s.txn = common.NewTxnState()
 
 	// Initialize repository service
-	s.repo, err = r.OpenRepositoryWithName(s.repoName, s.quota)
+	s.repo, err = r.OpenRepositoryWithName2(s.repoName, s.quota, s.sleepDur, s.threshold, s.minFileSize)
 	if err != nil {
 		return err
 	}
