@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
+	"github.com/couchbase/indexing/secondary/security"
 	"net"
 )
 
@@ -220,13 +221,18 @@ func createConnection(leader string) (net.Conn, error) {
 		return nil, err
 	}
 
-	conn, err := net.DialTCP("tcp", nil, leaderAddr)
+	c, err := security.MakeTCPConn(leaderAddr.String())
 	if err != nil {
 		return nil, err
 	}
 
-	conn.SetKeepAlive(true)
-	conn.SetKeepAlivePeriod(common.TCP_KEEP_ALIVE_PERIOD)
+	c.SetKeepAlive(true)
+	c.SetKeepAlivePeriod(common.TCP_KEEP_ALIVE_PERIOD)
+
+	conn, err := security.SecureConn(c)
+	if err != nil {
+		return nil, err
+	}
 
 	return conn, nil
 }

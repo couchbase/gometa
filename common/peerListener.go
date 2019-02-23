@@ -17,6 +17,7 @@ package common
 
 import (
 	"github.com/couchbase/gometa/log"
+	"github.com/couchbase/indexing/secondary/security"
 	"net"
 	"sync"
 )
@@ -54,7 +55,7 @@ func StartPeerListener(laddr string) (*PeerListener, error) {
 		connch:   make(chan net.Conn, MAX_PEERS),
 		isClosed: false}
 
-	li, err := net.Listen(MESSAGE_TRANSPORT_TYPE, laddr)
+	li, err := security.MakeListener(laddr)
 	if err != nil {
 		return nil, err
 	}
