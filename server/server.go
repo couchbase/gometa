@@ -19,10 +19,10 @@ import (
 	"errors"
 	"github.com/couchbase/gometa/action"
 	"github.com/couchbase/gometa/common"
+	"github.com/couchbase/gometa/log"
 	"github.com/couchbase/gometa/message"
 	"github.com/couchbase/gometa/protocol"
 	r "github.com/couchbase/gometa/repository"
-	"github.com/couchbase/gometa/log"
 	"sync"
 	"time"
 )
@@ -385,7 +385,7 @@ func (s *Server) HasQuorum(count int) bool {
 //
 func newServerState() *ServerState {
 
-	incomings := make(chan *protocol.RequestHandle, common.MAX_PROPOSALS)
+	incomings := make(chan *protocol.RequestHandle, common.MAX_PROPOSALS*10)
 	pendings := make(map[uint64]*protocol.RequestHandle)
 	proposals := make(map[common.Txnid]*protocol.RequestHandle)
 	state := &ServerState{incomings: incomings,
@@ -427,7 +427,6 @@ func (s *ServerState) GetRequestChannel() <-chan *protocol.RequestHandle {
 func (s *ServerState) CleanupOnError() {
 	// no-op.  Server will cleanup upon termination of LeaderServer or FollowerServer.
 }
-
 
 /////////////////////////////////////////////////////////////////////////////
 // Request Handle

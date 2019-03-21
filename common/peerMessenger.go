@@ -70,7 +70,7 @@ func NewPeerMessenger(laddr string, splitter map[string]chan *Message) (*PeerMes
 	}
 
 	pipe := &PeerMessenger{conn: pconn,
-		sendch:    make(chan *Message, MAX_PROPOSALS*2),
+		sendch:    make(chan *Message, MAX_PROPOSALS*10),
 		receivech: make(chan *Message, MAX_PROPOSALS*2),
 		splitter:  splitter,
 		isClosed:  false}

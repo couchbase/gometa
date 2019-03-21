@@ -55,7 +55,7 @@ type PeerPipe struct {
 func NewPeerPipe(pconn net.Conn) *PeerPipe {
 
 	pipe := &PeerPipe{conn: pconn,
-		sendch:    make(chan Packet, MAX_PROPOSALS*5),
+		sendch:    make(chan Packet, MAX_PROPOSALS*10),
 		receivech: make(chan Packet, MAX_PROPOSALS*5),
 		isClosed:  false,
 		closech:   make(chan bool)}

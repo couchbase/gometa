@@ -66,6 +66,7 @@ type Leader struct {
 	reqHandler CustomRequestHandler
 
 	notifications chan *notification
+	responses     chan *notification
 	lastCommitted common.Txnid
 	quorums       map[common.Txnid][]string
 	proposals     map[common.Txnid]ProposalMsg
@@ -109,7 +110,8 @@ func NewLeader(naddr string,
 		observers:     make(map[string]*observer),
 		quorums:       make(map[common.Txnid][]string),
 		proposals:     make(map[common.Txnid]ProposalMsg),
-		notifications: make(chan *notification, common.MAX_PROPOSALS),
+		notifications: make(chan *notification, common.MAX_PROPOSALS*10),
+		responses:     make(chan *notification, common.MAX_PROPOSALS*10),
 		handler:       handler,
 		factory:       factory,
 		isClosed:      false,
@@ -126,6 +128,7 @@ func NewLeader(naddr string,
 
 	// start a listener go-routine.  This will be closed when the leader terminate.
 	go leader.listen()
+	go leader.processResponses()
 
 	return leader, nil
 }
@@ -141,7 +144,8 @@ func NewLeaderWithCustomHandler(naddr string,
 		observers:     make(map[string]*observer),
 		quorums:       make(map[common.Txnid][]string),
 		proposals:     make(map[common.Txnid]ProposalMsg),
-		notifications: make(chan *notification, common.MAX_PROPOSALS),
+		notifications: make(chan *notification, common.MAX_PROPOSALS*10),
+		responses:     make(chan *notification, common.MAX_PROPOSALS*10),
 		handler:       handler,
 		factory:       factory,
 		isClosed:      false,
@@ -158,6 +162,7 @@ func NewLeaderWithCustomHandler(naddr string,
 
 	// start a listener go-routine.  This will be closed when the leader terminate.
 	go leader.listen()
+	go leader.processResponses()
 
 	return leader, nil
 }
@@ -182,6 +187,7 @@ func (l *Leader) Terminate() {
 		common.SafeRun("Leader.Terminate()",
 			func() {
 				close(l.notifications)
+				close(l.responses)
 			})
 	}
 }
@@ -350,7 +356,7 @@ func (l *Leader) QueueRequest(fid string, req common.Packet) {
 
 func (l *Leader) QueueResponse(req common.Packet) {
 	n := &notification{fid: l.GetFollowerId(), payload: req}
-	l.notifications <- n
+	l.responses <- n
 }
 
 /////////////////////////////////////////////////
@@ -486,6 +492,51 @@ func (l *Leader) listen() {
 			} else {
 				// The channel is closed.
 				log.Current.Debugf("Leader.listen(): message channel closed. Terminate message processing loop for leader.")
+				return
+			}
+		}
+	}
+}
+
+//
+// Processing loop for sending out responses
+//
+func (l *Leader) processResponses() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Current.Errorf("panic in Leader.processResponses() : %s\n", r)
+			log.Current.Errorf("%s", log.Current.StackTrace())
+		} else {
+			log.Current.Debugf("Leader.processResponses() terminates.")
+			log.Current.Tracef(log.Current.StackTrace())
+		}
+
+		common.SafeRun("Leader.processResponses()",
+			func() {
+				l.Terminate()
+			})
+	}()
+
+	log.Current.Debugf("Leader.processResponses(): start listening to message for leader")
+
+	for {
+		select {
+		case msg, ok := <-l.responses:
+			if ok {
+				if !l.IsClosed() {
+					err := l.handleMessage(msg.payload, msg.fid)
+					if err != nil {
+						log.Current.Errorf("Leader.processResponses(): Encounter error when processing message %s. Error %s. Terminate",
+							msg.fid, err.Error())
+						return
+					}
+				} else {
+					log.Current.Debugf("Leader.processResponses(): Leader is closed. Terminate message processing loop.")
+					return
+				}
+			} else {
+				// The channel is closed.
+				log.Current.Debugf("Leader.processResponses(): message channel closed. Terminate message processing loop for leader.")
 				return
 			}
 		}
