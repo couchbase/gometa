@@ -23,6 +23,7 @@ import (
 	"github.com/couchbase/gometa/message"
 	"github.com/couchbase/gometa/protocol"
 	r "github.com/couchbase/gometa/repository"
+	"sync"
 	"time"
 )
 
@@ -31,20 +32,22 @@ import (
 /////////////////////////////////////////////////////////////////////////////
 
 type EmbeddedServer struct {
-	repoName   string
-	msgAddr    string
-	quota      uint64
-	repo       *r.Repository
-	log        r.CommitLogger
-	srvConfig  *r.ServerConfig
-	txn        *common.TxnState
-	state      *ServerState
-	factory    protocol.MsgFactory
-	handler    *action.ServerAction
-	notifier   action.EventNotifier
-	reqHandler protocol.CustomRequestHandler
-	listener   *common.PeerListener
-	skillch    chan bool
+	repoName    string
+	msgAddr     string
+	quota       uint64
+	repo        *r.Repository
+	log         r.CommitLogger
+	srvConfig   *r.ServerConfig
+	txn         *common.TxnState
+	state       *ServerState
+	factory     protocol.MsgFactory
+	handler     *action.ServerAction
+	notifier    action.EventNotifier
+	reqHandler  protocol.CustomRequestHandler
+	listener    *common.PeerListener
+	skillch     chan bool
+	initialized bool
+	mutex       sync.RWMutex
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -89,6 +92,9 @@ func RunEmbeddedServerWithCustomHandler(msgAddr string,
 //
 func (s *EmbeddedServer) Terminate() {
 
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
 	s.state.mutex.Lock()
 	defer s.state.mutex.Unlock()
 
@@ -106,16 +112,45 @@ func (s *EmbeddedServer) Terminate() {
 //
 func (s *EmbeddedServer) IsDone() bool {
 
-	s.state.mutex.Lock()
-	defer s.state.mutex.Unlock()
+	s.state.mutex.RLock()
+	defer s.state.mutex.RUnlock()
 
 	return s.state.done
+}
+
+//
+// Check if server is active
+//
+func (s *EmbeddedServer) IsActive() bool {
+
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	return s.isActiveNoLock()
+}
+
+//
+// Check if server is active
+//
+func (s *EmbeddedServer) isActiveNoLock() bool {
+
+	s.state.mutex.RLock()
+	defer s.state.mutex.RUnlock()
+
+	return s.initialized && !s.state.done
 }
 
 //
 // Retrieve value
 //
 func (s *EmbeddedServer) GetValue(key string) ([]byte, error) {
+
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	if !s.isActiveNoLock() {
+		return nil, common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
+	}
 
 	return s.handler.Get(key)
 }
@@ -132,6 +167,35 @@ func (s *EmbeddedServer) SetValue(key string, value []byte) {
 //
 func (s *EmbeddedServer) DeleteValue(key string) {
 	s.Delete(key)
+}
+
+func (s *EmbeddedServer) postToIncomings(handle *protocol.RequestHandle) error {
+
+	s.mutex.RLock()
+	if !s.isActiveNoLock() {
+		s.mutex.RUnlock()
+		return common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
+	}
+
+	state := s.state
+	s.mutex.RUnlock()
+
+	// We do not want to hold s.mutex when pushing request handle to channel.  But this means that
+	// there is a slight chance that s.state may been re-initailzied in bootstrap().  In this case,
+	// the variable 'state' is pointing to a stale state object that has just being replaced in bootstrap().
+	// Without holding lock, let's proceed to place the request object into the channel optimistically.
+	state.incomings <- handle
+
+	// Now that we successfully place the request in channel.  Check if the state object has
+	// become stale.  If it is stale, the request may still get processed, since we don't know
+	// when it gets stale.  In this case, return error assuming that the request will not get processed.
+	state.mutex.RLock()
+	defer state.mutex.RUnlock()
+	if state.done {
+		return common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination.  Request may still get processed.")
+	}
+
+	return nil
 }
 
 //
@@ -156,7 +220,9 @@ func (s *EmbeddedServer) Set(key string, value []byte) error {
 
 	// push the request to a channel
 	log.Current.Tracef("EmbeddedServer.Set(): Handing new request to gometa leader. Key %s", key)
-	s.state.incomings <- handle
+	if err := s.postToIncomings(handle); err != nil {
+		return err
+	}
 
 	// This goroutine will wait until the request has been processed.
 	handle.CondVar.Wait()
@@ -187,7 +253,9 @@ func (s *EmbeddedServer) Broadcast(key string, value []byte) error {
 
 	// push the request to a channel
 	log.Current.Tracef("EmbeddedServer.Broadcast(): Handing new request to gometa leader. Key %s", key)
-	s.state.incomings <- handle
+	if err := s.postToIncomings(handle); err != nil {
+		return err
+	}
 
 	// This goroutine will wait until the request has been processed.
 	handle.CondVar.Wait()
@@ -218,7 +286,9 @@ func (s *EmbeddedServer) MakeRequest(op common.OpCode, key string, value []byte)
 
 	// push the request to a channel
 	log.Current.Tracef("EmbeddedServer.MakeRequest(): Handing new request to gometa leader. Key %s", key)
-	s.state.incomings <- handle
+	if err := s.postToIncomings(handle); err != nil {
+		return err
+	}
 
 	// This goroutine will wait until the request has been processed.
 	handle.CondVar.Wait()
@@ -243,7 +313,9 @@ func (s *EmbeddedServer) MakeAsyncRequest(op common.OpCode, key string, value []
 
 	// push the request to a channel
 	log.Current.Tracef("EmbeddedServer.MakeAsyncRequest(): Handing new request to gometa leader. Key %s", key)
-	s.state.incomings <- handle
+	if err := s.postToIncomings(handle); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -270,7 +342,9 @@ func (s *EmbeddedServer) Delete(key string) error {
 
 	// push the request to a channel
 	log.Current.Tracef("Handing new request to server. Key %s", key)
-	s.state.incomings <- handle
+	if err := s.postToIncomings(handle); err != nil {
+		return err
+	}
 
 	// This goroutine will wait until the request has been processed.
 	handle.CondVar.Wait()
@@ -284,18 +358,49 @@ func (s *EmbeddedServer) Delete(key string) error {
 //
 func (s *EmbeddedServer) GetIterator(startKey, endKey string) (*r.RepoIterator, error) {
 
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	if !s.isActiveNoLock() {
+		return nil, common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
+	}
+
 	return s.repo.NewIterator(r.MAIN, startKey, endKey)
 }
 
 func (s *EmbeddedServer) SetConfigValue(key string, value string) error {
+
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	if !s.isActiveNoLock() {
+		return common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
+	}
+
 	return s.srvConfig.LogStr(key, value)
 }
 
 func (s *EmbeddedServer) DeleteConfigValue(key string) error {
+
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	if !s.isActiveNoLock() {
+		return common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
+	}
+
 	return s.srvConfig.Delete(key)
 }
 
 func (s *EmbeddedServer) GetConfigValue(key string) (string, error) {
+
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	if !s.isActiveNoLock() {
+		return "", common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
+	}
+
 	return s.srvConfig.GetStr(key)
 }
 
@@ -304,9 +409,33 @@ func (s *EmbeddedServer) GetConfigValue(key string) (string, error) {
 /////////////////////////////////////////////////////////////////////////////
 
 //
+// change server state
+//
+func (s *EmbeddedServer) changeServerState() {
+
+	newState := newServerState()
+	if s.state != nil {
+		newState.done = s.state.done
+
+		//mark the old state as done and cleanup
+		s.state.mutex.Lock()
+		defer s.state.mutex.Unlock()
+		s.state.done = true
+		cleanupServerState(s.state)
+	}
+
+	s.state = newState
+}
+
+//
 // Bootstrp
 //
 func (s *EmbeddedServer) bootstrap() (err error) {
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	s.initialized = false
 
 	defer func() {
 		r := recover()
@@ -318,13 +447,16 @@ func (s *EmbeddedServer) bootstrap() (err error) {
 		if err != nil || r != nil {
 			common.SafeRun("EmbeddedServer.bootstrap()",
 				func() {
-					s.cleanupState()
+					s.cleanup()
 				})
 		}
 	}()
 
+	// cleanup existing state
+	s.cleanup()
+
 	// Initialize server state
-	s.state = newServerState()
+	s.changeServerState()
 
 	// Create and initialize new txn state.
 	s.txn = common.NewTxnState()
@@ -376,10 +508,21 @@ func (s *EmbeddedServer) bootstrap() (err error) {
 		return
 	}
 
+	s.initialized = true
+
 	return nil
 }
 
 func (s *EmbeddedServer) run() {
+
+	defer func() {
+		common.SafeRun("EmbeddedServer.run()",
+			func() {
+				s.mutex.Lock()
+				defer s.mutex.Unlock()
+				s.cleanup()
+			})
+	}()
 
 	for {
 		s.runOnce()
@@ -400,30 +543,38 @@ func (s *EmbeddedServer) run() {
 //
 // Cleanup internal state upon exit
 //
-func (s *EmbeddedServer) cleanupState() {
+func (s *EmbeddedServer) cleanup() {
 
-	s.state.mutex.Lock()
-	defer s.state.mutex.Unlock()
-
-	common.SafeRun("EmbeddedServer.cleanupState()",
+	common.SafeRun("EmbeddedServer.cleanup()",
 		func() {
 			if s.listener != nil {
 				s.listener.Close()
+				s.listener = nil
 			}
 		})
 
-	common.SafeRun("EmbeddedServer.cleanupState()",
+	common.SafeRun("EmbeddedServer.cleanup()",
 		func() {
 			if s.repo != nil {
 				s.repo.Close()
+				s.repo = nil
 			}
 		})
 
-	for len(s.state.incomings) > 0 {
-		request := <-s.state.incomings
+	cleanupServerState(s.state)
+}
+
+func cleanupServerState(state *ServerState) {
+
+	if state == nil {
+		return
+	}
+
+	for len(state.incomings) > 0 {
+		request := <-state.incomings
 		request.Err = common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
 
-		common.SafeRun("EmbeddedServer.cleanupState()",
+		common.SafeRun("EmbeddedServer.cleanup()",
 			func() {
 				request.CondVar.L.Lock()
 				defer request.CondVar.L.Unlock()
@@ -431,10 +582,10 @@ func (s *EmbeddedServer) cleanupState() {
 			})
 	}
 
-	for _, request := range s.state.pendings {
+	for _, request := range state.pendings {
 		request.Err = common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
 
-		common.SafeRun("EmbeddedServer.cleanupState()",
+		common.SafeRun("EmbeddedServer.cleanup()",
 			func() {
 				request.CondVar.L.Lock()
 				defer request.CondVar.L.Unlock()
@@ -442,10 +593,10 @@ func (s *EmbeddedServer) cleanupState() {
 			})
 	}
 
-	for _, request := range s.state.proposals {
+	for _, request := range state.proposals {
 		request.Err = common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
 
-		common.SafeRun("EmbeddedServer.cleanupState()",
+		common.SafeRun("EmbeddedServer.cleanup()",
 			func() {
 				request.CondVar.L.Lock()
 				defer request.CondVar.L.Unlock()
@@ -459,23 +610,18 @@ func (s *EmbeddedServer) cleanupState() {
 //
 func (s *EmbeddedServer) runOnce() {
 
-	log.Current.Debugf("EmbeddedServer.runOnce() : Start Running Server")
-
 	defer func() {
 		if r := recover(); r != nil {
 			log.Current.Errorf("panic in EmbeddedServer.runOnce() : %v\n", r)
 			log.Current.Errorf("Diagnostic Stack ...")
 			log.Current.Errorf("%s", log.Current.StackTrace())
 		}
-
-		common.SafeRun("EmbeddedServer.cleanupState()",
-			func() {
-				s.cleanupState()
-			})
 	}()
 
+	log.Current.Debugf("EmbeddedServer.runOnce() : Start Running Server")
+
 	// Check if the server has been terminated explicitly. If so, don't run.
-	if !s.IsDone() {
+	if s.IsActive() {
 
 		// runServer() is done if there is an error	or being terminated explicitly (killch)
 		s.state.setStatus(protocol.LEADING)

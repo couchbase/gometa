@@ -49,7 +49,7 @@ type ServerState struct {
 	incomings chan *protocol.RequestHandle
 
 	// mutex protected variables
-	mutex     sync.Mutex
+	mutex     sync.RWMutex
 	done      bool
 	status    protocol.PeerStatus
 	pendings  map[uint64]*protocol.RequestHandle       // key : request id

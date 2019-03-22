@@ -19,6 +19,7 @@ import (
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
 	// fdb "github.com/couchbase/goforestdb"
+	"errors"
 	fdb "github.com/couchbase/indexing/secondary/fdb"
 	"math"
 	"sync"
@@ -124,6 +125,10 @@ func (r *Repository) Set(kind RepoKind, key string, content []byte) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
+	if r.dbfile == nil {
+		return errors.New("repo closed")
+	}
+
 	log.Current.Debugf("Repo.Set(): key %s, len(content) %d", key, len(content))
 
 	//convert key to its collatejson encoded byte representation
@@ -145,6 +150,10 @@ func (r *Repository) CreateSnapshot(kind RepoKind, txnid common.Txnid) error {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+
+	if r.dbfile == nil {
+		return errors.New("repo closed")
+	}
 
 	info, err := r.stores[kind].Info()
 	if err != nil {
@@ -172,6 +181,10 @@ func (r *Repository) AcquireSnapshot(kind RepoKind) (common.Txnid, *RepoIterator
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+
+	if r.dbfile == nil {
+		return common.Txnid(0), nil, errors.New("repo closed")
+	}
 
 	if len(r.snapshots[kind]) == 0 {
 		return common.Txnid(0), nil, nil
@@ -226,6 +239,10 @@ func (r *Repository) SetNoCommit(kind RepoKind, key string, content []byte) erro
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
+	if r.dbfile == nil {
+		return errors.New("repo closed")
+	}
+
 	log.Current.Debugf("Repo.SetNoCommit(): key %s, len(content) %d", key, len(content))
 
 	//convert key to its collatejson encoded byte representation
@@ -246,6 +263,10 @@ func (r *Repository) Get(kind RepoKind, key string) ([]byte, error) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
+	if r.dbfile == nil {
+		return nil, errors.New("repo closed")
+	}
+
 	//convert key to its collatejson encoded byte representation
 	k, err := CollateString(key)
 	if err != nil {
@@ -264,6 +285,10 @@ func (r *Repository) Delete(kind RepoKind, key string) error {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+
+	if r.dbfile == nil {
+		return errors.New("repo closed")
+	}
 
 	//convert key to its collatejson encoded byte representation
 	k, err := CollateString(key)
@@ -287,6 +312,10 @@ func (r *Repository) DeleteNoCommit(kind RepoKind, key string) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
+	if r.dbfile == nil {
+		return errors.New("repo closed")
+	}
+
 	//convert key to its collatejson encoded byte representation
 	k, err := CollateString(key)
 	if err != nil {
@@ -303,6 +332,10 @@ func (r *Repository) Commit() error {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+
+	if r.dbfile == nil {
+		return errors.New("repo closed")
+	}
 
 	return r.dbfile.Commit(fdb.COMMIT_NORMAL)
 }
@@ -350,6 +383,10 @@ func (r *Repository) NewIterator(kind RepoKind, startKey, endKey string) (*RepoI
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+
+	if r.dbfile == nil {
+		return nil, errors.New("repo closed")
+	}
 
 	k1, err := CollateString(startKey)
 	if err != nil {
