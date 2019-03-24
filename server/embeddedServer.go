@@ -48,6 +48,7 @@ type EmbeddedServer struct {
 	skillch     chan bool
 	initialized bool
 	mutex       sync.RWMutex
+	resetCh     chan bool
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -105,6 +106,34 @@ func (s *EmbeddedServer) Terminate() {
 	s.state.done = true
 
 	s.skillch <- true // kill leader/follower server
+}
+
+//
+// Reset Connections
+//
+func (s *EmbeddedServer) ResetConnections() error {
+
+	// restart listener
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	if !s.isActiveNoLock() {
+		return nil
+	}
+
+	// reset listener
+	listener, err := s.listener.ResetConnections()
+	if err != nil {
+		return err
+	}
+	s.listener = listener
+
+	time.Sleep(100 * time.Millisecond)
+
+	// reset leaderServer and leader
+	s.resetCh <- true
+
+	return nil
 }
 
 //
@@ -495,6 +524,7 @@ func (s *EmbeddedServer) bootstrap() (err error) {
 	s.factory = message.NewConcreteMsgFactory()
 	s.handler = action.NewServerActionWithNotifier(s.repo, s.log, s.srvConfig, s, s.notifier, s.txn, s.factory, s)
 	s.skillch = make(chan bool, 1) // make it buffered to unblock sender
+	s.resetCh = make(chan bool, 1) // make it buffered to unblock sender
 
 	// Need to start the peer listener before election. A follower may
 	// finish its election before a leader finishes its election. Therefore,
@@ -618,7 +648,7 @@ func (s *EmbeddedServer) runOnce() {
 		}
 	}()
 
-	log.Current.Debugf("EmbeddedServer.runOnce() : Start Running Server")
+	log.Current.Infof("EmbeddedServer.runOnce() : Start Running Server")
 
 	// Check if the server has been terminated explicitly. If so, don't run.
 	if s.IsActive() {
@@ -626,11 +656,11 @@ func (s *EmbeddedServer) runOnce() {
 		// runServer() is done if there is an error	or being terminated explicitly (killch)
 		s.state.setStatus(protocol.LEADING)
 		if err := protocol.RunLeaderServerWithCustomHandler(
-			s.msgAddr, s.listener, s.state, s.handler, s.factory, s.reqHandler, s.skillch); err != nil {
+			s.msgAddr, s.listener, s.state, s.handler, s.factory, s.reqHandler, s.skillch, s.resetCh); err != nil {
 			log.Current.Errorf("EmbeddedServer.RunOnce() : Error Encountered From Server : %s", err.Error())
 		}
 	} else {
-		log.Current.Debugf("EmbeddedServer.RunOnce(): Server has been terminated explicitly. Terminate.")
+		log.Current.Infof("EmbeddedServer.RunOnce(): Server has been terminated explicitly. Terminate.")
 	}
 }
 

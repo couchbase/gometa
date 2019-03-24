@@ -449,6 +449,22 @@ func (l *Leader) removeListener(peer *messageListener) {
 	l.changech <- true
 }
 
+func (l *Leader) removeAllListeners() {
+
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+
+	log.Current.Infof("Leader.removeAllListeners(): remove all followers and watchers.")
+
+	for _, listener := range l.followers {
+		listener.terminate()
+	}
+
+	for _, listener := range l.watchers {
+		listener.terminate()
+	}
+}
+
 /////////////////////////////////////////////////////////
 // Leader - Private Function : Message Processing
 /////////////////////////////////////////////////////////

@@ -67,7 +67,7 @@ func RunLeaderServer(naddr string,
 	factory MsgFactory,
 	killch <-chan bool) (err error) {
 
-	return RunLeaderServerWithCustomHandler(naddr, listener, ss, handler, factory, nil, killch)
+	return RunLeaderServerWithCustomHandler(naddr, listener, ss, handler, factory, nil, killch, make(chan bool))
 }
 
 func RunLeaderServerWithCustomHandler(naddr string,
@@ -76,7 +76,8 @@ func RunLeaderServerWithCustomHandler(naddr string,
 	handler ActionHandler,
 	factory MsgFactory,
 	reqHandler CustomRequestHandler,
-	killch <-chan bool) (err error) {
+	killch <-chan bool,
+	resetCh <-chan bool) (err error) {
 
 	log.Current.Debugf("LeaderServer.RunLeaderServer(): start leader server %s", naddr)
 
@@ -127,7 +128,7 @@ func RunLeaderServerWithCustomHandler(naddr string,
 	// start the main loop for processing incoming request.  The leader will
 	// process request only after it has received quorum of followers to
 	// synchronized with it.
-	err = server.processRequest(killch, listenerState, reqHandler)
+	err = server.processRequest(killch, resetCh, listenerState, reqHandler)
 
 	log.Current.Debugf("LeaderServer.RunLeaderServer(): leader server %s terminate", naddr)
 
@@ -333,6 +334,7 @@ func (l *LeaderServer) incrementEpoch() error {
 // Goroutine for processing each request one-by-one
 //
 func (s *LeaderServer) processRequest(killch <-chan bool,
+	resetCh <-chan bool,
 	listenerState *ListenerState,
 	reqHandler CustomRequestHandler) (err error) {
 
@@ -379,7 +381,7 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 	} else {
 		outgoings = make(<-chan common.Packet)
 	}
-	
+
 	for {
 		select {
 		case handle, ok := <-incomings:
@@ -405,6 +407,9 @@ func (s *LeaderServer) processRequest(killch <-chan bool,
 			// server shutdown
 			log.Current.Debugf("LeaderServer.processRequest(): receive kill signal. Stop Client request processing.")
 			return nil
+		case <-resetCh:
+			// handle connection reset if necessary
+			s.handleResetConnections()
 		case <-listenerState.donech:
 			// listener is down.  Terminate this request processing loop as well.
 			log.Current.Infof("LeaderServer.processRequest(): follower listener terminates. Stop client request processing.")
@@ -534,4 +539,14 @@ func (s *LeaderServer) terminateAllOutstandingProxies() {
 func newListenerState() *ListenerState {
 	return &ListenerState{killch: make(chan bool, 1), // buffered so sender won't block
 		donech: make(chan bool, 1)} // buffered so sender won't block
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// Private Function for connection manager
+/////////////////////////////////////////////////////////////////////////////
+
+func (s *LeaderServer) handleResetConnections() {
+	log.Current.Infof("LeaderServer.processRequest(): stopping all outstanding proxies")
+	s.terminateAllOutstandingProxies()
+	s.leader.removeAllListeners()
 }

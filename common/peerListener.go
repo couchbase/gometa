@@ -33,11 +33,13 @@ import (
 // the listener is closed, connch will be closed.
 //
 type PeerListener struct {
-	naddr    string
-	listener net.Listener
-	connch   chan net.Conn
-	mutex    sync.Mutex
-	isClosed bool
+	naddr     string
+	listener  net.Listener
+	connch    chan net.Conn
+	mutex     sync.Mutex
+	isClosed  bool
+	resetConn bool
+	donech    chan bool
 }
 
 /////////////////////////////////////////////////
@@ -51,9 +53,17 @@ type PeerListener struct {
 //
 func StartPeerListener(laddr string) (*PeerListener, error) {
 
-	listener := &PeerListener{naddr: laddr,
-		connch:   make(chan net.Conn, MAX_PEERS),
-		isClosed: false}
+	return startPeerListener(laddr, make(chan net.Conn, MAX_PEERS))
+}
+
+func startPeerListener(laddr string, connch chan net.Conn) (*PeerListener, error) {
+
+	listener := &PeerListener{
+		naddr:    laddr,
+		connch:   connch,
+		isClosed: false,
+		donech:   make(chan bool),
+	}
 
 	li, err := security.MakeListener(laddr)
 	if err != nil {
@@ -62,6 +72,7 @@ func StartPeerListener(laddr string) (*PeerListener, error) {
 	listener.listener = li
 
 	go listener.listen()
+
 	return listener, nil
 }
 
@@ -99,16 +110,42 @@ func (l *PeerListener) Close() bool {
 
 		SafeRun("PeerListener.Close()",
 			func() {
-				close(l.connch)
+				if !l.resetConn {
+					close(l.connch)
+				}
 			})
 		SafeRun("PeerListener.Close()",
 			func() {
 				l.listener.Close()
 			})
+
+		close(l.donech)
+
 		return true
 	}
 
 	return false
+}
+
+func (l *PeerListener) ResetConnections() (*PeerListener, error) {
+
+	l.mutex.Lock()
+	l.resetConn = true
+	l.mutex.Unlock()
+
+	l.listener.Close()
+	<-l.donech
+
+EMPTY:
+	for {
+		select {
+		case <-l.connch:
+		default:
+			break EMPTY
+		}
+	}
+
+	return startPeerListener(l.naddr, l.connch)
 }
 
 /////////////////////////////////////////////////
