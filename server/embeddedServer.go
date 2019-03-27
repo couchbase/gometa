@@ -76,8 +76,7 @@ func RunEmbeddedServerWithCustomHandler(msgAddr string,
 	repoName string,
 	memory_quota uint64) (*EmbeddedServer, error) {
 
-	return RunEmbeddedServerWithCustomHandler2(msgAddr, notifier, reqHandler, repoName, memory_quota, uint64(30), uint8(10), uint64(10000))
-	//return RunEmbeddedServerWithCustomHandler2(msgAddr, notifier, reqHandler, repoName, memory_quota, uint64(60*15), uint8(30), uint64(0))
+	return RunEmbeddedServerWithCustomHandler2(msgAddr, notifier, reqHandler, repoName, memory_quota, uint64(60*15), uint8(0), uint64(0))
 }
 
 func RunEmbeddedServerWithCustomHandler2(msgAddr string,
