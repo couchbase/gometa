@@ -83,15 +83,17 @@ func OpenRepositoryWithName2(name string, memory_quota uint64, sleepDur uint64, 
 	config := fdb.DefaultConfig()
 	config.SetBufferCacheSize(memory_quota)
 
-	config.SetCompactionMode(fdb.COMPACT_AUTO)
-	config.SetBlockReuseThreshold(uint8(0))
+	/*
+		config.SetCompactionMode(fdb.COMPACT_AUTO)
+		config.SetBlockReuseThreshold(uint8(0))
 
-	config.SetCompactorSleepDuration(sleepDur)
-	config.SetCompactionThreshold(threshold)
+		config.SetCompactorSleepDuration(sleepDur)
+		config.SetCompactionThreshold(threshold)
 
-	if minFileSize != 0 {
-		config.SetCompactionMinimumFilesize(minFileSize)
-	}
+		if minFileSize != 0 {
+			config.SetCompactionMinimumFilesize(minFileSize)
+		}
+	*/
 
 	dbfile, err := fdb.Open(name, config)
 	if err != nil {
