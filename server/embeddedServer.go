@@ -725,13 +725,13 @@ func (s *EmbeddedServer) UpdateStateOnRespond(fid string, reqId uint64, err stri
 	// If this host is the one that sends the request to the leader
 	if fid == s.handler.GetFollowerId() {
 		s.state.mutex.Lock()
-		defer s.state.mutex.Unlock()
 
 		// look up the request handle from the pending list and
 		// move it to the proposed list
 		handle, ok := s.state.pendings[reqId]
 		if ok {
 			delete(s.state.pendings, reqId)
+			s.state.mutex.Unlock()
 
 			handle.CondVar.L.Lock()
 			defer handle.CondVar.L.Unlock()
@@ -741,6 +741,8 @@ func (s *EmbeddedServer) UpdateStateOnRespond(fid string, reqId uint64, err stri
 			}
 
 			handle.CondVar.Signal()
+		} else {
+			s.state.mutex.Unlock()
 		}
 	}
 }
@@ -753,7 +755,6 @@ func (s *EmbeddedServer) UpdateStateOnCommit(txnid common.Txnid, key string) {
 	log.Current.Debugf("EmbeddedServer.UpdateStateOnCommit(): Committing proposal %d key %s.", txnid, key)
 
 	s.state.mutex.Lock()
-	defer s.state.mutex.Unlock()
 
 	// If I can find the proposal based on the txnid in this host, this means
 	// that this host originates the request.   Get the request handle and
@@ -764,11 +765,14 @@ func (s *EmbeddedServer) UpdateStateOnCommit(txnid common.Txnid, key string) {
 		log.Current.Debugf("EmbeddedServer.UpdateStateOnCommit(): Notify client for proposal %d", txnid)
 
 		delete(s.state.proposals, txnid)
+		s.state.mutex.Unlock()
 
 		handle.CondVar.L.Lock()
 		defer handle.CondVar.L.Unlock()
 
 		handle.CondVar.Signal()
+	} else {
+		s.state.mutex.Unlock()
 	}
 }
 
