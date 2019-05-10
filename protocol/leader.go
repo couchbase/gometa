@@ -20,6 +20,7 @@ import (
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
 	"sync"
+	"sync/atomic"
 )
 
 /////////////////////////////////////////////////
@@ -77,13 +78,24 @@ type Leader struct {
 	observers map[string]*observer
 	isClosed  bool
 	changech  chan bool // notify membership of active followers have changed
+	idGen     *IdGen
 }
 
+// AddWatcher and AddFollower should safely handle the situation where
+// there is exising watcher/follower having same fid. If a listener
+// with same "fid" already exists, the termination of existing
+// listener is triggered and new listener is added to the list
+// of watchers/followers. As the termination of the existing listener is
+// an asynchronous operation, there is a small time interval when there
+// will be two listeners in the system having same fid. To identify these
+// two listeners separately, "listenerid" will be used.
+
 type messageListener struct {
-	fid    string
-	pipe   *common.PeerPipe
-	leader *Leader
-	killch chan bool
+	fid        string
+	pipe       *common.PeerPipe
+	leader     *Leader
+	killch     chan bool
+	listenerid uint64
 }
 
 type notification struct {
@@ -114,7 +126,9 @@ func NewLeader(naddr string,
 		factory:       factory,
 		isClosed:      false,
 		reqHandler:    nil,
-		changech:      make(chan bool, common.MAX_PEERS)} // make it buffered so sender won't block
+		changech:      make(chan bool, common.MAX_PEERS), // make it buffered so sender won't block
+		idGen:         newIdGen(),
+	}
 
 	// This is initialized to the lastCommitted in repository. Subsequent commit() will update this
 	// field to the latest committed txnid. This field is used for ensuring the commit order is preserved.
@@ -146,7 +160,9 @@ func NewLeaderWithCustomHandler(naddr string,
 		factory:       factory,
 		isClosed:      false,
 		reqHandler:    reqHandler,
-		changech:      make(chan bool, common.MAX_PEERS)} // make it buffered so sender won't block
+		changech:      make(chan bool, common.MAX_PEERS), // make it buffered so sender won't block
+		idGen:         newIdGen(),
+	}
 
 	// This is initialized to the lastCommitted in repository. Subsequent commit() will update this
 	// field to the latest committed txnid. This field is used for ensuring the commit order is preserved.
@@ -248,10 +264,8 @@ func (l *Leader) AddWatcher(fid string,
 		peer.Send(packet)
 	}
 
-	// Rememeber the old message listener and start a new one.
 	oldListener, ok := l.watchers[fid]
-
-	listener := newListener(fid, peer, l)
+	listener := newListener(fid, peer, l, l.idGen.getNextId())
 	l.watchers[fid] = listener
 	go listener.start()
 
@@ -292,10 +306,8 @@ func (l *Leader) AddFollower(fid string,
 		peer.Send(packet)
 	}
 
-	// Rememeber the old message listener and start a new one.
 	oldListener, ok := l.followers[fid]
-
-	listener := newListener(fid, peer, l)
+	listener := newListener(fid, peer, l, l.idGen.getNextId())
 	l.followers[fid] = listener
 	go listener.start()
 
@@ -358,12 +370,15 @@ func (l *Leader) QueueResponse(req common.Packet) {
 /////////////////////////////////////////////////
 
 // Create a new listener
-func newListener(fid string, pipe *common.PeerPipe, leader *Leader) *messageListener {
+func newListener(fid string, pipe *common.PeerPipe, leader *Leader,
+	listenerid uint64) *messageListener {
 
 	return &messageListener{fid: fid,
-		pipe:   pipe,
-		leader: leader,
-		killch: make(chan bool, 1)}
+		pipe:       pipe,
+		leader:     leader,
+		killch:     make(chan bool, 1),
+		listenerid: listenerid,
+	}
 }
 
 //
@@ -426,6 +441,28 @@ func (l *messageListener) terminate() {
 	l.killch <- true
 }
 
+func (l *messageListener) getListenerid() uint64 {
+	return l.listenerid
+}
+
+/////////////////////////////////////////////////
+// IdGen
+// In-memory unique ID generator using a counter.
+// Used for message listener ids.
+/////////////////////////////////////////////////
+
+type IdGen struct {
+	id uint64
+}
+
+func newIdGen() *IdGen {
+	return &IdGen{}
+}
+
+func (g *IdGen) getNextId() uint64 {
+	return atomic.AddUint64(&g.id, uint64(1))
+}
+
 /////////////////////////////////////////////////////
 // Leader - Private Function : Listener Management
 /////////////////////////////////////////////////////
@@ -437,8 +474,19 @@ func (l *Leader) removeListener(peer *messageListener) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
-	delete(l.followers, peer.fid)
-	delete(l.watchers, peer.fid)
+	follower, ok := l.followers[peer.fid]
+	if ok && follower != nil {
+		if follower.getListenerid() == peer.getListenerid() {
+			delete(l.followers, peer.fid)
+		}
+	}
+
+	watcher, ok := l.watchers[peer.fid]
+	if ok && watcher != nil {
+		if watcher.getListenerid() == peer.getListenerid() {
+			delete(l.watchers, peer.fid)
+		}
+	}
 
 	l.changech <- true
 }
