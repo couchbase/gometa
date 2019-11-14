@@ -17,10 +17,11 @@ package protocol
 
 import (
 	"fmt"
+	"net"
+
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
 	"github.com/couchbase/indexing/secondary/security"
-	"net"
 )
 
 //////////////////////////////////////////////////////////////////////////////
@@ -229,7 +230,12 @@ func createConnection(leader string) (net.Conn, error) {
 	c.SetKeepAlive(true)
 	c.SetKeepAlivePeriod(common.TCP_KEEP_ALIVE_PERIOD)
 
-	conn, err := security.SecureConn(c)
+	host, port, err := net.SplitHostPort(leader)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := security.SecureConn(c, host, port)
 	if err != nil {
 		return nil, err
 	}
