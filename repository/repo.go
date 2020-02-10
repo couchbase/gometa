@@ -20,6 +20,7 @@ import (
 	"github.com/couchbase/gometa/log"
 	// fdb "github.com/couchbase/goforestdb"
 	"errors"
+	"fmt"
 	fdb "github.com/couchbase/indexing/secondary/fdb"
 	"math"
 	"sync"
@@ -83,19 +84,16 @@ func OpenRepositoryWithName2(name string, memory_quota uint64, sleepDur uint64, 
 	config := fdb.DefaultConfig()
 	config.SetBufferCacheSize(memory_quota)
 
-	/*
-		config.SetCompactionMode(fdb.COMPACT_AUTO)
-		config.SetBlockReuseThreshold(uint8(0))
+	// Set Compaction parameters.
+	config.SetBlockReuseThreshold(uint8(65))
+	config.SetCompactorSleepDuration(sleepDur)
+	config.SetCompactionThreshold(threshold)
 
-		config.SetCompactorSleepDuration(sleepDur)
-		config.SetCompactionThreshold(threshold)
+	if minFileSize != 0 {
+		config.SetCompactionMinimumFilesize(minFileSize)
+	}
 
-		if minFileSize != 0 {
-			config.SetCompactionMinimumFilesize(minFileSize)
-		}
-	*/
-
-	dbfile, err := fdb.Open(name, config)
+	dbfile, err := upgradeAndOpenDBFile(name, config, threshold)
 	if err != nil {
 		return nil, err
 	}
@@ -132,6 +130,60 @@ func OpenRepositoryWithName2(name string, memory_quota uint64, sleepDur uint64, 
 		snapshots: snapshots}
 
 	return repo, nil
+}
+
+func upgradeAndOpenDBFile(name string, config *fdb.Config,
+	threshold uint8) (*fdb.File, error) {
+
+	// As of now, there is no way of knowing if a forestdb file was created
+	// with manual compaction mode or auto compaction mode, without opening
+	// the file. So, try to open the file with auto compaction mode. If it
+	// fails with error FDB_RESULT_INVALID_COMPACTION_MODE, then try to open
+	// the file in manual compaction mode and change the compaction mode by
+	// calling SwitchCompactionMode. SwitchCompactionMode should happen only
+	// once as a part of upgrade.
+
+	var dbfile *fdb.File
+	var err error
+
+	logPrefix := fmt.Sprintf("Repo.upgradeAndOpenDBFile(%v):", name)
+
+	config.SetCompactionMode(fdb.COMPACT_AUTO)
+	dbfile, err = fdb.Open(name, config)
+	if err != nil {
+		if err.Error() != fdb.FDB_RESULT_INVALID_COMPACTION_MODE.Error() {
+			log.Current.Errorf("%v Error (%v) in opening with COMPACT_AUTO mode", logPrefix, err.Error())
+			return nil, err
+		}
+
+		log.Current.Infof("%v Cannot open with COMPACT_AUTO mode. Trying with COMPACT_MANUAL mode.", logPrefix)
+
+		config.SetCompactionMode(fdb.COMPACT_MANUAL)
+		dbfile, err = fdb.Open(name, config)
+		if err != nil {
+			log.Current.Errorf("%v Error (%v) in Open with COMPACT_MANUAL mode", logPrefix, err.Error())
+
+			return nil, err
+		}
+
+		log.Current.Infof("%v Switching to COMPACT_AUTO mode", logPrefix)
+		err = dbfile.SwitchCompactionMode(fdb.COMPACT_AUTO, uint8(threshold))
+		if err != nil {
+			log.Current.Errorf("%v Error (%v) in switching to COMPACT_AUTO mode", logPrefix, err.Error())
+
+			// Try to close the file.
+			err1 := dbfile.Close()
+			if err1 != nil {
+				log.Current.Errorf("%v Error (%v) in Close", logPrefix, err1.Error())
+			}
+
+			return nil, err
+		}
+	} else {
+		log.Current.Infof("%v Opened with COMPACT_AUTO mode", logPrefix)
+	}
+
+	return dbfile, nil
 }
 
 //
