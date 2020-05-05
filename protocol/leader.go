@@ -284,39 +284,49 @@ func (l *Leader) AddWatcher(fid string,
 func (l *Leader) AddFollower(fid string,
 	peer *common.PeerPipe,
 	o *observer) {
-	l.mutex.Lock()
-	defer l.mutex.Unlock()
 
-	// AddFollower requires holding the mutex such that the leader thread
-	// will not be sending new proposal or commit (see sendProposal() and
-	// sendCommit()) to followers.  This allow this function to copy the
-	// proposals and commits from the observer queue into the pipe, before
-	// the leader has a chance to send new messages.
-	for packet := o.getNext(); packet != nil; packet = o.getNext() {
+	notifyChangeCh := false
 
-		switch request := packet.(type) {
-		case ProposalMsg:
-			txid := common.Txnid(request.GetTxnid())
-			log.Current.Debugf("Leader.AddFollower() : send observer's packet %s, txid %d", packet.Name(), txid)
-		case CommitMsg:
-			txid := common.Txnid(request.GetTxnid())
-			log.Current.Debugf("Leader.AddFollower() : send observer's packet %s, txid %d", packet.Name(), txid)
+	func() {
+		l.mutex.Lock()
+		defer l.mutex.Unlock()
+
+		// AddFollower requires holding the mutex such that the leader thread
+		// will not be sending new proposal or commit (see sendProposal() and
+		// sendCommit()) to followers.  This allow this function to copy the
+		// proposals and commits from the observer queue into the pipe, before
+		// the leader has a chance to send new messages.
+		for packet := o.getNext(); packet != nil; packet = o.getNext() {
+
+			switch request := packet.(type) {
+			case ProposalMsg:
+				txid := common.Txnid(request.GetTxnid())
+				log.Current.Debugf("Leader.AddFollower() : send observer's packet %s, txid %d", packet.Name(), txid)
+			case CommitMsg:
+				txid := common.Txnid(request.GetTxnid())
+				log.Current.Debugf("Leader.AddFollower() : send observer's packet %s, txid %d", packet.Name(), txid)
+			}
+
+			peer.Send(packet)
 		}
 
-		peer.Send(packet)
-	}
+		oldListener, ok := l.followers[fid]
+		listener := newListener(fid, peer, l, l.idGen.getNextId())
+		l.followers[fid] = listener
+		go listener.start()
 
-	oldListener, ok := l.followers[fid]
-	listener := newListener(fid, peer, l, l.idGen.getNextId())
-	l.followers[fid] = listener
-	go listener.start()
+		// kill the old message listener
+		if ok && oldListener != nil {
+			log.Current.Debugf("Leader.AddFollower() : old Listener found for follower %s.  Terminating old listener", fid)
+			oldListener.terminate()
 
-	// kill the old message listener
-	if ok && oldListener != nil {
-		log.Current.Debugf("Leader.AddFollower() : old Listener found for follower %s.  Terminating old listener", fid)
-		oldListener.terminate()
-	} else {
-		// notify a brand new follower (not just replacing an existing one)
+		} else {
+			// notify a brand new follower (not just replacing an existing one)
+			notifyChangeCh = true
+		}
+	}()
+
+	if notifyChangeCh {
 		l.changech <- true
 	}
 }
@@ -471,22 +481,25 @@ func (g *IdGen) getNextId() uint64 {
 // Remove the follower from being tracked
 //
 func (l *Leader) removeListener(peer *messageListener) {
-	l.mutex.Lock()
-	defer l.mutex.Unlock()
 
-	follower, ok := l.followers[peer.fid]
-	if ok && follower != nil {
-		if follower.getListenerid() == peer.getListenerid() {
-			delete(l.followers, peer.fid)
-		}
-	}
+	func() {
+		l.mutex.Lock()
+		defer l.mutex.Unlock()
 
-	watcher, ok := l.watchers[peer.fid]
-	if ok && watcher != nil {
-		if watcher.getListenerid() == peer.getListenerid() {
-			delete(l.watchers, peer.fid)
+		follower, ok := l.followers[peer.fid]
+		if ok && follower != nil {
+			if follower.getListenerid() == peer.getListenerid() {
+				delete(l.followers, peer.fid)
+			}
 		}
-	}
+
+		watcher, ok := l.watchers[peer.fid]
+		if ok && watcher != nil {
+			if watcher.getListenerid() == peer.getListenerid() {
+				delete(l.watchers, peer.fid)
+			}
+		}
+	}()
 
 	l.changech <- true
 }
