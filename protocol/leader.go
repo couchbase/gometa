@@ -126,7 +126,7 @@ func NewLeader(naddr string,
 		factory:       factory,
 		isClosed:      false,
 		reqHandler:    nil,
-		changech:      make(chan bool, common.MAX_PEERS), // make it buffered so sender won't block
+		changech:      make(chan bool, common.MAX_PEERS*40), // make it buffered so sender won't block
 		idGen:         newIdGen(),
 	}
 
