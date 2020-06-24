@@ -18,11 +18,13 @@ package repository
 import (
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
+
 	// fdb "github.com/couchbase/goforestdb"
 	"errors"
-	fdb "github.com/couchbase/indexing/secondary/fdb"
 	"math"
 	"sync"
+
+	fdb "github.com/couchbase/indexing/secondary/fdb"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -449,6 +451,7 @@ func (i *RepoIterator) Next() (key string, content []byte, err error) {
 	body := doc.Body()
 
 	if err == fdb.RESULT_ITERATOR_FAIL {
+		i.iter.Close()
 		i.iter = nil
 	}
 
