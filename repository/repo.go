@@ -214,7 +214,7 @@ func (r *Repository) Set(kind RepoKind, key string, content []byte) error {
 		return err
 	}
 
-	return r.dbfile.Commit(fdb.COMMIT_NORMAL)
+	return r.dbfile.Commit(fdb.COMMIT_MANUAL_WAL_FLUSH)
 }
 
 func (r *Repository) CreateSnapshot(kind RepoKind, txnid common.Txnid) error {
@@ -372,7 +372,7 @@ func (r *Repository) Delete(kind RepoKind, key string) error {
 		return err
 	}
 
-	return r.dbfile.Commit(fdb.COMMIT_NORMAL)
+	return r.dbfile.Commit(fdb.COMMIT_MANUAL_WAL_FLUSH)
 }
 
 //
@@ -408,7 +408,7 @@ func (r *Repository) Commit() error {
 		return errors.New("repo closed")
 	}
 
-	return r.dbfile.Commit(fdb.COMMIT_NORMAL)
+	return r.dbfile.Commit(fdb.COMMIT_MANUAL_WAL_FLUSH)
 }
 
 //
