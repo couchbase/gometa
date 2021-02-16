@@ -65,6 +65,9 @@ func startPeerListener(laddr string, connch chan net.Conn) (*PeerListener, error
 		donech:   make(chan bool),
 	}
 
+	listener.mutex.Lock()
+	defer listener.mutex.Unlock()
+
 	li, err := security.MakeListener(laddr)
 	if err != nil {
 		return nil, err
@@ -160,13 +163,36 @@ EMPTY:
 // connection channel (if it is not yet closed).
 //
 func (l *PeerListener) listen() {
+
+	selfRestart := func() {
+		l.mutex.Lock()
+		defer l.mutex.Unlock()
+
+		if l.isClosed {
+			return
+		}
+
+		SafeRun("PeerListener.listen.selfRestart()",
+			func() {
+				l.listener.Close()
+			})
+
+		li, err := security.MakeListener(l.naddr)
+		if err != nil {
+			log.Current.Errorf("PeerListener.listen() error in selfRestart:MakeListener %v", err)
+			panic(err)
+		}
+		l.listener = li
+
+		go l.listen()
+	}
+
 	defer func() {
 		if r := recover(); r != nil {
 			log.Current.Errorf("panic in PeerListener.listen() : %s\n", r)
 		}
 
-		// This will close the connection channel
-		l.Close()
+		selfRestart()
 	}()
 
 	for {
