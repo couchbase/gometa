@@ -101,6 +101,10 @@ func (l *PeerListener) Close() bool {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
+	return l.CloseNoLock()
+}
+
+func (l *PeerListener) CloseNoLock() bool {
 	if !l.isClosed {
 		l.isClosed = true
 
@@ -127,14 +131,27 @@ func (l *PeerListener) Close() bool {
 	return false
 }
 
+//
+// IMP: ResetConnections algorithm will trigger closing of the existing
+// PeerListener and starting of a new one. But it uses the same connch
+// so that the leaderServer shouldn't need a restart.
+//
 func (l *PeerListener) ResetConnections() (*PeerListener, error) {
 
 	l.mutex.Lock()
 	l.resetConn = true
 	l.mutex.Unlock()
 
-	l.listener.Close()
+	SafeRun("PeerListener.Close()",
+		func() {
+			l.listener.Close()
+		})
+
 	<-l.donech
+
+	// At this point, the PeerListener is closed as the l.donech is closed.
+	// So, there shouldn't be any net.Listener listening on l.laddr and hence
+	// it is safe to call startPeerListener(l.naddr, l.connch)
 
 EMPTY:
 	for {
@@ -160,13 +177,43 @@ EMPTY:
 // connection channel (if it is not yet closed).
 //
 func (l *PeerListener) listen() {
+
+	selfRestart := func() {
+		l.mutex.Lock()
+		defer l.mutex.Unlock()
+
+		if l.isClosed {
+			return
+		}
+
+		// If the connections were reset, close this PeerListener object and
+		// let ResetConnections create a new PeerListener.
+		if l.resetConn {
+			l.CloseNoLock()
+			return
+		}
+
+		SafeRun("PeerListener.listen.selfRestart()",
+			func() {
+				l.listener.Close()
+			})
+
+		li, err := security.MakeListener(l.naddr)
+		if err != nil {
+			log.Current.Errorf("PeerListener.listen() error in selfRestart:MakeListener %v", err)
+			panic(err)
+		}
+		l.listener = li
+
+		go l.listen()
+	}
+
 	defer func() {
 		if r := recover(); r != nil {
 			log.Current.Errorf("panic in PeerListener.listen() : %s\n", r)
 		}
 
-		// This will close the connection channel
-		l.Close()
+		selfRestart()
 	}()
 
 	for {
