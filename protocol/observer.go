@@ -32,7 +32,7 @@ type observer struct {
 func NewObserver() *observer {
 
 	return &observer{
-		packets: make(chan common.Packet, common.MAX_PROPOSALS),
+		packets: make(chan common.Packet, common.MAX_PROPOSALS*20),
 		head:    nil,
 		killch:  make(chan bool)} // buffered - unblock sender
 }
