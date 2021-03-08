@@ -16,7 +16,10 @@
 package protocol
 
 import (
+	"sync"
+
 	"github.com/couchbase/gometa/common"
+	"github.com/couchbase/gometa/log"
 )
 
 /////////////////////////////////////////////////
@@ -27,6 +30,7 @@ type observer struct {
 	packets chan common.Packet
 	head    common.Packet
 	killch  chan bool
+	mutex   *sync.RWMutex
 }
 
 func NewObserver() *observer {
@@ -34,7 +38,8 @@ func NewObserver() *observer {
 	return &observer{
 		packets: make(chan common.Packet, common.MAX_PROPOSALS*20),
 		head:    nil,
-		killch:  make(chan bool)} // buffered - unblock sender
+		killch:  make(chan bool), // buffered - unblock sender
+		mutex:   &sync.RWMutex{}}
 }
 
 func (o *observer) close() {
@@ -45,16 +50,40 @@ func (o *observer) send(msg common.Packet) {
 
 	defer common.SafeRun("observer.Send()",
 		func() {
-			select {
-			case o.packets <- msg: //no-op
-			case <-o.killch:
-				// if killch is closed, this is non-blocking.
-				return
+			needsResize := false
+			func() {
+				o.mutex.RLock()
+				defer o.mutex.RUnlock()
+				select {
+				case o.packets <- msg: //no-op
+				case <-o.killch:
+					// if killch is closed, this is non-blocking.
+					return
+				default:
+					needsResize = true
+				}
+			}()
+
+			if needsResize {
+				o.resizePacketsChan()
+
+				o.mutex.RLock()
+				defer o.mutex.RUnlock()
+
+				select {
+				case o.packets <- msg: //no-op
+				case <-o.killch:
+					// if killch is closed, this is non-blocking.
+					return
+				}
 			}
 		})
 }
 
 func (o *observer) getNext() common.Packet {
+	o.mutex.RLock()
+	defer o.mutex.RUnlock()
+
 	if o.head != nil {
 		head := o.head
 		o.head = nil
@@ -70,6 +99,9 @@ func (o *observer) getNext() common.Packet {
 }
 
 func (o *observer) peekFirst() common.Packet {
+	o.mutex.RLock()
+	defer o.mutex.RUnlock()
+
 	if o.head != nil {
 		return o.head
 	}
@@ -80,4 +112,25 @@ func (o *observer) peekFirst() common.Packet {
 	}
 
 	return nil
+}
+
+func (o *observer) resizePacketsChan() {
+	o.mutex.Lock()
+	defer o.mutex.Unlock()
+	if len(o.packets) == cap(o.packets) && cap(o.packets) < 1000*common.MAX_PROPOSALS {
+		newPackets := make(chan common.Packet, min(2*cap(o.packets), 1000*common.MAX_PROPOSALS))
+		for packet := range o.packets {
+			newPackets <- packet
+		}
+		close(o.packets)
+		o.packets = newPackets
+		log.Current.Infof("Observer::Send() Doubled the size of packets channel, current cap: %v", cap(o.packets))
+	}
+}
+
+func min(x, y int) int {
+	if x > y {
+		return y
+	}
+	return x
 }
