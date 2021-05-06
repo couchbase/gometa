@@ -268,6 +268,13 @@ func (r *Repository) AcquireSnapshot(kind RepoKind) (common.Txnid, *RepoIterator
 	var FORESTDB_INMEMSEQ = fdb.SeqNum(math.MaxUint64)
 	kvstore, err := snapshot.snapshot.SnapshotOpen(FORESTDB_INMEMSEQ)
 
+	info, err := kvstore.Info()
+	if err == nil && info != nil {
+		log.Current.Infof("snapshot info : %v docCount : %v", info, info.DocCount())
+	} else {
+		log.Current.Errorf("Error in fetching snapshot info from forestdb")
+	}
+
 	iter, err := kvstore.IteratorInit(nil, nil, fdb.ITR_NO_DELETES)
 	if err != nil {
 		return common.Txnid(0), nil, err
@@ -472,6 +479,13 @@ func (r *Repository) NewIterator(kind RepoKind, startKey, endKey string) (*RepoI
 	// Create a snaphsot for iteration
 	var FORESTDB_INMEMSEQ = fdb.SeqNum(math.MaxUint64)
 	snapshot, err := r.stores[kind].SnapshotOpen(FORESTDB_INMEMSEQ)
+
+	info, err := snapshot.Info()
+	if err == nil && info != nil {
+		log.Current.Infof("snapshot info : %v docCount : %v", info, info.DocCount())
+	} else {
+		log.Current.Errorf("Error in fetching snapshot info from forestdb")
+	}
 
 	iter, err := snapshot.IteratorInit(k1, k2, fdb.ITR_NO_DELETES)
 	if err != nil {
