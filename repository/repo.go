@@ -507,6 +507,10 @@ func (i *RepoIterator) Next() (key string, content []byte, err error) {
 		return "", nil, err
 	}
 
+	// The key and body are copied into golang memory using Key() and Body().
+	// It is safe to free the doc at the end since it is not exposed anywhere else.
+	defer doc.CloseNoPool()
+
 	err = i.iter.Next()
 	if err != nil && err != fdb.RESULT_ITERATOR_FAIL {
 		return "", nil, err
