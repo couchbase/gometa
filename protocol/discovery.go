@@ -17,11 +17,10 @@ package protocol
 
 import (
 	"fmt"
-	"sync"
-	"time"
-
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
+	"sync"
+	"time"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -536,7 +535,7 @@ func (l *LeaderSyncProxy) execute(donech chan bool, o *observer) {
 
 func (l *LeaderSyncProxy) updateAcceptedEpochAfterQuorum() error {
 
-	log.Current.Infof("LeaderSyncProxy.updateAcceptedEpochAfterQuroum()")
+	log.Current.Debugf("LeaderSyncProxy.updateAcceptedEpochAfterQuroum()")
 
 	// Get my follower's vote for the accepted epoch
 	packet, err := listen("FollowerInfo", l.follower)
@@ -572,7 +571,7 @@ func (l *LeaderSyncProxy) updateAcceptedEpochAfterQuorum() error {
 
 func (l *LeaderSyncProxy) notifyNewEpoch() error {
 
-	log.Current.Infof("LeaderSyncProxy.notifyNewEpoch()")
+	log.Current.Debugf("LeaderSyncProxy.notifyNewEpoch()")
 
 	epoch, err := l.handler.GetAcceptedEpoch()
 	if err != nil {
@@ -584,7 +583,7 @@ func (l *LeaderSyncProxy) notifyNewEpoch() error {
 
 func (l *LeaderSyncProxy) updateCurrentEpochAfterQuorum() error {
 
-	log.Current.Infof("LeaderSyncProxy.updateCurrentEpochAfterQuorum()")
+	log.Current.Debugf("LeaderSyncProxy.updateCurrentEpochAfterQuorum()")
 
 	// Get my follower's vote for the epoch ack
 	packet, err := listen("EpochAck", l.follower)
@@ -623,7 +622,7 @@ func (l *LeaderSyncProxy) updateCurrentEpochAfterQuorum() error {
 
 func (l *LeaderSyncProxy) declareNewLeaderAfterQuorum() error {
 
-	log.Current.Infof("LeaderSyncProxy.declareNewLeaderAfterQuorum()")
+	log.Current.Debugf("LeaderSyncProxy.declareNewLeaderAfterQuorum()")
 
 	// return the new epoch to the follower
 	epoch, err := l.handler.GetCurrentEpoch()
@@ -716,8 +715,6 @@ func (l *LeaderSyncProxy) sendHeader() error {
 		"StreamBegin",
 		([]byte)("StreamBegin"))
 
-	log.Current.Infof("LeaderSyncProxy.sendHeader lastCommittedTxid: %v", lastCommittedTxid)
-
 	return send(msg, l.follower)
 }
 
@@ -729,7 +726,7 @@ func (l *LeaderSyncProxy) sendHeader() error {
 //
 func (l *LeaderSyncProxy) sendEntriesInCommittedLog(startTxid, endTxid common.Txnid, o *observer) (common.Txnid, error) {
 
-	log.Current.Infof("LeaderSyncProxy.sendEntriesInCommittedLog(): startTxid %d endTxid %d observer first txid %d",
+	log.Current.Debugf("LeaderSyncProxy.sendEntriesInCommittedLog(): startTxid %d endTxid %d observer first txid %d",
 		startTxid, endTxid, l.firstTxnIdInObserver(o))
 
 	var lastSeen common.Txnid = common.BOOTSTRAP_LAST_LOGGED_TXID
@@ -790,7 +787,6 @@ func (l *LeaderSyncProxy) sendTrailer() (err error) {
 		"StreamEnd",
 		([]byte)("StreamEnd"))
 
-	log.Current.Infof("LeaderSyncProxy.sendTrailer lastCommittedTxid: %v", lastCommittedTxid)
 	return send(msg, l.follower)
 }
 
@@ -910,7 +906,7 @@ func (f *FollowerSyncProxy) Start() bool {
 		log.Current.Infof("FollowerSyncProxy.Start(): Synchronization timeout for peer %s. Terminate.", f.leader.GetAddr())
 		f.abort()
 	case <-f.killch:
-		log.Current.Infof("FollowerSyncProxy.Start(): Receive kill signal for peer %s.  Terminate.", f.leader.GetAddr())
+		log.Current.Debugf("FollowerSyncProxy.Start(): Receive kill signal for peer %s.  Terminate.", f.leader.GetAddr())
 		f.abort()
 	}
 
@@ -1038,7 +1034,7 @@ func (l *FollowerSyncProxy) execute(donech chan bool) {
 
 func (l *FollowerSyncProxy) sendFollowerInfo() error {
 
-	log.Current.Infof("FollowerSyncProxy.sendFollowerInfo()")
+	log.Current.Debugf("FollowerSyncProxy.sendFollowerInfo()")
 
 	// Send my accepted epoch to the leader for voting (don't send current epoch)
 	epoch, err := l.handler.GetAcceptedEpoch()
@@ -1051,7 +1047,7 @@ func (l *FollowerSyncProxy) sendFollowerInfo() error {
 
 func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 
-	log.Current.Infof("FollowerSyncProxy.receiveAndUpdateAcceptedEpoch()")
+	log.Current.Debugf("FollowerSyncProxy.receiveAndUpdateAcceptedEpoch()")
 
 	// Get the accepted epoch from the leader.   This epoch
 	// is already being voted on by multiple followers (the highest
@@ -1115,7 +1111,7 @@ func (l *FollowerSyncProxy) receiveAndUpdateAcceptedEpoch() error {
 
 func (l *FollowerSyncProxy) receiveAndUpdateCurrentEpoch() error {
 
-	log.Current.Infof("FollowerSyncProxy.receiveAndUpdateCurrentEpoch()")
+	log.Current.Debugf("FollowerSyncProxy.receiveAndUpdateCurrentEpoch()")
 
 	// Get the accepted epoch from the leader.   This epoch
 	// is already being voted on by multiple followers (the highest
@@ -1168,7 +1164,7 @@ func (l *FollowerSyncProxy) syncReceive() error {
 
 		// If this is the first one, skip
 		if entry.GetOpCode() == uint32(common.OPCODE_STREAM_BEGIN_MARKER) {
-			log.Current.Infof("LeaderSyncProxy.syncReceive(). Receive stream_begin.  Txid : %d", lastTxnid)
+			log.Current.Debugf("LeaderSyncProxy.syncReceive(). Receive stream_begin.  Txid : %d", lastTxnid)
 			lastCommittedFromLeader = lastTxnid
 			continue
 		}
@@ -1177,7 +1173,7 @@ func (l *FollowerSyncProxy) syncReceive() error {
 		// message has a more recent lastCommitedTxid from the leader which is retreievd after
 		// the last log entry is sent.
 		if entry.GetOpCode() == uint32(common.OPCODE_STREAM_END_MARKER) {
-			log.Current.Infof("LeaderSyncProxy.syncReceive(). Receive stream_end.  Txid : %d", lastTxnid)
+			log.Current.Debugf("LeaderSyncProxy.syncReceive(). Receive stream_end.  Txid : %d", lastTxnid)
 			lastCommittedFromLeader = lastTxnid
 
 			// write any log entry that has not been logged.

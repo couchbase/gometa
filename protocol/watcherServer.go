@@ -198,7 +198,7 @@ func syncWithPeer(pipe *common.PeerPipe,
 	factory MsgFactory,
 	killch <-chan bool) (success bool, isKilled bool) {
 
-	log.Current.Infof("WatcherServer.syncWithPeer(): Watcher start synchronization with peer (TCP %s)", pipe.GetAddr())
+	log.Current.Debugf("WatcherServer.syncWithPeer(): Watcher start synchronization with peer (TCP %s)", pipe.GetAddr())
 	proxy := NewFollowerSyncProxy(pipe, handler, factory, false)
 	donech := proxy.GetDoneChannel()
 	go proxy.Start()
@@ -208,13 +208,13 @@ func syncWithPeer(pipe *common.PeerPipe,
 	select {
 	case success = <-donech:
 		if success {
-			log.Current.Infof("WatcherServer.syncWithPeer(): Watcher done synchronization with peer (TCP %s)", pipe.GetAddr())
+			log.Current.Debugf("WatcherServer.syncWithPeer(): Watcher done synchronization with peer (TCP %s)", pipe.GetAddr())
 		}
 		return success, false
 	case <-killch:
 		// simply return. The pipe will eventually be closed and
 		// cause WatcherSyncProxy to err out.
-		log.Current.Infof("WatcherServer.syncWithPeer(): Recieve kill singal.  Synchronization with peer (TCP %s) terminated.",
+		log.Current.Debugf("WatcherServer.syncWithPeer(): Recieve kill singal.  Synchronization with peer (TCP %s) terminated.",
 			pipe.GetAddr())
 		return false, true
 	}
@@ -299,7 +299,7 @@ func runWatcher(pipe *common.PeerPipe,
 	once *sync.Once) (isKilled bool) {
 
 	// Create a watcher.  The watcher will start a go-rountine, listening to messages coming from peer.
-	log.Current.Infof("WatcherServer.runWatcher(): Start Watcher Protocol")
+	log.Current.Debugf("WatcherServer.runWatcher(): Start Watcher Protocol")
 	watcher := NewFollower(WATCHER, pipe, handler, factory)
 	donech := watcher.Start()
 	defer watcher.Terminate()
@@ -307,7 +307,7 @@ func runWatcher(pipe *common.PeerPipe,
 	// notify that the watcher is starting to run.  Only do this once.
 	once.Do(func() { readych <- true })
 
-	log.Current.Infof("WatcherServer.runWatcher(): Watcher is ready to process request")
+	log.Current.Debugf("WatcherServer.runWatcher(): Watcher is ready to process request")
 
 	var incomings <-chan *RequestHandle
 	if requestMgr != nil {

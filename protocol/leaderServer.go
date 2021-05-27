@@ -198,7 +198,7 @@ func (l *LeaderServer) listenFollower(listenerState *ListenerState) {
 				// 2) Even if the leader receives votes from the leader, the leader cannot tell for sure that the follower does
 				//    not change its vote.  Only if the follower connects, the leader can confirm the follower's alliance.
 				//
-				log.Current.Infof("LeaderServer.listenFollower(): Receive connection request from follower %s", conn.RemoteAddr())
+				log.Current.Debugf("LeaderServer.listenFollower(): Receive connection request from follower %s", conn.RemoteAddr())
 				if l.registerOutstandingProxy(conn.RemoteAddr().String()) {
 					pipe := common.NewPeerPipe(conn)
 					go l.startProxy(pipe)
