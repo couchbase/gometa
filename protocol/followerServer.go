@@ -217,12 +217,7 @@ func newFollowerState(ss RequestMgr) *FollowerState {
 //
 func createConnection(leader string) (net.Conn, error) {
 
-	leaderAddr, err := net.ResolveTCPAddr("tcp", leader)
-	if err != nil {
-		return nil, err
-	}
-
-	c, err := security.MakeTCPConn(leaderAddr.String())
+	c, err := security.MakeTCPConn(leader)
 	if err != nil {
 		return nil, err
 	}
