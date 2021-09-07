@@ -1,4 +1,4 @@
-CMAKE_MINIMUM_REQUIRED (VERSION 2.8)
+CMAKE_MINIMUM_REQUIRED (VERSION 3.13)
 PROJECT (gometa)
 
 # This project is intended to be built as part of a Couchbase Server build,
