@@ -43,18 +43,20 @@ func RunWatcherServerWithRequest(leader string,
 
 	var once sync.Once
 	backoff := common.RETRY_BACKOFF
-	retry := true
-	for retry {
+	for tryNum := 1; tryNum > 0; tryNum++ {
 		log.Current.Debugf("WatcherServer.runWatcherServer() : runOnce() returns with error.  Retry ...")
-		if runOnce(leader, requestMgr, handler, factory, killch, readych, alivech, pingch, &once) {
-			retry = false
+		if runOnce(tryNum, leader, requestMgr, handler, factory, killch, readych, alivech, pingch, &once) {
+			tryNum = -1 // stop (must be < 0 as the for loop will increment it again)
 		}
 
-		if retry {
+		if tryNum > 0 {
 			timer := time.NewTimer(backoff * time.Millisecond)
 			select {
 			case <-timer.C:
 			case <-killch:
+				if !timer.Stop() {
+					<-timer.C // needed so timer can be garbage collected
+				}
 				return
 			}
 
@@ -98,18 +100,18 @@ func RunWatcherServerWithElection(host string,
 
 	var once sync.Once
 	backoff := common.RETRY_BACKOFF
-	retry := true
-	for retry {
+
+	for tryNum := 1; tryNum > 0; tryNum++ {
 		peer, isKilled := findPeerToConnect(host, peerUDP, peerTCP, factory, handler, killch)
 		if isKilled {
 			return
 		}
 
-		if peer != "" && runOnce(peer, requestMgr, handler, factory, killch, readych, make(chan bool, 1), make(chan bool, 1), &once) {
-			retry = false
+		if peer != "" && runOnce(tryNum, peer, requestMgr, handler, factory, killch, readych, make(chan bool, 1), make(chan bool, 1), &once) {
+			tryNum = -1 // stop (must be < 0 as the for loop will increment it again)
 		}
 
-		if retry {
+		if tryNum > 0 {
 			timer := time.NewTimer(backoff * time.Millisecond)
 			<-timer.C
 
@@ -125,7 +127,7 @@ func RunWatcherServerWithElection(host string,
 // WatcherServer - Execution Loop
 /////////////////////////////////////////////////////////////////////////////
 
-func runOnce(peer string,
+func runOnce(tryNum int, peer string,
 	requestMgr RequestMgr,
 	handler ActionHandler,
 	factory MsgFactory,
@@ -153,7 +155,10 @@ func runOnce(peer string,
 	// create connection with a peer
 	conn, err := createConnection(peer)
 	if err != nil {
-		log.Current.Errorf("WatcherServer.runOnce() error : %s", err)
+		if tryNum%100 == 1 { // avoid log flooding in network partition case
+			log.Current.Errorf("WatcherServer.runOnce() : tryNum: %v, peer: %v, error: %s",
+				tryNum, peer, err)
+		}
 		return false
 	}
 	pipe := common.NewPeerPipe(conn)
@@ -168,7 +173,7 @@ func runOnce(peer string,
 			pipe.Close()
 		})
 
-	// start syncrhorniziing with the metadata server
+	// Start synchronizing with the metadata server. If isKilled is true, success is always false.
 	success, isKilled := syncWithPeer(pipe, handler, factory, killch)
 
 	// run watcher after synchronization
@@ -214,7 +219,7 @@ func syncWithPeer(pipe *common.PeerPipe,
 	case <-killch:
 		// simply return. The pipe will eventually be closed and
 		// cause WatcherSyncProxy to err out.
-		log.Current.Debugf("WatcherServer.syncWithPeer(): Recieve kill singal.  Synchronization with peer (TCP %s) terminated.",
+		log.Current.Debugf("WatcherServer.syncWithPeer(): Received kill signal. Synchronization with peer (TCP %s) terminated.",
 			pipe.GetAddr())
 		return false, true
 	}
@@ -326,11 +331,11 @@ func runWatcher(pipe *common.PeerPipe,
 				// forward the request to the leader
 				if !watcher.ForwardRequest(handle.Request) {
 					log.Current.Errorf("WatcherServer.processRequest(): fail to send client request to leader. Terminate.")
-					return
+					return false
 				}
 			} else {
 				log.Current.Debugf("WatcherServer.processRequest(): channel for receiving client request is closed. Terminate.")
-				return
+				return false
 			}
 		case <-killch:
 			// server is being explicitly terminated.  Terminate the watcher go-rountine as well.
