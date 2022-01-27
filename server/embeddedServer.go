@@ -49,6 +49,7 @@ type EmbeddedServer struct {
 	initialized bool
 	mutex       sync.RWMutex
 	resetCh     chan bool
+	authfn      common.ServerAuthFunction
 
 	//compaction
 	minFileSize uint64
@@ -76,7 +77,8 @@ func RunEmbeddedServerWithCustomHandler(msgAddr string,
 	repoName string,
 	memory_quota uint64) (*EmbeddedServer, error) {
 
-	return RunEmbeddedServerWithCustomHandler2(msgAddr, notifier, reqHandler, repoName, memory_quota, uint64(60*15), uint8(0), uint64(0))
+	return RunEmbeddedServerWithCustomHandler2(msgAddr, notifier, reqHandler,
+		repoName, memory_quota, uint64(60*15), uint8(0), uint64(0))
 }
 
 func RunEmbeddedServerWithCustomHandler2(msgAddr string,
@@ -88,6 +90,20 @@ func RunEmbeddedServerWithCustomHandler2(msgAddr string,
 	threshold uint8,
 	minFileSize uint64) (*EmbeddedServer, error) {
 
+	return RunEmbeddedServerWithCustomHandler3(msgAddr, notifier, reqHandler,
+		repoName, memory_quota, sleepDur, threshold, minFileSize, nil)
+}
+
+func RunEmbeddedServerWithCustomHandler3(msgAddr string,
+	notifier action.EventNotifier,
+	reqHandler protocol.CustomRequestHandler,
+	repoName string,
+	memory_quota uint64,
+	sleepDur uint64,
+	threshold uint8,
+	minFileSize uint64,
+	authfn common.ServerAuthFunction) (*EmbeddedServer, error) {
+
 	server := new(EmbeddedServer)
 	server.msgAddr = msgAddr
 	server.notifier = notifier
@@ -97,6 +113,7 @@ func RunEmbeddedServerWithCustomHandler2(msgAddr string,
 	server.sleepDur = sleepDur
 	server.threshold = threshold
 	server.minFileSize = minFileSize
+	server.authfn = authfn
 
 	if err := server.bootstrap(); err != nil {
 		log.Current.Errorf("EmbeddedServer.boostrap: error : %v\n", err)
@@ -552,7 +569,7 @@ func (s *EmbeddedServer) bootstrap() (err error) {
 	// node knows it is a leader.  By starting the listener now, it allows the
 	// follower to establish the connection and let the leader handles this
 	// connection at a later time (when it is ready to be a leader).
-	s.listener, err = common.StartPeerListener(s.msgAddr)
+	s.listener, err = common.StartPeerListener2(s.msgAddr, s.authfn)
 	if err != nil {
 		err = common.WrapError(common.SERVER_ERROR, "Fail to start PeerListener. err = %v", err)
 		return

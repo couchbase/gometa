@@ -135,7 +135,7 @@ func (s *Server) bootstrap() (err error) {
 	// node knows it is a leader.  By starting the listener now, it allows the
 	// follower to establish the connection and let the leader handles this
 	// connection at a later time (when it is ready to be a leader).
-	s.listener, err = common.StartPeerListener(GetHostTCPAddr())
+	s.listener, err = common.StartPeerListener2(GetHostTCPAddr(), nil)
 	if err != nil {
 		return common.WrapError(common.SERVER_ERROR, "Fail to start PeerListener.", err)
 	}

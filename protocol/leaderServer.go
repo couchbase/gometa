@@ -185,12 +185,14 @@ func (l *LeaderServer) listenFollower(listenerState *ListenerState) {
 
 	for {
 		select {
-		case conn, ok := <-connCh:
+		case peerConn, ok := <-connCh:
 			{
 				if !ok {
 					// channel close.  Simply return.
 					return
 				}
+
+				conn := peerConn.GetConn()
 
 				// There is a new peer connection request from the follower.  Start a proxy to synchronize with the follower.
 				// The leader does not proactively connect to follower:
@@ -200,8 +202,13 @@ func (l *LeaderServer) listenFollower(listenerState *ListenerState) {
 				//
 				log.Current.Debugf("LeaderServer.listenFollower(): Receive connection request from follower %s", conn.RemoteAddr())
 				if l.registerOutstandingProxy(conn.RemoteAddr().String()) {
-					pipe := common.NewPeerPipe(conn)
-					go l.startProxy(pipe)
+
+					peer := peerConn.GetPeerPipe()
+					if peer == nil {
+						peer = common.NewPeerPipe(conn)
+					}
+
+					go l.startProxy(peer, peerConn.GetPacket())
 				} else {
 					log.Current.Infof("LeaderServer.listenFollower(): Sync Proxy already running for %s. Ignore new request.", conn.RemoteAddr())
 					conn.Close()
@@ -218,7 +225,7 @@ func (l *LeaderServer) listenFollower(listenerState *ListenerState) {
 // Start a LeaderSyncProxy to synchornize the leader
 // and follower state.
 //
-func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
+func (l *LeaderServer) startProxy(peer *common.PeerPipe, packet common.Packet) {
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -246,7 +253,7 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe) {
 	defer l.leader.RemoveObserver(peer.GetAddr())
 
 	// start the proxy
-	go proxy.Start(o)
+	go proxy.Start(o, packet)
 	defer proxy.Terminate()
 
 	// Get the killch for this go-routine

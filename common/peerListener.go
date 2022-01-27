@@ -26,6 +26,8 @@ import (
 // Type Declaration
 /////////////////////////////////////////////////
 
+type ServerAuthFunction func(conn net.Conn) (*PeerPipe, Packet, error)
+
 //
 // PeerListener - Listener for TCP connection
 // If there is a new connection request, send
@@ -35,11 +37,12 @@ import (
 type PeerListener struct {
 	naddr     string
 	listener  net.Listener
-	connch    chan net.Conn
+	connch    chan *PeerConn
 	mutex     sync.Mutex
 	isClosed  bool
 	resetConn bool
 	donech    chan bool
+	authfn    ServerAuthFunction
 }
 
 /////////////////////////////////////////////////
@@ -53,16 +56,22 @@ type PeerListener struct {
 //
 func StartPeerListener(laddr string) (*PeerListener, error) {
 
-	return startPeerListener(laddr, make(chan net.Conn, MAX_PEERS))
+	return startPeerListener(laddr, make(chan *PeerConn, MAX_PEERS), nil)
 }
 
-func startPeerListener(laddr string, connch chan net.Conn) (*PeerListener, error) {
+func StartPeerListener2(laddr string, authfn ServerAuthFunction) (*PeerListener, error) {
+
+	return startPeerListener(laddr, make(chan *PeerConn, MAX_PEERS), authfn)
+}
+
+func startPeerListener(laddr string, connch chan *PeerConn, authfn ServerAuthFunction) (*PeerListener, error) {
 
 	listener := &PeerListener{
 		naddr:    laddr,
 		connch:   connch,
 		isClosed: false,
 		donech:   make(chan bool),
+		authfn:   authfn,
 	}
 
 	li, err := security.MakeListener(laddr)
@@ -82,12 +91,12 @@ func startPeerListener(laddr string, connch chan net.Conn) (*PeerListener, error
 // should also check if the channel is closed when
 // dequeueing from the channel.
 //
-func (l *PeerListener) ConnChannel() <-chan net.Conn {
+func (l *PeerListener) ConnChannel() <-chan *PeerConn {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
 	if !l.isClosed {
-		return (<-chan net.Conn)(l.connch)
+		return (<-chan *PeerConn)(l.connch)
 	}
 	return nil
 }
@@ -162,7 +171,7 @@ EMPTY:
 		}
 	}
 
-	return startPeerListener(l.naddr, l.connch)
+	return startPeerListener(l.naddr, l.connch, l.authfn)
 }
 
 /////////////////////////////////////////////////
@@ -224,10 +233,32 @@ func (l *PeerListener) listen() {
 			break
 		}
 
-		// We get a new connection.  Pass it to the channel and let
-		// the consumer handle the connection.
-		l.queue(conn)
+		go l.handleConnection(conn)
 	}
+}
+
+func (l *PeerListener) handleConnection(conn net.Conn) {
+
+	var pipe *PeerPipe
+	var packet Packet
+	var err error
+
+	var peerConn *PeerConn
+
+	if l.authfn != nil {
+		if pipe, packet, err = l.authfn(conn); err != nil {
+			log.Current.Errorf("PeerListener.handleConnection error in authfn %v for conn %v:%v",
+				err, conn.LocalAddr().String(), conn.RemoteAddr().String())
+			conn.Close()
+			return
+		}
+	}
+
+	peerConn = NewPeerConn(conn, pipe, packet)
+
+	// We get a new connection.  Pass it to the channel and let
+	// the consumer handle the connection.
+	l.queue(peerConn)
 }
 
 //
@@ -236,7 +267,7 @@ func (l *PeerListener) listen() {
 // there is no goroutine concurrently try to close
 // the listener.
 //
-func (l *PeerListener) queue(conn net.Conn) {
+func (l *PeerListener) queue(conn *PeerConn) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 

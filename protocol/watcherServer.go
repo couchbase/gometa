@@ -22,6 +22,8 @@ import (
 	"time"
 )
 
+type ClientAuthFunction func(*common.PeerPipe) error
+
 /////////////////////////////////////////////////////////////////////////////
 // WatcherServer - Public Function
 /////////////////////////////////////////////////////////////////////////////
@@ -41,11 +43,27 @@ func RunWatcherServerWithRequest(leader string,
 	alivech chan<- bool,
 	pingch <-chan bool) {
 
+	RunWatcherServerWithRequest2(leader, requestMgr, handler, factory, killch,
+		readych, alivech, pingch, nil)
+}
+
+func RunWatcherServerWithRequest2(leader string,
+	requestMgr RequestMgr,
+	handler ActionHandler,
+	factory MsgFactory,
+	killch <-chan bool,
+	readych chan<- bool,
+	alivech chan<- bool,
+	pingch <-chan bool,
+	authfn ClientAuthFunction) {
+
 	var once sync.Once
 	backoff := common.RETRY_BACKOFF
 	for tryNum := 1; tryNum > 0; tryNum++ {
 		log.Current.Debugf("WatcherServer.runWatcherServer() : runOnce() returns with error.  Retry ...")
-		if runOnce(tryNum, leader, requestMgr, handler, factory, killch, readych, alivech, pingch, &once) {
+		if runOnce(tryNum, leader, requestMgr, handler, factory, killch,
+			readych, alivech, pingch, &once, authfn) {
+
 			tryNum = -1 // stop (must be < 0 as the for loop will increment it again)
 		}
 
@@ -107,7 +125,9 @@ func RunWatcherServerWithElection(host string,
 			return
 		}
 
-		if peer != "" && runOnce(tryNum, peer, requestMgr, handler, factory, killch, readych, make(chan bool, 1), make(chan bool, 1), &once) {
+		if peer != "" && runOnce(tryNum, peer, requestMgr, handler, factory,
+			killch, readych, make(chan bool, 1), make(chan bool, 1), &once, nil) {
+
 			tryNum = -1 // stop (must be < 0 as the for loop will increment it again)
 		}
 
@@ -135,7 +155,8 @@ func runOnce(tryNum int, peer string,
 	readych chan<- bool,
 	alivech chan<- bool,
 	pingch <-chan bool,
-	once *sync.Once) (isKilled bool) {
+	once *sync.Once,
+	authfn ClientAuthFunction) (isKilled bool) {
 
 	// Catch panic at the main entry point for WatcherServer
 	defer func() {
@@ -161,8 +182,17 @@ func runOnce(tryNum int, peer string,
 		}
 		return false
 	}
+
 	pipe := common.NewPeerPipe(conn)
 	log.Current.Debugf("WatcherServer.runOnce() : Watcher successfully created TCP connection to peer %s", peer)
+
+	if authfn != nil {
+		if err := authfn(pipe); err != nil {
+			log.Current.Errorf("WatcherServer.runOnce() : error in authfn %v for connection %v:%v",
+				err, conn.LocalAddr().String(), conn.RemoteAddr().String())
+			return false
+		}
+	}
 
 	// close the connection to the peer. If connection is closed,
 	// sync proxy and watcher will also terminate by err-ing out.
