@@ -323,7 +323,7 @@ func NewLeaderSyncProxy(leader *Leader,
 //
 // This function will catch panic.
 //
-func (l *LeaderSyncProxy) Start(o *observer) bool {
+func (l *LeaderSyncProxy) Start(o *observer, packet common.Packet) bool {
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -343,7 +343,7 @@ func (l *LeaderSyncProxy) Start(o *observer) bool {
 	// let it garbage collect when the go-routine is done.	 Make sure using
 	// buffered channel since this go-routine may go away before execute() does.
 	donech2 := make(chan bool, 1)
-	go l.execute(donech2, o)
+	go l.execute(donech2, o, packet)
 
 	select {
 	case success, ok := <-donech2:
@@ -460,7 +460,7 @@ func (l *LeaderSyncProxy) close() {
 // in which the caller may have aborted.  donech must be a buffered channel
 // to ensure that this go-routine will not get blocked if the caller dies first.
 //
-func (l *LeaderSyncProxy) execute(donech chan bool, o *observer) {
+func (l *LeaderSyncProxy) execute(donech chan bool, o *observer, packet common.Packet) {
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -478,7 +478,7 @@ func (l *LeaderSyncProxy) execute(donech chan bool, o *observer) {
 		switch stage {
 		case UPDATE_ACCEPTED_EPOCH_AFTER_QUORUM:
 			{
-				err := l.updateAcceptedEpochAfterQuorum()
+				err := l.updateAcceptedEpochAfterQuorum(packet)
 				if err != nil {
 					log.Current.Errorf("LeaderSyncProxy.updateAcceptEpochAfterQuorum(): Error encountered = %s", err.Error())
 					safeSend("LeaderSyncProxy:execute()", donech, false)
@@ -533,12 +533,12 @@ func (l *LeaderSyncProxy) execute(donech chan bool, o *observer) {
 	safeSend("LeaderSyncProxy:execute()", donech, true)
 }
 
-func (l *LeaderSyncProxy) updateAcceptedEpochAfterQuorum() error {
+func (l *LeaderSyncProxy) updateAcceptedEpochAfterQuorum(packet common.Packet) error {
 
 	log.Current.Debugf("LeaderSyncProxy.updateAcceptedEpochAfterQuroum()")
 
 	// Get my follower's vote for the accepted epoch
-	packet, err := listen("FollowerInfo", l.follower)
+	packet, err := listenWithPacket("FollowerInfo", l.follower, packet)
 	if err != nil {
 		return err
 	}
@@ -1232,6 +1232,19 @@ func listen(name string, pipe *common.PeerPipe) (common.Packet, error) {
 	}
 
 	return req, nil
+}
+
+func listenWithPacket(name string, pipe *common.PeerPipe, packet common.Packet) (common.Packet, error) {
+
+	if packet != nil {
+		if packet.Name() != name {
+			return nil, common.NewError(common.PROTOCOL_ERROR,
+				"SyncProxy.listenWithPacket(): Expect message "+name+", Receive message "+packet.Name())
+		}
+		return packet, nil
+	}
+
+	return listen(name, pipe)
 }
 
 func send(packet common.Packet, pipe *common.PeerPipe) error {
