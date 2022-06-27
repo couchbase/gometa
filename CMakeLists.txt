@@ -22,6 +22,7 @@ PROJECT (gometa)
 INCLUDE (FindCouchbaseGo)
 INCLUDE (FindCouchbaseCurl)
 
+SET (_deps n1ql-yacc)
 IF (TARGET forestdb)
   LIST (APPEND _deps forestdb)
 ENDIF ()
