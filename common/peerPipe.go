@@ -20,9 +20,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/couchbase/gometa/log"
 	"net"
 	"sync"
+
+	"github.com/couchbase/gometa/log"
 )
 
 /////////////////////////////////////////////////
@@ -180,7 +181,6 @@ func (p *PeerPipe) doSend() {
 
 		// write the packet
 		log.Current.Debugf("PeerPipe.doSend() : Sending message %s (len %d) to Peer %s", packet.Name(), size, p.GetAddr())
-		log.Current.LazyDebug(packet.String)
 
 		n, err := p.conn.Write(msg)
 		if n < size || err != nil {
@@ -242,7 +242,6 @@ func (p *PeerPipe) doReceive() {
 			return
 		}
 		log.Current.Debugf("PeerPipe.doRecieve() : Message decoded.  Packet = %s", packet.Name())
-		log.Current.LazyDebug(packet.String)
 
 		// This can block if the reciever of the channel is slow or terminated premauturely (which cause channel to fill up).
 		// In this case, this can cause the TCP connection to fail.  The other end of the pipe will close as a result

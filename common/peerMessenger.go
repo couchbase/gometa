@@ -16,9 +16,10 @@
 package common
 
 import (
-	"github.com/couchbase/gometa/log"
 	"net"
 	"sync"
+
+	"github.com/couchbase/gometa/log"
 )
 
 /////////////////////////////////////////////////
@@ -240,7 +241,6 @@ func (p *PeerMessenger) doSend() {
 		}
 
 		log.Current.Debugf("PeerMessenger.doSend() : Preparing message %s to Peer %s", msg.Content.Name(), msg.Peer.String())
-		log.Current.LazyDebug(msg.Content.String)
 
 		serialized, err := Marshall(msg.Content)
 		if err != nil {
@@ -296,7 +296,6 @@ func (p *PeerMessenger) doReceive() {
 			break
 		}
 		log.Current.Debugf("PeerMessenger.doRecieve() : Message decoded.  Packet = %s", packet.Name())
-		log.Current.LazyDebug(packet.String)
 
 		// This can block if the reciever of the channel is slow or terminated premauturely (which cause channel to filled up).
 		// In this case, this can cause the UDP connection to fail such that other nodes will no longer send message to this node.
