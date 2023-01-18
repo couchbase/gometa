@@ -16,10 +16,11 @@
 package protocol
 
 import (
-	"github.com/couchbase/gometa/common"
-	"github.com/couchbase/gometa/log"
 	"sync"
 	"time"
+
+	"github.com/couchbase/gometa/common"
+	"github.com/couchbase/gometa/log"
 )
 
 type ClientAuthFunction func(*common.PeerPipe) error
@@ -65,6 +66,7 @@ func RunWatcherServerWithRequest2(leader string,
 			readych, alivech, pingch, &once, authfn) {
 
 			tryNum = -1 // stop (must be < 0 as the for loop will increment it again)
+			backoff = common.RETRY_BACKOFF
 		}
 
 		if tryNum > 0 {
@@ -78,7 +80,7 @@ func RunWatcherServerWithRequest2(leader string,
 				return
 			}
 
-			backoff += backoff
+			backoff += common.RETRY_BACKOFF
 			if backoff > common.MAX_RETRY_BACKOFF {
 				backoff = common.MAX_RETRY_BACKOFF
 			}
