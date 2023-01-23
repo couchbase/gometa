@@ -20,9 +20,11 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/couchbase/gometa/log"
+	"io"
 	"net"
 	"sync"
+
+	"github.com/couchbase/gometa/log"
 )
 
 /////////////////////////////////////////////////
@@ -212,9 +214,26 @@ func (p *PeerPipe) doReceive() {
 		// read packet len
 		lenBuf, err := p.readBytes(8, nil)
 		if err != nil {
-			// if encountering an error, kill the pipe.
-			log.Current.Errorf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer %s.  Error = %s. Kill Pipe.",
+			// err indicates conn termination. conditions of termination:
+			// 1. when other peer gracefully closes the connection, we get io.EOF (indexer restart closes network gracefully)
+			// 2. if we close the connection, we get "use of closed network connection" as read error
+			// 3. any network error (for eg: read: operation timed out)
+			// to diff between 2 & 3, we can read isClosed from PeerPipe with lock
+			
+			isClosed := func () bool {
+				p.mutex.Lock()
+				defer p.mutex.Unlock()
+				return p.isClosed
+			}()
+
+			if err == io.EOF || isClosed {
+				log.Current.Infof("PeerPipe.doRecieve() : connection terminated for %s. Reason = %s. Cleaning Pipe.",
 				p.GetAddr(), err.Error())
+			} else {
+				// if encountering an error, kill the pipe.
+				log.Current.Errorf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer %s.  Error = %s. Kill Pipe.",
+				p.GetAddr(), err.Error())
+			}
 			return
 		}
 		size := binary.BigEndian.Uint64(lenBuf)
@@ -230,8 +249,20 @@ func (p *PeerPipe) doReceive() {
 		buf, err := p.readBytes(size, readahead)
 		if err != nil {
 			// if encountering an error, kill the pipe.
-			log.Current.Errorf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer %s.  Error = %s. Kill Pipe.",
+			isClosed := func () bool {
+				p.mutex.Lock()
+				defer p.mutex.Unlock()
+				return p.isClosed
+			}()
+
+			if err == io.EOF || isClosed {
+				log.Current.Infof("PeerPipe.doRecieve() : connection terminated for %s. Reason = %s. Cleaning Pipe.",
 				p.GetAddr(), err.Error())
+			} else {
+				// if encountering an error, kill the pipe.
+				log.Current.Errorf("PeerPipe.doRecieve() : ecounter error when received mesasage from Peer %s.  Error = %s. Kill Pipe.",
+				p.GetAddr(), err.Error())
+			}
 			return
 		}
 		// unmarshall the content and put it in the channel
