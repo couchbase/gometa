@@ -1,6 +1,6 @@
 module github.com/couchbase/gometa
 
-go 1.18
+go 1.20
 
 replace github.com/couchbase/cbft => ../../../../../cbft
 
