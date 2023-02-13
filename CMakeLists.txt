@@ -39,5 +39,5 @@ GoInstall (TARGET gometa PACKAGE github.com/couchbase/gometa/cmd/gometa
   ${_deps}
   CGO_INCLUDE_DIRS "${CGO_INCLUDE_DIRS}"
   CGO_LIBRARY_DIRS "${CGO_LIBRARY_DIRS}"
-  GOVERSION 1.18.1
+  GOVERSION 1.20
   INSTALL_PATH bin OUTPUT gometa)
