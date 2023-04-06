@@ -434,6 +434,18 @@ func (s *EmbeddedServer) GetIterator(startKey, endKey string) (*r.RepoIterator, 
 	return s.repo.NewIterator(r.MAIN, startKey, endKey)
 }
 
+func (s *EmbeddedServer) GetServerConfigIterator(startKey, endKey string) (*r.RepoIterator, error) {
+
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	if !s.isActiveNoLock() {
+		return nil, common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
+	}
+
+	return s.repo.NewIterator(r.SERVER_CONFIG, startKey, endKey)
+}
+
 func (s *EmbeddedServer) SetConfigValue(key string, value string) error {
 
 	s.mutex.RLock()
