@@ -307,11 +307,19 @@ func (p *PeerPipe) readBytes(size uint64, readahead []byte) ([]byte, error) {
 		remaining -= uint64(len(readahead))
 	}
 
+	if (remaining <= 0) {
+		return nil, fmt.Errorf("PeerPipe.readBytes() : Invalid remaining size %v", remaining)
+	}
+
 	for {
 		// read the size of the packet (uint64)
 		buf := make([]byte, remaining)
 		n, err := p.conn.Read(buf)
-		log.Current.Tracef("PeerPipe.readBytes() : Receiving message from Peer %s, bytes read %d", p.GetAddr(), n)
+
+		log.Current.LazyTrace(func() string {
+			return fmt.Sprintf("PeerPipe.readBytes() : Receiving message from Peer %s, bytes read %d",
+			p.GetAddr(), n)
+		})
 
 		if n != 0 {
 			result.Write(buf[0:n])
