@@ -46,3 +46,5 @@ GoModBuild (TARGET gometa PACKAGE github.com/couchbase/gometa/cmd/gometa
   GOVERSION SUPPORTED_NEWER
   GOTAGS "${TAGS}"
   INSTALL_PATH bin OUTPUT gometa)
+
+GoModTidySetup()
