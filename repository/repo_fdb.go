@@ -20,7 +20,7 @@ import (
 	"github.com/couchbase/gometa/log"
 
 	// fdb "github.com/couchbase/goforestdb"
-	"errors"
+
 	"fmt"
 	"math"
 	"sync"
@@ -193,7 +193,7 @@ func (r *Fdb_Repository) Set(kind RepoKind, key string, content []byte) error {
 	defer r.mutex.Unlock()
 
 	if r.dbfile == nil {
-		return errors.New("repo closed")
+		return ErrRepoClosed
 	}
 
 	log.Current.Debugf("Repo.Set(): key %s, len(content) %d", key, len(content))
@@ -219,7 +219,7 @@ func (r *Fdb_Repository) CreateSnapshot(kind RepoKind, txnid common.Txnid) error
 	defer r.mutex.Unlock()
 
 	if r.dbfile == nil {
-		return errors.New("repo closed")
+		return ErrRepoClosed
 	}
 
 	info, err := r.stores[kind].Info()
@@ -250,7 +250,7 @@ func (r *Fdb_Repository) AcquireSnapshot(kind RepoKind) (common.Txnid, IRepoIter
 	defer r.mutex.Unlock()
 
 	if r.dbfile == nil {
-		return common.Txnid(0), nil, errors.New("repo closed")
+		return common.Txnid(0), nil, ErrRepoClosed
 	}
 
 	if len(r.snapshots[kind]) == 0 {
@@ -305,7 +305,7 @@ func (r *Fdb_Repository) SetNoCommit(kind RepoKind, key string, content []byte) 
 	defer r.mutex.Unlock()
 
 	if r.dbfile == nil {
-		return errors.New("repo closed")
+		return ErrRepoClosed
 	}
 
 	log.Current.Debugf("Repo.SetNoCommit(): key %s, len(content) %d", key, len(content))
@@ -327,7 +327,7 @@ func (r *Fdb_Repository) Get(kind RepoKind, key string) ([]byte, error) {
 	defer r.mutex.Unlock()
 
 	if r.dbfile == nil {
-		return nil, errors.New("repo closed")
+		return nil, ErrRepoClosed
 	}
 
 	//convert key to its collatejson encoded byte representation
@@ -348,7 +348,7 @@ func (r *Fdb_Repository) Delete(kind RepoKind, key string) error {
 	defer r.mutex.Unlock()
 
 	if r.dbfile == nil {
-		return errors.New("repo closed")
+		return ErrRepoClosed
 	}
 
 	//convert key to its collatejson encoded byte representation
@@ -372,7 +372,7 @@ func (r *Fdb_Repository) DeleteNoCommit(kind RepoKind, key string) error {
 	defer r.mutex.Unlock()
 
 	if r.dbfile == nil {
-		return errors.New("repo closed")
+		return ErrRepoClosed
 	}
 
 	//convert key to its collatejson encoded byte representation
@@ -391,7 +391,7 @@ func (r *Fdb_Repository) Commit() error {
 	defer r.mutex.Unlock()
 
 	if r.dbfile == nil {
-		return errors.New("repo closed")
+		return ErrRepoClosed
 	}
 
 	return r.dbfile.Commit(fdb.COMMIT_MANUAL_WAL_FLUSH)
@@ -438,7 +438,7 @@ func (r *Fdb_Repository) NewIterator(kind RepoKind, startKey, endKey string) (IR
 	defer r.mutex.Unlock()
 
 	if r.dbfile == nil {
-		return nil, errors.New("repo closed")
+		return nil, ErrRepoClosed
 	}
 
 	k1, err := CollateString(startKey)
@@ -467,7 +467,7 @@ func (r *Fdb_Repository) NewIterator(kind RepoKind, startKey, endKey string) (IR
 func (i *Fdb_RepoIterator) Next() (key string, content []byte, err error) {
 
 	if i.iter == nil {
-		return "", nil, fdb.RESULT_ITERATOR_FAIL
+		return "", nil, ErrIterFail
 	}
 
 	doc, err := i.iter.Get()
@@ -480,7 +480,7 @@ func (i *Fdb_RepoIterator) Next() (key string, content []byte, err error) {
 	defer doc.CloseNoPool()
 
 	err = i.iter.Next()
-	if err != nil && err != fdb.RESULT_ITERATOR_FAIL {
+	if err != nil && err != ErrIterFail {
 		return "", nil, err
 	}
 
@@ -488,7 +488,7 @@ func (i *Fdb_RepoIterator) Next() (key string, content []byte, err error) {
 	key = DecodeString(doc.Key())
 	body := doc.Body()
 
-	if err == fdb.RESULT_ITERATOR_FAIL {
+	if err == ErrIterFail {
 		i.iter.Close()
 		i.iter = nil
 	}

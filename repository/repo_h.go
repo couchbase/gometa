@@ -3,7 +3,10 @@
 package repository
 
 import (
+	"fmt"
+
 	c "github.com/couchbase/gometa/common"
+	fdb "github.com/couchbase/indexing/secondary/fdb"
 )
 
 type IRepoIterator interface {
@@ -24,3 +27,39 @@ type IRepository interface {
 	Close()
 	NewIterator(kind RepoKind, startKey, endKey string) (IRepoIterator, error)
 }
+
+type StoreType uint8
+
+const (
+	NAStoreType StoreType = iota
+	FDbStoreType
+	MagmaStoreType
+)
+
+func (sType StoreType) String() string {
+	switch sType {
+	case FDbStoreType:
+		return "fdb"
+	case MagmaStoreType:
+		return "magma"
+	default:
+		return "unknown"
+	}
+}
+
+type StoreError struct {
+	errMsg string
+	sType  StoreType
+}
+
+func (err StoreError) Error() string {
+	return err.String()
+}
+
+func (err StoreError) String() string {
+	return fmt.Sprintf("[%s]%v", err.sType, err.errMsg)
+}
+
+var ErrRepoClosed = fmt.Errorf("repo closed")
+
+const ErrIterFail = fdb.RESULT_ITERATOR_FAIL
