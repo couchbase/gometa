@@ -17,10 +17,11 @@ package repository
 
 import (
 	"fmt"
+	"sync"
+
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
 	"github.com/couchbase/gometa/message"
-	"sync"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -41,31 +42,27 @@ type CommitLogIterator interface {
 }
 
 type CommitLog struct {
-	repo    *Repository
+	repo    IRepository
 	factory *message.ConcreteMsgFactory
 	mutex   sync.Mutex
 }
 
 type LogIterator struct {
-	repo *Repository
-	iter *RepoIterator
+	repo IRepository
+	iter IRepoIterator
 }
 
 /////////////////////////////////////////////////////////////////////////////
 // CommitLog Public Function
 /////////////////////////////////////////////////////////////////////////////
 
-//
 // Create a new commit log
-//
-func NewCommitLog(repo *Repository) *CommitLog {
+func NewCommitLog(repo IRepository) *CommitLog {
 	return &CommitLog{repo: repo,
 		factory: message.NewConcreteMsgFactory()}
 }
 
-//
 // Add Entry to commit log
-//
 func (r *CommitLog) Log(txid common.Txnid, op common.OpCode, key string, content []byte) error {
 
 	k := createLogKey(txid)
@@ -83,9 +80,7 @@ func (r *CommitLog) Log(txid common.Txnid, op common.OpCode, key string, content
 	return nil
 }
 
-//
 // Retrieve entry from commit log
-//
 func (r *CommitLog) Get(txid common.Txnid) (common.OpCode, string, []byte, error) {
 
 	k := createLogKey(txid)
@@ -101,18 +96,14 @@ func (r *CommitLog) Get(txid common.Txnid) (common.OpCode, string, []byte, error
 	return common.GetOpCodeFromInt(entry.GetOpCode()), entry.GetKey(), entry.GetContent(), nil
 }
 
-//
 // Delete from commit log
-//
 func (r *CommitLog) Delete(txid common.Txnid) error {
 
 	k := createLogKey(txid)
 	return r.repo.Delete(COMMIT_LOG, k)
 }
 
-//
 // Mark a log entry has been committted
-//
 func (r *CommitLog) MarkCommitted(txid common.Txnid) error {
 	// no-op
 	return nil
@@ -122,9 +113,7 @@ func (r *CommitLog) MarkCommitted(txid common.Txnid) error {
 // LogIterator Public Function
 /////////////////////////////////////////////////////////////////////////////
 
-//
 // Create a new iterator
-//
 func (r *CommitLog) NewIterator(txid1, txid2 common.Txnid) (CommitLogIterator, error) {
 
 	startKey := createLogKey(txid1)

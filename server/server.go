@@ -17,14 +17,15 @@ package server
 
 import (
 	"errors"
+	"sync"
+	"time"
+
 	"github.com/couchbase/gometa/action"
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
 	"github.com/couchbase/gometa/message"
 	"github.com/couchbase/gometa/protocol"
 	r "github.com/couchbase/gometa/repository"
-	"sync"
-	"time"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -32,7 +33,7 @@ import (
 /////////////////////////////////////////////////////////////////////////////
 
 type Server struct {
-	repo        *r.Repository
+	repo        r.IRepository
 	log         *r.CommitLog
 	srvConfig   *r.ServerConfig
 	txn         *common.TxnState
@@ -93,9 +94,7 @@ func (s *Server) GetValue(key string) ([]byte, error) {
 // Server
 /////////////////////////////////////////////////////////////////////////////
 
-//
 // Bootstrp
-//
 func (s *Server) bootstrap() (err error) {
 
 	// Initialize server state
@@ -149,9 +148,7 @@ func (s *Server) bootstrap() (err error) {
 	return nil
 }
 
-//
 // run election
-//
 func (s *Server) runElection() (leader string, err error) {
 
 	host := GetHostUDPAddr()
@@ -182,9 +179,7 @@ func (s *Server) runElection() (leader string, err error) {
 	return leader, nil
 }
 
-//
 // run server (as leader or follower)
-//
 func (s *Server) runServer(leader string) (err error) {
 
 	host := GetHostUDPAddr()
@@ -208,9 +203,7 @@ func (s *Server) runServer(leader string) (err error) {
 	return err
 }
 
-//
 // Terminate the Server
-//
 func (s *Server) Terminate() {
 
 	s.state.mutex.Lock()
@@ -228,9 +221,7 @@ func (s *Server) Terminate() {
 	s.skillch <- true // kill leader/follower server
 }
 
-//
 // Check if server is terminated
-//
 func (s *Server) IsDone() bool {
 
 	s.state.mutex.Lock()
@@ -239,9 +230,7 @@ func (s *Server) IsDone() bool {
 	return s.state.done
 }
 
-//
 // Cleanup internal state upon exit
-//
 func (s *Server) cleanupState() {
 
 	s.state.mutex.Lock()
@@ -310,9 +299,7 @@ func (s *Server) cleanupState() {
 	}
 }
 
-//
 // Run the server until it stop.  Will not attempt to re-run.
-//
 func RunOnce() int {
 
 	log.Current.Debugf("Server.RunOnce() : Start Running Server")
@@ -380,9 +367,7 @@ func (s *Server) HasQuorum(count int) bool {
 // ServerState
 /////////////////////////////////////////////////////////////////////////////
 
-//
 // Create a new ServerState
-//
 func newServerState() *ServerState {
 
 	incomings := make(chan *protocol.RequestHandle, common.MAX_PROPOSALS*10)
@@ -432,9 +417,7 @@ func (s *ServerState) CleanupOnError() {
 // Request Handle
 /////////////////////////////////////////////////////////////////////////////
 
-//
 // Create a new request handle
-//
 func newRequestHandle(req protocol.RequestMsg) *protocol.RequestHandle {
 	handle := &protocol.RequestHandle{Request: req, Err: nil}
 	handle.CondVar = sync.NewCond(&handle.Mutex)
@@ -445,9 +428,7 @@ func newRequestHandle(req protocol.RequestMsg) *protocol.RequestHandle {
 // ServerCallback Interface
 /////////////////////////////////////////////////////////////////////////////
 
-//
 // Callback when a new proposal arrives
-//
 func (s *Server) UpdateStateOnNewProposal(proposal protocol.ProposalMsg) {
 
 	fid := proposal.GetFid()
@@ -494,9 +475,7 @@ func (s *Server) UpdateStateOnRespond(fid string, reqId uint64, err string, cont
 	}
 }
 
-//
 // Callback when a commit arrives
-//
 func (s *Server) UpdateStateOnCommit(txnid common.Txnid, key string) {
 
 	log.Current.Debugf("Server.UpdateStateOnCommit(): Committing proposal %d key %s.", txnid, key)

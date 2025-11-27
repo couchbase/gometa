@@ -41,19 +41,19 @@ const (
 	LOCAL
 )
 
-type Repository struct {
+type Fdb_Repository struct {
 	dbfile    *fdb.File
 	stores    map[RepoKind]*fdb.KVStore
-	snapshots map[RepoKind][]*Snapshot
+	snapshots map[RepoKind][]*Fdb_Snapshot
 	mutex     sync.Mutex
 }
 
-type RepoIterator struct {
+type Fdb_RepoIterator struct {
 	iter  *fdb.Iterator
 	store *fdb.KVStore
 }
 
-type Snapshot struct {
+type Fdb_Snapshot struct {
 	snapshot *fdb.KVStore
 	count    int
 	txnid    common.Txnid
@@ -64,18 +64,16 @@ type Snapshot struct {
 // Repository Public Function
 /////////////////////////////////////////////////////////////////////////////
 
-//
 // Open a repository
-//
-func OpenRepository() (*Repository, error) {
+func OpenRepository() (IRepository, error) {
 	return OpenRepositoryWithName(common.REPOSITORY_NAME, uint64(0))
 }
 
-func OpenRepositoryWithName(name string, memory_quota uint64) (repo *Repository, err error) {
+func OpenRepositoryWithName(name string, memory_quota uint64) (repo IRepository, err error) {
 	return OpenRepositoryWithName2(name, memory_quota, uint64(600), uint8(30), uint64(0))
 }
 
-func OpenRepositoryWithName2(name string, memory_quota uint64, sleepDur uint64, threshold uint8, minFileSize uint64) (repo *Repository, err error) {
+func OpenRepositoryWithName2(name string, memory_quota uint64, sleepDur uint64, threshold uint8, minFileSize uint64) (repo IRepository, err error) {
 
 	if memory_quota < common.MIN_FOREST_DB_CACHE_SIZE {
 		memory_quota = common.MIN_FOREST_DB_CACHE_SIZE
@@ -121,13 +119,13 @@ func OpenRepositoryWithName2(name string, memory_quota uint64, sleepDur uint64, 
 	}
 	cleanup.Cancel()
 
-	snapshots := make(map[RepoKind][]*Snapshot)
+	snapshots := make(map[RepoKind][]*Fdb_Snapshot)
 	snapshots[MAIN] = nil
 	snapshots[COMMIT_LOG] = nil
 	snapshots[SERVER_CONFIG] = nil
 	snapshots[LOCAL] = nil
 
-	repo = &Repository{dbfile: dbfile,
+	repo = &Fdb_Repository{dbfile: dbfile,
 		stores:    stores,
 		snapshots: snapshots}
 
@@ -188,10 +186,8 @@ func upgradeAndOpenDBFile(name string, config *fdb.Config,
 	return dbfile, nil
 }
 
-//
 // Update/Insert into the repository
-//
-func (r *Repository) Set(kind RepoKind, key string, content []byte) error {
+func (r *Fdb_Repository) Set(kind RepoKind, key string, content []byte) error {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -217,7 +213,7 @@ func (r *Repository) Set(kind RepoKind, key string, content []byte) error {
 	return r.dbfile.Commit(fdb.COMMIT_MANUAL_WAL_FLUSH)
 }
 
-func (r *Repository) CreateSnapshot(kind RepoKind, txnid common.Txnid) error {
+func (r *Fdb_Repository) CreateSnapshot(kind RepoKind, txnid common.Txnid) error {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -236,7 +232,7 @@ func (r *Repository) CreateSnapshot(kind RepoKind, txnid common.Txnid) error {
 		return err
 	}
 
-	snapshot := &Snapshot{snapshot: fdbSnapshot,
+	snapshot := &Fdb_Snapshot{snapshot: fdbSnapshot,
 		txnid: txnid,
 		count: 0}
 
@@ -248,7 +244,7 @@ func (r *Repository) CreateSnapshot(kind RepoKind, txnid common.Txnid) error {
 	return nil
 }
 
-func (r *Repository) AcquireSnapshot(kind RepoKind) (common.Txnid, *RepoIterator, error) {
+func (r *Fdb_Repository) AcquireSnapshot(kind RepoKind) (common.Txnid, IRepoIterator, error) {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -272,10 +268,10 @@ func (r *Repository) AcquireSnapshot(kind RepoKind) (common.Txnid, *RepoIterator
 	if err != nil {
 		return common.Txnid(0), nil, err
 	}
-	return snapshot.txnid, &RepoIterator{iter: iter, store: kvstore}, nil
+	return snapshot.txnid, &Fdb_RepoIterator{iter: iter, store: kvstore}, nil
 }
 
-func (r *Repository) ReleaseSnapshot(kind RepoKind, txnid common.Txnid) {
+func (r *Fdb_Repository) ReleaseSnapshot(kind RepoKind, txnid common.Txnid) {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -287,9 +283,9 @@ func (r *Repository) ReleaseSnapshot(kind RepoKind, txnid common.Txnid) {
 	}
 }
 
-func (r *Repository) pruneSnapshotNoLock(kind RepoKind) {
+func (r *Fdb_Repository) pruneSnapshotNoLock(kind RepoKind) {
 
-	var newList []*Snapshot = nil
+	var newList []*Fdb_Snapshot = nil
 	for _, snapshot := range r.snapshots[kind] {
 		if snapshot.count > 0 {
 			newList = append(newList, snapshot)
@@ -302,10 +298,8 @@ func (r *Repository) pruneSnapshotNoLock(kind RepoKind) {
 	r.snapshots[kind] = newList
 }
 
-//
 // Update/Insert into the repository
-//
-func (r *Repository) SetNoCommit(kind RepoKind, key string, content []byte) error {
+func (r *Fdb_Repository) SetNoCommit(kind RepoKind, key string, content []byte) error {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -326,10 +320,8 @@ func (r *Repository) SetNoCommit(kind RepoKind, key string, content []byte) erro
 	return r.stores[kind].SetKV(k, content)
 }
 
-//
 // Retrieve from repository
-//
-func (r *Repository) Get(kind RepoKind, key string) ([]byte, error) {
+func (r *Fdb_Repository) Get(kind RepoKind, key string) ([]byte, error) {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -349,10 +341,8 @@ func (r *Repository) Get(kind RepoKind, key string) ([]byte, error) {
 	return value, err
 }
 
-//
 // Delete from repository
-//
-func (r *Repository) Delete(kind RepoKind, key string) error {
+func (r *Fdb_Repository) Delete(kind RepoKind, key string) error {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -375,10 +365,8 @@ func (r *Repository) Delete(kind RepoKind, key string) error {
 	return r.dbfile.Commit(fdb.COMMIT_MANUAL_WAL_FLUSH)
 }
 
-//
 // Delete from repository
-//
-func (r *Repository) DeleteNoCommit(kind RepoKind, key string) error {
+func (r *Fdb_Repository) DeleteNoCommit(kind RepoKind, key string) error {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -396,10 +384,8 @@ func (r *Repository) DeleteNoCommit(kind RepoKind, key string) error {
 	return r.stores[kind].DeleteKV(k)
 }
 
-//
 // Delete from repository
-//
-func (r *Repository) Commit() error {
+func (r *Fdb_Repository) Commit() error {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -411,10 +397,8 @@ func (r *Repository) Commit() error {
 	return r.dbfile.Commit(fdb.COMMIT_MANUAL_WAL_FLUSH)
 }
 
-//
 // Close repository.
-//
-func (r *Repository) Close() {
+func (r *Fdb_Repository) Close() {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
@@ -447,10 +431,8 @@ func (r *Repository) Close() {
 // RepoIterator Public Function
 /////////////////////////////////////////////////////////////////////////////
 
-//
 // Create a new iterator.  EndKey is inclusive.
-//
-func (r *Repository) NewIterator(kind RepoKind, startKey, endKey string) (*RepoIterator, error) {
+func (r *Fdb_Repository) NewIterator(kind RepoKind, startKey, endKey string) (IRepoIterator, error) {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -477,12 +459,12 @@ func (r *Repository) NewIterator(kind RepoKind, startKey, endKey string) (*RepoI
 	if err != nil {
 		return nil, err
 	}
-	result := &RepoIterator{iter: iter, store: snapshot}
+	result := &Fdb_RepoIterator{iter: iter, store: snapshot}
 	return result, nil
 }
 
 // Get value from iterator
-func (i *RepoIterator) Next() (key string, content []byte, err error) {
+func (i *Fdb_RepoIterator) Next() (key string, content []byte, err error) {
 
 	if i.iter == nil {
 		return "", nil, fdb.RESULT_ITERATOR_FAIL
@@ -515,7 +497,7 @@ func (i *RepoIterator) Next() (key string, content []byte, err error) {
 }
 
 // close iterator
-func (i *RepoIterator) Close() {
+func (i *Fdb_RepoIterator) Close() {
 	// TODO: Check if fdb iterator is closed
 	if i.iter != nil {
 		i.iter.Close()

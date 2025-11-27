@@ -17,6 +17,7 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/couchbase/gometa/action"
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/message"
@@ -26,7 +27,7 @@ import (
 )
 
 type fakeServer struct {
-	repo    *repo.Repository
+	repo    repo.IRepository
 	factory protocol.MsgFactory
 	handler *action.ServerAction
 	txn     *common.TxnState

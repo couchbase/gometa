@@ -17,13 +17,16 @@ package repository
 
 import (
 	"fmt"
+
 	"github.com/couchbase/gometa/common"
 	logging "github.com/couchbase/gometa/log"
 	"github.com/couchbase/gometa/message"
+
 	// fdb "github.com/couchbase/goforestdb"
-	fdb "github.com/couchbase/indexing/secondary/fdb"
 	"sync"
 	"time"
+
+	fdb "github.com/couchbase/indexing/secondary/fdb"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -31,16 +34,16 @@ import (
 /////////////////////////////////////////////////////////////////////////////
 
 type TransientCommitLog struct {
-	repo    *Repository
+	repo    IRepository
 	factory *message.ConcreteMsgFactory
 	logs    map[common.Txnid]*message.LogEntry
 	mutex   sync.Mutex
 }
 
 type TransientLogIterator struct {
-	repo  *Repository
+	repo  IRepository
 	txnid common.Txnid
-	iter  *RepoIterator
+	iter  IRepoIterator
 
 	curTxnid   common.Txnid
 	curKey     string
@@ -52,10 +55,8 @@ type TransientLogIterator struct {
 // CommitLog Public Function
 /////////////////////////////////////////////////////////////////////////////
 
-//
 // Create a new commit log
-//
-func NewTransientCommitLog(repo *Repository, lastCommittedTxnid common.Txnid) (CommitLogger, error) {
+func NewTransientCommitLog(repo IRepository, lastCommittedTxnid common.Txnid) (CommitLogger, error) {
 
 	log := &TransientCommitLog{
 		repo:    repo,
@@ -72,9 +73,7 @@ func NewTransientCommitLog(repo *Repository, lastCommittedTxnid common.Txnid) (C
 	return log, nil
 }
 
-//
 // Add Entry to commit log
-//
 func (r *TransientCommitLog) Log(txid common.Txnid, op common.OpCode, key string, content []byte) error {
 
 	msg := r.factory.CreateLogEntry(uint64(txid), uint32(op), key, content)
@@ -82,9 +81,7 @@ func (r *TransientCommitLog) Log(txid common.Txnid, op common.OpCode, key string
 	return nil
 }
 
-//
 // Retrieve entry from commit log
-//
 func (r *TransientCommitLog) Get(txid common.Txnid) (common.OpCode, string, []byte, error) {
 
 	msg, ok := r.logs[txid]
@@ -100,18 +97,14 @@ func (r *TransientCommitLog) Get(txid common.Txnid) (common.OpCode, string, []by
 	return common.GetOpCodeFromInt(msg.GetOpCode()), key, content, nil
 }
 
-//
 // Delete from commit log
-//
 func (r *TransientCommitLog) Delete(txid common.Txnid) error {
 	delete(r.logs, txid)
 	return nil
 }
 
-//
 // Mark a log entry has been committted.   This function is called when there
 // is no concurrent commit for the given txid to match the repo snapshot.
-//
 func (r *TransientCommitLog) MarkCommitted(txid common.Txnid) error {
 
 	delete(r.logs, txid)
@@ -126,20 +119,18 @@ func (r *TransientCommitLog) MarkCommitted(txid common.Txnid) error {
 // LogIterator Public Function
 /////////////////////////////////////////////////////////////////////////////
 
-//
 // Create a new iterator.   This is used by LeaderSyncProxy to replicate log
 // entries to a folower/watcher.  txid1 is last logged commited txid from follower/watcher.
 // txid2 is the txid of the first packet in the observer queue for this follower/watcher.
 // If the observer queue is empty, then txid2 is 0.
 //
 // For any LogEntry returned form the iterator, the following condition must be satisifed:
-// 1) The txid of any LogEntry returned from the iterator must be greater than or equal to txid1.
-// 2) The last LogEntry must have txid >= txid2.  In other words, the iterator can gaurantee
-//    that it will cover any mutation by txid2, but cannot guarantee that it stops at txid2.
+//  1. The txid of any LogEntry returned from the iterator must be greater than or equal to txid1.
+//  2. The last LogEntry must have txid >= txid2.  In other words, the iterator can gaurantee
+//     that it will cover any mutation by txid2, but cannot guarantee that it stops at txid2.
 //
 // Since TransientCommitLog does not keep track of history, it only supports the following case:
 // 1) the beginning txid (txid1) is 0 (sending the full repository)
-//
 func (r *TransientCommitLog) NewIterator(txid1, txid2 common.Txnid) (CommitLogIterator, error) {
 
 	if txid1 != 0 {

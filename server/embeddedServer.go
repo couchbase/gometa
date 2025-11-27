@@ -17,14 +17,15 @@ package server
 
 import (
 	"errors"
+	"sync"
+	"time"
+
 	"github.com/couchbase/gometa/action"
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
 	"github.com/couchbase/gometa/message"
 	"github.com/couchbase/gometa/protocol"
 	r "github.com/couchbase/gometa/repository"
-	"sync"
-	"time"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -35,7 +36,7 @@ type EmbeddedServer struct {
 	repoName    string
 	msgAddr     string
 	quota       uint64
-	repo        *r.Repository
+	repo        r.IRepository
 	log         r.CommitLogger
 	srvConfig   *r.ServerConfig
 	txn         *common.TxnState
@@ -125,9 +126,7 @@ func RunEmbeddedServerWithCustomHandler3(msgAddr string,
 	return server, nil
 }
 
-//
 // Terminate the Server
-//
 func (s *EmbeddedServer) Terminate() {
 
 	s.mutex.RLock()
@@ -145,9 +144,7 @@ func (s *EmbeddedServer) Terminate() {
 	s.skillch <- true // kill leader/follower server
 }
 
-//
 // Reset Connections
-//
 func (s *EmbeddedServer) ResetConnections() error {
 
 	// restart listener
@@ -173,9 +170,7 @@ func (s *EmbeddedServer) ResetConnections() error {
 	return nil
 }
 
-//
 // Check if server is terminated
-//
 func (s *EmbeddedServer) IsDone() bool {
 
 	s.state.mutex.RLock()
@@ -184,9 +179,7 @@ func (s *EmbeddedServer) IsDone() bool {
 	return s.state.done
 }
 
-//
 // Check if server is active
-//
 func (s *EmbeddedServer) IsActive() bool {
 
 	s.mutex.RLock()
@@ -195,9 +188,7 @@ func (s *EmbeddedServer) IsActive() bool {
 	return s.isActiveNoLock()
 }
 
-//
 // Check if server is active
-//
 func (s *EmbeddedServer) isActiveNoLock() bool {
 
 	s.state.mutex.RLock()
@@ -206,9 +197,7 @@ func (s *EmbeddedServer) isActiveNoLock() bool {
 	return s.initialized && !s.state.done
 }
 
-//
 // Retrieve value
-//
 func (s *EmbeddedServer) GetValue(key string) ([]byte, error) {
 
 	s.mutex.RLock()
@@ -221,16 +210,12 @@ func (s *EmbeddedServer) GetValue(key string) ([]byte, error) {
 	return s.handler.Get(key)
 }
 
-//
 // Set value
-//
 func (s *EmbeddedServer) SetValue(key string, value []byte) {
 	s.Set(key, value)
 }
 
-//
 // Delete value
-//
 func (s *EmbeddedServer) DeleteValue(key string) {
 	s.Delete(key)
 }
@@ -264,9 +249,7 @@ func (s *EmbeddedServer) postToIncomings(handle *protocol.RequestHandle) error {
 	return nil
 }
 
-//
 // Set value
-//
 func (s *EmbeddedServer) Set(key string, value []byte) error {
 
 	id, err := common.NewUUID()
@@ -297,9 +280,7 @@ func (s *EmbeddedServer) Set(key string, value []byte) error {
 	return handle.Err
 }
 
-//
 // Broadcast value
-//
 func (s *EmbeddedServer) Broadcast(key string, value []byte) error {
 
 	id, err := common.NewUUID()
@@ -330,9 +311,7 @@ func (s *EmbeddedServer) Broadcast(key string, value []byte) error {
 	return handle.Err
 }
 
-//
 // Set value
-//
 func (s *EmbeddedServer) MakeRequest(op common.OpCode, key string, value []byte) error {
 
 	id, err := common.NewUUID()
@@ -386,9 +365,7 @@ func (s *EmbeddedServer) MakeAsyncRequest(op common.OpCode, key string, value []
 	return nil
 }
 
-//
 // Delete value
-//
 func (s *EmbeddedServer) Delete(key string) error {
 
 	id, err := common.NewUUID()
@@ -419,10 +396,8 @@ func (s *EmbeddedServer) Delete(key string) error {
 	return handle.Err
 }
 
-//
 // Create a new iterator
-//
-func (s *EmbeddedServer) GetIterator(startKey, endKey string) (*r.RepoIterator, error) {
+func (s *EmbeddedServer) GetIterator(startKey, endKey string) (r.IRepoIterator, error) {
 
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
@@ -434,7 +409,7 @@ func (s *EmbeddedServer) GetIterator(startKey, endKey string) (*r.RepoIterator, 
 	return s.repo.NewIterator(r.MAIN, startKey, endKey)
 }
 
-func (s *EmbeddedServer) GetServerConfigIterator(startKey, endKey string) (*r.RepoIterator, error) {
+func (s *EmbeddedServer) GetServerConfigIterator(startKey, endKey string) (r.IRepoIterator, error) {
 
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
@@ -486,9 +461,7 @@ func (s *EmbeddedServer) GetConfigValue(key string) (string, error) {
 // Server
 /////////////////////////////////////////////////////////////////////////////
 
-//
 // change server state
-//
 func (s *EmbeddedServer) changeServerState() {
 
 	newState := newServerState()
@@ -505,9 +478,7 @@ func (s *EmbeddedServer) changeServerState() {
 	s.state = newState
 }
 
-//
 // Bootstrp
-//
 func (s *EmbeddedServer) bootstrap() (err error) {
 
 	s.mutex.Lock()
@@ -619,9 +590,7 @@ func (s *EmbeddedServer) run() {
 	}
 }
 
-//
 // Cleanup internal state upon exit
-//
 func (s *EmbeddedServer) cleanup() {
 
 	common.SafeRun("EmbeddedServer.cleanup()",
@@ -684,9 +653,7 @@ func cleanupServerState(state *ServerState) {
 	}
 }
 
-//
 // Run the server until it stop.  Will not attempt to re-run.
-//
 func (s *EmbeddedServer) runOnce() {
 
 	defer func() {
@@ -725,9 +692,7 @@ func (s *EmbeddedServer) HasQuorum(count int) bool {
 // ServerCallback Interface
 /////////////////////////////////////////////////////////////////////////////
 
-//
 // Callback when a new proposal arrives
-//
 func (s *EmbeddedServer) UpdateStateOnNewProposal(proposal protocol.ProposalMsg) {
 
 	fid := proposal.GetFid()
@@ -776,9 +741,7 @@ func (s *EmbeddedServer) UpdateStateOnRespond(fid string, reqId uint64, err stri
 	}
 }
 
-//
 // Callback when a commit arrives
-//
 func (s *EmbeddedServer) UpdateStateOnCommit(txnid common.Txnid, key string) {
 
 	log.Current.Debugf("EmbeddedServer.UpdateStateOnCommit(): Committing proposal %d key %s.", txnid, key)

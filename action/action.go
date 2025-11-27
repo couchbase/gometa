@@ -17,6 +17,7 @@ package action
 
 import (
 	"fmt"
+
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/message"
 	"github.com/couchbase/gometa/protocol"
@@ -43,7 +44,7 @@ type DefaultServerCallback interface {
 }
 
 type ServerAction struct {
-	repo     *repo.Repository
+	repo     repo.IRepository
 	log      repo.CommitLogger
 	config   *repo.ServerConfig
 	txn      *common.TxnState
@@ -62,7 +63,7 @@ type EventNotifier interface {
 // Public Function
 /////////////////////////////////////////////////////////////////////////////
 
-func NewDefaultServerAction(repository *repo.Repository,
+func NewDefaultServerAction(repository repo.IRepository,
 	server DefaultServerCallback,
 	txn *common.TxnState) *ServerAction {
 
@@ -81,7 +82,7 @@ func NewDefaultServerAction(repository *repo.Repository,
 		verifier: server}
 }
 
-func NewServerAction(repo *repo.Repository,
+func NewServerAction(repo repo.IRepository,
 	log repo.CommitLogger,
 	config *repo.ServerConfig,
 	server ServerCallback,
@@ -100,7 +101,7 @@ func NewServerAction(repo *repo.Repository,
 		verifier: verifier}
 }
 
-func NewServerActionWithNotifier(repo *repo.Repository,
+func NewServerActionWithNotifier(repo repo.IRepository,
 	log repo.CommitLogger,
 	config *repo.ServerConfig,
 	server ServerCallback,

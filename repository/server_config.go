@@ -17,8 +17,9 @@ package repository
 
 import (
 	"fmt"
-	"github.com/couchbase/gometa/common"
 	"strconv"
+
+	"github.com/couchbase/gometa/common"
 )
 
 /////////////////////////////////////////////////////////////////////////////
@@ -26,17 +27,15 @@ import (
 /////////////////////////////////////////////////////////////////////////////
 
 type ServerConfig struct {
-	repo *Repository
+	repo IRepository
 }
 
 /////////////////////////////////////////////////////////////////////////////
 // Public Function
 /////////////////////////////////////////////////////////////////////////////
 
-//
 // Create a new server config
-//
-func NewServerConfig(repo *Repository) *ServerConfig {
+func NewServerConfig(repo IRepository) *ServerConfig {
 	config := &ServerConfig{repo: repo}
 	config.bootstrap()
 	return config
@@ -94,27 +93,21 @@ func (r *ServerConfig) SetLastCommittedTxid(lastCommittedTxid common.Txnid) erro
 	return nil
 }
 
-//
 // Add Entry to server config
-//
 func (r *ServerConfig) LogStr(key string, content string) error {
 
 	k := createConfigKey(key)
 	return r.repo.Set(SERVER_CONFIG, k, []byte(content))
 }
 
-//
 // Add Entry to server config
-//
 func (r *ServerConfig) LogInt(key string, content uint64) error {
 
 	k := createConfigKey(key)
 	return r.repo.Set(SERVER_CONFIG, k, []byte(strconv.FormatUint(content, 10)))
 }
 
-//
 // Retrieve entry from server config
-//
 func (r *ServerConfig) GetStr(key string) (string, error) {
 
 	k := createConfigKey(key)
@@ -126,9 +119,7 @@ func (r *ServerConfig) GetStr(key string) (string, error) {
 	return string(data), nil
 }
 
-//
 // Retrieve entry from server config
-//
 func (r *ServerConfig) GetInt(key string) (uint64, error) {
 
 	k := createConfigKey(key)
@@ -140,9 +131,7 @@ func (r *ServerConfig) GetInt(key string) (uint64, error) {
 	return strconv.ParseUint(string(data), 10, 64)
 }
 
-//
 // Delete from server config
-//
 func (r *ServerConfig) Delete(key string) error {
 
 	k := createConfigKey(key)
@@ -171,9 +160,7 @@ func (r *ServerConfig) bootstrap() {
 	}
 }
 
-//
 // Add Entry to server config
-//
 func (r *ServerConfig) bootstrapKey(key string, content uint64) {
 
 	k := createConfigKey(key)
