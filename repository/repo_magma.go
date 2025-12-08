@@ -22,22 +22,6 @@ import (
 
 var l = log.Current
 
-func newMagmaError(status MagmaOpStatus) error {
-	if status.Code != 0 {
-		return &StoreError{
-			sType: MagmaStoreType,
-			errMsg: fmt.Sprintf("(%d)%v",
-				status.Code,
-				C.GoStringN(
-					status.ErrMsg.data,       // string *C.Char
-					C.int(status.ErrMsg.len), // len C.int
-				),
-			),
-		}
-	}
-	return nil
-}
-
 // type aliases for ease of use
 type (
 	uint8_t           = C.uint8_t
@@ -56,6 +40,7 @@ type (
 	MagmaMemAllocator = C.MagmaWorkContext
 	MagmaOpStatus     = C.CStatus
 	MagmaSnapshot     = C.MagmaSnapHandle
+	MagmaStatusCode   = C.int
 )
 
 func defaultMagmaCfg() *MagmaShardConfig {
@@ -76,15 +61,6 @@ const (
 	CommitLogMagmaStoreID                        // CommitLogMagmaStoreID -> 2; for repo kind COMMIT_LOG
 	ServerConfigMagmaStoreID                     // ServerConfigMagmaStoreID -> 3; for repo kind SERVER_CONFIG
 	LocalMagmaStoreID                            // LocalMagmaStoreID -> 4; for repo kind LOCAL
-)
-
-const (
-	MagmaOpInsert MagmaOp = iota
-	MagmaOpUpsert
-	MagmaOpDelete
-	MagmaOpLocalUpdate
-	MagmaOpLocalDelete
-	MagmaOpDiscard
 )
 
 func storeIDString(storeID MagmaStoreID) string {
@@ -129,6 +105,159 @@ func magmaStoreIDToRepoKind(storeID MagmaStoreID) RepoKind {
 	return LOCAL
 }
 
+// Magma Op codes
+const (
+	MagmaOpInsert MagmaOp = iota
+	MagmaOpUpsert
+	MagmaOpDelete
+	MagmaOpLocalUpdate
+	MagmaOpLocalDelete
+	MagmaOpDiscard
+)
+
+// Magma Error codes. translated from `magma/include/libmagma/status.h`
+const (
+	// No error status code
+	MagmaStatusOk MagmaStatusCode = iota
+	// This is a special case of code OK that indicates there were no errors
+	// in processing the doc lookup request and
+	// the doc was not found.
+	MagmaStatusOkNotFound
+	// Internal error indicates the operation failed due to violation of
+	// some internal constraint or some unexpected state or encountering an
+	// unexpected failure condition (for eg compression failure). These are
+	// not recoverable.
+	MagmaStatusInternal
+	// Invalid indicates the operation or the input argument to a method is
+	// not valid/supported. It is analogous to std::invalid_argument. These
+	// are due to programmatic errors/improper usage of APIs by the user,
+	// for example trying to open an already opened Magma instance.
+	MagmaStatusInvalid
+	// InvalidKVStore is a sub code under the Invalid code. It is used to
+	// indicate an operation failed because the specified KVStore does not
+	// exist. It is a recoverable error.
+	MagmaStatusInvalidKVStore
+	// Corruption means the on disk state of Magma is not what is expected.
+	// Some examples of corruption: checksum mismatches, decompression
+	// failures, etc. This is an unrecoverable error.
+	MagmaStatusCorruption
+	// NotFound indicates the requested resource does not exist. Whether
+	// recovery is possible or not depends upon the context and what the
+	// resource is. For example, when answering GetDocs, if a sstable is not
+	// found, it means data loss and recovery is not possible.
+	MagmaStatusNotFound
+	// IOError is a generic error returned when a syscall related to file
+	// operations fails. Recovery may be possible by addressing the cause.
+	// TransientIO, DiskFull, NoAccess are special codes under the IOError.
+	MagmaStatusIOError
+	// ReadOnly means Magma is in a read only mode and a data modification
+	// operation (file delete/create/write/truncate etc) was attempted that
+	// is not allowed. This is a recoverable error. Recovery requires
+	// reopening Magma is read-write mode.
+	MagmaStatusReadOnly
+	// TransientIO maps to an error from the filesystem. This is a
+	// recoverable error. To recover, the underlying cause needs to be
+	// addressed. For example, if the error is crossing the limit of number
+	// of open files, increasing the limit will resolve the error.
+	MagmaStatusTransientIO
+	// DiskFull maps to an error from the filesystem. This is a recoverable
+	// error and can be recovered from if some disk space is freed up.
+	MagmaStatusDiskFull
+	// Cancelled indicates an operation (for eg a compaction) was cancelled.
+	// It is safe to retry the operation.
+	MagmaStatusCancelled
+	// RetryLater indicates the operation cannot proceed right now due to
+	// some reason and should be retried later.
+	MagmaStatusRetryLater
+	// CheckpointNotFound indicates that a checkpoint was not found on disk.
+	// It is a recoverable error. Resolving it depends on the context.
+	MagmaStatusCheckpointNotFound
+	// NoAccess maps to an error from the filesystem. It indicates the
+	// performed syscall is not allowed based on current permissions set on
+	// the file. This is recoverable if the file permissions are revised.
+	MagmaStatusNoAccess
+	// EncryptionKeyNotFound indicates that a required encryption key was
+	// not found. It is a recoverable error once the required key is
+	// provided.
+	MagmaStatusEncryptionKeyNotFound
+)
+
+func magmaStatusString(code MagmaStatusCode) string {
+	switch code {
+	case MagmaStatusOk:
+		return "StatusOk"
+	case MagmaStatusOkNotFound:
+		return "StatusOkNotFound"
+	case MagmaStatusInternal:
+		return "StatusInternal"
+	case MagmaStatusInvalid:
+		return "StatusInvalid"
+	case MagmaStatusInvalidKVStore:
+		return "StatusInvalidKVStore"
+	case MagmaStatusCorruption:
+		return "StatusCorruption"
+	case MagmaStatusNotFound:
+		return "StatusNotFound"
+	case MagmaStatusIOError:
+		return "StatusIOError"
+	case MagmaStatusReadOnly:
+		return "StatusReadOnly"
+	case MagmaStatusTransientIO:
+		return "StatusTransientIO"
+	case MagmaStatusDiskFull:
+		return "StatusDiskFull"
+	case MagmaStatusCancelled:
+		return "StatusCancelled"
+	case MagmaStatusRetryLater:
+		return "StatusRetryLater"
+	case MagmaStatusCheckpointNotFound:
+		return "StatusCheckpointNotFound"
+	case MagmaStatusNoAccess:
+		return "StatusNoAccess"
+	case MagmaStatusEncryptionKeyNotFound:
+		return "StatusEncryptionKeyNotFound"
+	default:
+		return fmt.Sprintf("StatusUnknown(%d)", code)
+	}
+}
+
+func translateMagmaErrToStoreErr(status MagmaOpStatus) error {
+	if status.Code == MagmaStatusOk {
+		return nil
+	}
+	errCode := ErrInternalError
+	switch status.Code {
+	case MagmaStatusOkNotFound:
+		errCode = ErrResultNotFoundCode
+		// TODO: extend generic error codes and expand them here too
+	}
+	return &StoreError{
+		sType: MagmaStoreType,
+		errMsg: fmt.Sprintf("(%d-%s)%v",
+			status.Code, magmaStatusString(status.Code),
+			C.GoStringN(
+				status.ErrMsg.data,       // string *C.Char
+				C.int(status.ErrMsg.len), // len C.int
+			),
+		),
+		storeCode: errCode,
+		rawErr:    status.Code,
+	}
+}
+
+var (
+	magmaErrRepoClosed = &StoreError{
+		sType:     MagmaStoreType,
+		errMsg:    ErrRepoClosedCode.Error(),
+		storeCode: ErrRepoClosedCode,
+	}
+	magmaErrIterFail = &StoreError{
+		sType:     MagmaStoreType,
+		errMsg:    "MAGMA_ITERATOR_FAIL",
+		storeCode: ErrIterFailCode,
+	}
+)
+
 // Magma_Repository is the global interface to magma backed store
 type Magma_Repository struct {
 	sync.Mutex
@@ -153,7 +282,7 @@ func OpenMagmaRepository(path string) (IRepository, error) {
 		cfg,    // config *C.MagmaKVStoreConfig
 	)
 	cstatus := C.MKV_Open(mInst /*inst *C.MagmaKVStore*/)
-	if err := newMagmaError(cstatus); err != nil {
+	if err := translateMagmaErrToStoreErr(cstatus); err != nil {
 		return nil, err
 	}
 
@@ -196,7 +325,7 @@ func OpenMagmaRepository(path string) (IRepository, error) {
 				storeId,                   // C.uint16_t
 				m_repo.storeRev[repoKind], // C.uint32_t
 			)
-			if err := newMagmaError(cstatus); err != nil {
+			if err := translateMagmaErrToStoreErr(cstatus); err != nil {
 				return m_repo, err
 			}
 			l.Infof("OpenMagmaRepository: created kv store %v using rev 1",
@@ -278,7 +407,7 @@ func (m_repo *Magma_Repository) setNoCommitNoLock(kind RepoKind, key string, con
 		rec,                   // recs (*C.CRecord) -> []{Op, C.SizedBuf, C.SizedBuf, C.SizedBuf}
 		1,                     // numRecs C.size_t
 	)
-	return newMagmaError(cstatus)
+	return translateMagmaErrToStoreErr(cstatus)
 }
 
 func (m_repo *Magma_Repository) SetNoCommit(kind RepoKind, key string, content []byte) error {
@@ -286,7 +415,7 @@ func (m_repo *Magma_Repository) SetNoCommit(kind RepoKind, key string, content [
 	defer m_repo.Unlock()
 
 	if m_repo.isClosed {
-		return ErrRepoClosed
+		return magmaErrRepoClosed
 	}
 
 	return m_repo.setNoCommitNoLock(kind, key, content)
@@ -297,7 +426,7 @@ func (m_repo *Magma_Repository) Set(kind RepoKind, key string, content []byte) e
 	defer m_repo.Unlock()
 
 	if m_repo.isClosed {
-		return ErrRepoClosed
+		return magmaErrRepoClosed
 	}
 
 	storeID := repoKindToMagmaStoreID(kind)
@@ -310,7 +439,7 @@ func (m_repo *Magma_Repository) Set(kind RepoKind, key string, content []byte) e
 		m_repo.mInst, // *C.MagmaKVStore
 		storeID,      // C.uint16_t
 	)
-	return newMagmaError(cstatus)
+	return translateMagmaErrToStoreErr(cstatus)
 }
 
 func (m_repo *Magma_Repository) Get(kind RepoKind, key string) ([]byte, error) {
@@ -318,7 +447,7 @@ func (m_repo *Magma_Repository) Get(kind RepoKind, key string) ([]byte, error) {
 	defer m_repo.Unlock()
 
 	if m_repo.isClosed {
-		return nil, ErrRepoClosed
+		return nil, magmaErrRepoClosed
 	}
 
 	return m_repo.getNoLock(kind, key)
@@ -348,7 +477,7 @@ func (m_repo *Magma_Repository) getNoLock(kind RepoKind, key string) ([]byte, er
 	m_repo.memAllocMutex.Unlock()
 
 	if cstatus.Code != 0 {
-		return nil, newMagmaError(cstatus)
+		return nil, translateMagmaErrToStoreErr(cstatus)
 	}
 
 	res := C.GoBytes(unsafe.Pointer(val.data), C.int(val.len))
@@ -359,10 +488,13 @@ func (m_repo *Magma_Repository) getNoLock(kind RepoKind, key string) ([]byte, er
 func (m_repo *Magma_Repository) deleteNoCommitNoLock(kind RepoKind, key string) error {
 
 	// verify that key exists. if not, don't attempt delete as it can hang magma compaction
-	if res, err := m_repo.getNoLock(kind, key); err != nil || len(res) == 0 {
-		// TODO: understand if we should return error or nil if key does not exist
-		// key does not exist
-		return fmt.Errorf("key %v does not exist", key)
+	if _, err := m_repo.getNoLock(kind, key); err != nil {
+		magmaErr, ok := err.(*StoreError)
+		if ok && magmaErr.storeCode == ErrResultNotFoundCode {
+			// we should return nil if key does not exist
+			return nil
+		}
+		return err
 	}
 
 	storeID := repoKindToMagmaStoreID(kind)
@@ -383,7 +515,7 @@ func (m_repo *Magma_Repository) deleteNoCommitNoLock(kind RepoKind, key string) 
 		1,                     // numRecs C.size_t
 	)
 
-	return newMagmaError(cstatus)
+	return translateMagmaErrToStoreErr(cstatus)
 }
 
 func (m_repo *Magma_Repository) DeleteNoCommit(kind RepoKind, key string) error {
@@ -391,7 +523,7 @@ func (m_repo *Magma_Repository) DeleteNoCommit(kind RepoKind, key string) error 
 	defer m_repo.Unlock()
 
 	if m_repo.isClosed {
-		return ErrRepoClosed
+		return magmaErrRepoClosed
 	}
 
 	return m_repo.deleteNoCommitNoLock(kind, key)
@@ -402,7 +534,7 @@ func (m_repo *Magma_Repository) Delete(kind RepoKind, key string) error {
 	defer m_repo.Unlock()
 
 	if m_repo.isClosed {
-		return ErrRepoClosed
+		return magmaErrRepoClosed
 	}
 
 	storeID := repoKindToMagmaStoreID(kind)
@@ -415,7 +547,7 @@ func (m_repo *Magma_Repository) Delete(kind RepoKind, key string) error {
 		m_repo.mInst, // *C.MagmaKVStore
 		storeID,      // C.uint16_t
 	)
-	return newMagmaError(cstatus)
+	return translateMagmaErrToStoreErr(cstatus)
 }
 
 func (m_repo *Magma_Repository) GetItemsCount(kind RepoKind) uint64 {
@@ -458,11 +590,15 @@ func (m_repo *Magma_Repository) Commit() error {
 	defer m_repo.Unlock()
 
 	if m_repo.isClosed {
-		return ErrRepoClosed
+		return magmaErrRepoClosed
 	}
 
 	cstatus := C.MKV_Sync(m_repo.mInst /* *C.MagmaKVStore */)
-	return newMagmaError(cstatus)
+	return translateMagmaErrToStoreErr(cstatus)
+}
+
+func (m_repo *Magma_Repository) Type() StoreType {
+	return MagmaStoreType
 }
 
 type MagmaKIterWrapper struct {
@@ -485,7 +621,7 @@ func NewMagmaKIterWrapper(
 		defer C.free(unsafe.Pointer(arr))
 		buf := &MagmaStringBuf{data: arr, len: arrLen}
 
-		err := newMagmaError(C.MKVItr_Seek(
+		err := translateMagmaErrToStoreErr(C.MKVItr_Seek(
 			iter, // *C.MagmaKeyIterator
 			buf,  // startKey *C.char
 		))
@@ -497,7 +633,7 @@ func NewMagmaKIterWrapper(
 	} else {
 		// perform Seek to move cursor of iterator to the start. MagmaIterators will not return
 		// data without this
-		status := newMagmaError(C.MKVItr_SeekFirst(iter /**C.MagmaKeyIterator*/))
+		status := translateMagmaErrToStoreErr(C.MKVItr_SeekFirst(iter /**C.MagmaKeyIterator*/))
 		if status != nil {
 			l.Errorf("NewMagmaKIterWrapper couldn't perform first seek on iterator for kind %v, iterator error - %v", kind, status)
 		}
@@ -533,14 +669,14 @@ func (wrapper *MagmaKIterWrapper) Close() {
 
 func (wrapper *MagmaKIterWrapper) Next() (string, []byte, error) {
 	if wrapper == nil {
-		return "", nil, ErrIterFail
+		return "", nil, magmaErrIterFail
 	}
 
 	wrapper.Lock()
 	defer wrapper.Unlock()
 
 	if wrapper.isClosed || wrapper.iter == nil {
-		return "", nil, ErrIterFail
+		return "", nil, magmaErrIterFail
 	}
 
 	var key, val MagmaStringBuf
@@ -560,7 +696,7 @@ func (wrapper *MagmaKIterWrapper) Next() (string, []byte, error) {
 			)
 			wrapper.closeNoLock()
 		}
-		return "", nil, ErrIterFail
+		return "", nil, magmaErrIterFail
 	}
 
 	// always copy key and val
@@ -572,7 +708,7 @@ func (wrapper *MagmaKIterWrapper) Next() (string, []byte, error) {
 		// safety call. if any wrapper goes unclosed, we have open snapshots which prevents magma
 		// close
 		wrapper.closeNoLock()
-		return "", nil, ErrIterFail
+		return "", nil, magmaErrIterFail
 	}
 
 	var retErr error
@@ -582,7 +718,6 @@ func (wrapper *MagmaKIterWrapper) Next() (string, []byte, error) {
 		// safety call. if any wrapper goes unclosed, we have open snapshots which prevents magma
 		// close
 		wrapper.closeNoLock()
-		retErr = ErrIterFail
 	}
 
 	return goKey, goVal, retErr
@@ -607,7 +742,7 @@ func (m_repo *Magma_Repository) CreateSnapshot(kind RepoKind, txnid c.Txnid) err
 	m_repo.Lock()
 	defer m_repo.Unlock()
 	if m_repo.isClosed {
-		return ErrRepoClosed
+		return magmaErrRepoClosed
 	}
 
 	storeID := repoKindToMagmaStoreID(kind)
@@ -620,9 +755,9 @@ func (m_repo *Magma_Repository) CreateSnapshot(kind RepoKind, txnid c.Txnid) err
 		1,            /* C.int_t - use a disk snapshot on 1 */
 	)
 	if snap == nil {
-		return StoreError{sType: MagmaStoreType,
-			errMsg: fmt.Sprintf("failed to create snapshot for store %v",
-				storeIDString(storeID))}
+		return translateMagmaErrToStoreErr(MagmaOpStatus{
+			Code: MagmaStatusInternal,
+		})
 	}
 
 	container := &magmaSnapContainer{
@@ -644,7 +779,7 @@ func (m_repo *Magma_Repository) AcquireSnapshot(kind RepoKind) (c.Txnid, IRepoIt
 	defer m_repo.Unlock()
 
 	if m_repo.isClosed {
-		return 0, nil, ErrRepoClosed
+		return 0, nil, magmaErrRepoClosed
 	}
 
 	if len(m_repo.snapshots[kind]) == 0 {
@@ -694,7 +829,7 @@ func (m_repo *Magma_Repository) NewIterator(kind RepoKind,
 	defer m_repo.Unlock()
 
 	if m_repo.isClosed {
-		return nil, ErrRepoClosed
+		return nil, magmaErrRepoClosed
 	}
 
 	storeID := repoKindToMagmaStoreID(kind)
@@ -711,9 +846,9 @@ func (m_repo *Magma_Repository) NewIterator(kind RepoKind,
 		storeID,      /* C.uint16_t */
 		1 /*int diskSnap*/)
 	if snap == nil {
-		return nil, StoreError{sType: MagmaStoreType,
-			errMsg: fmt.Sprintf("failed to create snapshot for store %v",
-				storeIDString(storeID))}
+		return nil, translateMagmaErrToStoreErr(MagmaOpStatus{
+			Code: MagmaStatusInternal,
+		})
 	}
 
 	iter := C.MKV_NewKeyIterator(m_repo.mInst, snap)

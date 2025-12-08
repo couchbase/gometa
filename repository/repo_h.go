@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	c "github.com/couchbase/gometa/common"
-	fdb "github.com/couchbase/indexing/secondary/fdb"
 )
 
 type IRepoIterator interface {
@@ -26,6 +25,7 @@ type IRepository interface {
 	Commit() error
 	Close()
 	NewIterator(kind RepoKind, startKey, endKey string) (IRepoIterator, error)
+	Type() StoreType
 }
 
 type StoreType uint8
@@ -47,19 +47,65 @@ func (sType StoreType) String() string {
 	}
 }
 
+type StoreErrorCode int
+
+func (sec StoreErrorCode) Error() string {
+	codeStr, ok := errCodeMap[sec]
+	if ok {
+		return codeStr
+	}
+	return ""
+}
+
 type StoreError struct {
-	errMsg string
-	sType  StoreType
+	errMsg    string
+	sType     StoreType
+	storeCode StoreErrorCode
+	rawErr    interface{} // rawErr from the underlying store
 }
 
-func (err StoreError) Error() string {
-	return err.String()
+func (sErr StoreError) Code() StoreErrorCode {
+	return sErr.storeCode
 }
 
-func (err StoreError) String() string {
-	return fmt.Sprintf("[%s]%v", err.sType, err.errMsg)
+func (sErr StoreError) String() string {
+	msg := fmt.Sprintf("[%s]%v", sErr.sType, sErr.errMsg)
+	if sErr.storeCode != 0 {
+		codeStr := sErr.storeCode.Error()
+		if len(codeStr) > 0 {
+			msg = fmt.Sprintf("<%s>:%s", sErr.storeCode.Error(), msg)
+		} else {
+			msg = fmt.Sprintf("<%d>:%s", sErr.storeCode, msg)
+		}
+	}
+	return msg
 }
 
-var ErrRepoClosed = fmt.Errorf("repo closed")
+func (sErr StoreError) Error() string {
+	return sErr.String()
+}
 
-const ErrIterFail = fdb.RESULT_ITERATOR_FAIL
+func (sErr StoreError) Is(err error) bool {
+	cErr, ok := err.(*StoreError)
+	if ok && cErr != nil {
+		return sErr.Code() == cErr.Code()
+	}
+	c2Err, ok := err.(StoreError)
+	if ok {
+		return c2Err.Code() == sErr.Code()
+	}
+	return false
+}
+
+const (
+	ErrRepoClosedCode StoreErrorCode = iota + 1
+	ErrIterFailCode
+	ErrResultNotFoundCode
+	ErrInternalError StoreErrorCode = -1
+)
+
+var errCodeMap = map[StoreErrorCode]string{
+	ErrRepoClosedCode:     "ERR_REPO_CLOSED",
+	ErrIterFailCode:       "ERR_ITERATOR_FAIL",
+	ErrResultNotFoundCode: "ERR_RESULT_NOT_FOUND",
+}

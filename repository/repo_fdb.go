@@ -16,6 +16,8 @@
 package repository
 
 import (
+	"errors"
+
 	"github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
 
@@ -60,6 +62,42 @@ type Fdb_Snapshot struct {
 	mutex    sync.Mutex
 }
 
+var fdbErrRepoClosed = &StoreError{
+	sType:     FDbStoreType,
+	errMsg:    ErrRepoClosedCode.Error(),
+	storeCode: ErrRepoClosedCode,
+}
+
+func genericFDbStoreError(err error) error {
+	if err == nil {
+		return nil
+	}
+	errCode := ErrInternalError
+	fdbErr, ok := err.(fdb.Error)
+	if !ok {
+		var fdbErrP *fdb.Error
+		fdbErrP, ok = err.(*fdb.Error)
+		if ok {
+			fdbErr = *fdbErrP
+		}
+	}
+	if ok {
+		switch fdbErr {
+		case fdb.FDB_RESULT_KEY_NOT_FOUND:
+			errCode = ErrResultNotFoundCode
+		case fdb.FDB_RESULT_ITERATOR_FAIL:
+			errCode = ErrIterFailCode
+			// TODO: define more error codes
+		}
+	}
+	return &StoreError{
+		sType:     FDbStoreType,
+		errMsg:    err.Error(),
+		storeCode: errCode,
+		rawErr:    err,
+	}
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // Repository Public Function
 /////////////////////////////////////////////////////////////////////////////
@@ -95,7 +133,11 @@ func OpenRepositoryWithName2(name string, memory_quota uint64, sleepDur uint64, 
 
 	dbfile, err := upgradeAndOpenDBFile(name, config, threshold)
 	if err != nil {
-		return nil, err
+		fDbStoreErr, ok := err.(*StoreError)
+		if ok {
+			return nil, fDbStoreErr
+		}
+		return nil, genericFDbStoreError(err)
 	}
 
 	cleanup := common.NewCleanup(func() {
@@ -106,16 +148,16 @@ func OpenRepositoryWithName2(name string, memory_quota uint64, sleepDur uint64, 
 	stores := make(map[RepoKind]*fdb.KVStore)
 
 	if stores[MAIN], err = dbfile.OpenKVStore("MAIN", nil); err != nil {
-		return nil, err
+		return nil, genericFDbStoreError(err)
 	}
 	if stores[COMMIT_LOG], err = dbfile.OpenKVStore("COMMIT_LOG", nil); err != nil {
-		return nil, err
+		return nil, genericFDbStoreError(err)
 	}
 	if stores[SERVER_CONFIG], err = dbfile.OpenKVStore("SERVER_CONFIG", nil); err != nil {
-		return nil, err
+		return nil, genericFDbStoreError(err)
 	}
 	if stores[LOCAL], err = dbfile.OpenKVStore("LOCAL", nil); err != nil {
-		return nil, err
+		return nil, genericFDbStoreError(err)
 	}
 	cleanup.Cancel()
 
@@ -153,7 +195,7 @@ func upgradeAndOpenDBFile(name string, config *fdb.Config,
 	if err != nil {
 		if err.Error() != fdb.FDB_RESULT_INVALID_COMPACTION_MODE.Error() {
 			log.Current.Errorf("%v Error (%v) in opening with COMPACT_AUTO mode", logPrefix, err.Error())
-			return nil, err
+			return nil, genericFDbStoreError(err)
 		}
 
 		log.Current.Infof("%v Cannot open with COMPACT_AUTO mode. Trying with COMPACT_MANUAL mode.", logPrefix)
@@ -163,13 +205,17 @@ func upgradeAndOpenDBFile(name string, config *fdb.Config,
 		if err != nil {
 			log.Current.Errorf("%v Error (%v) in Open with COMPACT_MANUAL mode", logPrefix, err.Error())
 
-			return nil, err
+			return nil, genericFDbStoreError(err)
 		}
 
 		log.Current.Infof("%v Switching to COMPACT_AUTO mode", logPrefix)
 		err = dbfile.SwitchCompactionMode(fdb.COMPACT_AUTO, uint8(threshold))
 		if err != nil {
-			log.Current.Errorf("%v Error (%v) in switching to COMPACT_AUTO mode", logPrefix, err.Error())
+			log.Current.Errorf(
+				"%v Error (%v) in switching to COMPACT_AUTO mode",
+				logPrefix,
+				err.Error(),
+			)
 
 			// Try to close the file.
 			err1 := dbfile.Close()
@@ -177,7 +223,7 @@ func upgradeAndOpenDBFile(name string, config *fdb.Config,
 				log.Current.Errorf("%v Error (%v) in Close", logPrefix, err1.Error())
 			}
 
-			return nil, err
+			return nil, genericFDbStoreError(err)
 		}
 	} else {
 		log.Current.Infof("%v Opened with COMPACT_AUTO mode", logPrefix)
@@ -193,7 +239,7 @@ func (r *Fdb_Repository) Set(kind RepoKind, key string, content []byte) error {
 	defer r.mutex.Unlock()
 
 	if r.dbfile == nil {
-		return ErrRepoClosed
+		return fdbErrRepoClosed
 	}
 
 	log.Current.Debugf("Repo.Set(): key %s, len(content) %d", key, len(content))
@@ -201,16 +247,16 @@ func (r *Fdb_Repository) Set(kind RepoKind, key string, content []byte) error {
 	//convert key to its collatejson encoded byte representation
 	k, err := CollateString(key)
 	if err != nil {
-		return err
+		return genericFDbStoreError(err)
 	}
 
 	// set value
 	err = r.stores[kind].SetKV(k, content)
 	if err != nil {
-		return err
+		return genericFDbStoreError(err)
 	}
 
-	return r.dbfile.Commit(fdb.COMMIT_MANUAL_WAL_FLUSH)
+	return genericFDbStoreError(r.dbfile.Commit(fdb.COMMIT_MANUAL_WAL_FLUSH))
 }
 
 func (r *Fdb_Repository) CreateSnapshot(kind RepoKind, txnid common.Txnid) error {
@@ -219,7 +265,7 @@ func (r *Fdb_Repository) CreateSnapshot(kind RepoKind, txnid common.Txnid) error
 	defer r.mutex.Unlock()
 
 	if r.dbfile == nil {
-		return ErrRepoClosed
+		return fdbErrRepoClosed
 	}
 
 	info, err := r.stores[kind].Info()
@@ -229,7 +275,7 @@ func (r *Fdb_Repository) CreateSnapshot(kind RepoKind, txnid common.Txnid) error
 
 	fdbSnapshot, err := r.stores[kind].SnapshotOpen(info.LastSeqNum())
 	if err != nil {
-		return err
+		return genericFDbStoreError(err)
 	}
 
 	snapshot := &Fdb_Snapshot{snapshot: fdbSnapshot,
@@ -250,7 +296,7 @@ func (r *Fdb_Repository) AcquireSnapshot(kind RepoKind) (common.Txnid, IRepoIter
 	defer r.mutex.Unlock()
 
 	if r.dbfile == nil {
-		return common.Txnid(0), nil, ErrRepoClosed
+		return common.Txnid(0), nil, fdbErrRepoClosed
 	}
 
 	if len(r.snapshots[kind]) == 0 {
@@ -266,7 +312,7 @@ func (r *Fdb_Repository) AcquireSnapshot(kind RepoKind) (common.Txnid, IRepoIter
 
 	iter, err := kvstore.IteratorInit(nil, nil, fdb.ITR_NO_DELETES)
 	if err != nil {
-		return common.Txnid(0), nil, err
+		return common.Txnid(0), nil, genericFDbStoreError(err)
 	}
 	return snapshot.txnid, &Fdb_RepoIterator{iter: iter, store: kvstore}, nil
 }
@@ -305,7 +351,7 @@ func (r *Fdb_Repository) SetNoCommit(kind RepoKind, key string, content []byte) 
 	defer r.mutex.Unlock()
 
 	if r.dbfile == nil {
-		return ErrRepoClosed
+		return fdbErrRepoClosed
 	}
 
 	log.Current.Debugf("Repo.SetNoCommit(): key %s, len(content) %d", key, len(content))
@@ -317,7 +363,7 @@ func (r *Fdb_Repository) SetNoCommit(kind RepoKind, key string, content []byte) 
 	}
 
 	// set value
-	return r.stores[kind].SetKV(k, content)
+	return genericFDbStoreError(r.stores[kind].SetKV(k, content))
 }
 
 // Retrieve from repository
@@ -327,18 +373,18 @@ func (r *Fdb_Repository) Get(kind RepoKind, key string) ([]byte, error) {
 	defer r.mutex.Unlock()
 
 	if r.dbfile == nil {
-		return nil, ErrRepoClosed
+		return nil, fdbErrRepoClosed
 	}
 
 	//convert key to its collatejson encoded byte representation
 	k, err := CollateString(key)
 	if err != nil {
-		return nil, err
+		return nil, genericFDbStoreError(err)
 	}
 
 	value, err := r.stores[kind].GetKV(k)
 	log.Current.Tracef("Repo.Get(): key %s, found=%v", key, err == nil)
-	return value, err
+	return value, genericFDbStoreError(err)
 }
 
 // Delete from repository
@@ -348,21 +394,21 @@ func (r *Fdb_Repository) Delete(kind RepoKind, key string) error {
 	defer r.mutex.Unlock()
 
 	if r.dbfile == nil {
-		return ErrRepoClosed
+		return fdbErrRepoClosed
 	}
 
 	//convert key to its collatejson encoded byte representation
 	k, err := CollateString(key)
 	if err != nil {
-		return err
+		return genericFDbStoreError(err)
 	}
 
 	err = r.stores[kind].DeleteKV(k)
 	if err != nil {
-		return err
+		return genericFDbStoreError(err)
 	}
 
-	return r.dbfile.Commit(fdb.COMMIT_MANUAL_WAL_FLUSH)
+	return genericFDbStoreError(r.dbfile.Commit(fdb.COMMIT_MANUAL_WAL_FLUSH))
 }
 
 // Delete from repository
@@ -372,16 +418,16 @@ func (r *Fdb_Repository) DeleteNoCommit(kind RepoKind, key string) error {
 	defer r.mutex.Unlock()
 
 	if r.dbfile == nil {
-		return ErrRepoClosed
+		return fdbErrRepoClosed
 	}
 
 	//convert key to its collatejson encoded byte representation
 	k, err := CollateString(key)
 	if err != nil {
-		return err
+		return genericFDbStoreError(err)
 	}
 
-	return r.stores[kind].DeleteKV(k)
+	return genericFDbStoreError(r.stores[kind].DeleteKV(k))
 }
 
 // Delete from repository
@@ -391,10 +437,10 @@ func (r *Fdb_Repository) Commit() error {
 	defer r.mutex.Unlock()
 
 	if r.dbfile == nil {
-		return ErrRepoClosed
+		return fdbErrRepoClosed
 	}
 
-	return r.dbfile.Commit(fdb.COMMIT_MANUAL_WAL_FLUSH)
+	return genericFDbStoreError(r.dbfile.Commit(fdb.COMMIT_MANUAL_WAL_FLUSH))
 }
 
 // Close repository.
@@ -427,6 +473,10 @@ func (r *Fdb_Repository) Close() {
 	}
 }
 
+func (r *Fdb_Repository) Type() StoreType {
+	return FDbStoreType
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // RepoIterator Public Function
 /////////////////////////////////////////////////////////////////////////////
@@ -438,17 +488,17 @@ func (r *Fdb_Repository) NewIterator(kind RepoKind, startKey, endKey string) (IR
 	defer r.mutex.Unlock()
 
 	if r.dbfile == nil {
-		return nil, ErrRepoClosed
+		return nil, fdbErrRepoClosed
 	}
 
 	k1, err := CollateString(startKey)
 	if err != nil {
-		return nil, err
+		return nil, genericFDbStoreError(err)
 	}
 
 	k2, err := CollateString(endKey)
 	if err != nil {
-		return nil, err
+		return nil, genericFDbStoreError(err)
 	}
 
 	// Create a snaphsot for iteration
@@ -457,7 +507,7 @@ func (r *Fdb_Repository) NewIterator(kind RepoKind, startKey, endKey string) (IR
 
 	iter, err := snapshot.IteratorInit(k1, k2, fdb.ITR_NO_DELETES)
 	if err != nil {
-		return nil, err
+		return nil, genericFDbStoreError(err)
 	}
 	result := &Fdb_RepoIterator{iter: iter, store: snapshot}
 	return result, nil
@@ -467,12 +517,12 @@ func (r *Fdb_Repository) NewIterator(kind RepoKind, startKey, endKey string) (IR
 func (i *Fdb_RepoIterator) Next() (key string, content []byte, err error) {
 
 	if i.iter == nil {
-		return "", nil, ErrIterFail
+		return "", nil, genericFDbStoreError(fdb.FDB_RESULT_ITERATOR_FAIL)
 	}
 
 	doc, err := i.iter.Get()
 	if err != nil {
-		return "", nil, err
+		return "", nil, genericFDbStoreError(err)
 	}
 
 	// The key and body are copied into golang memory using Key() and Body().
@@ -480,15 +530,15 @@ func (i *Fdb_RepoIterator) Next() (key string, content []byte, err error) {
 	defer doc.CloseNoPool()
 
 	err = i.iter.Next()
-	if err != nil && err != ErrIterFail {
-		return "", nil, err
+	if err != nil && !errors.Is(err, fdb.FDB_RESULT_ITERATOR_FAIL) {
+		return "", nil, genericFDbStoreError(err)
 	}
 
 	//i.db.Get(doc)
 	key = DecodeString(doc.Key())
 	body := doc.Body()
 
-	if err == ErrIterFail {
+	if errors.Is(err, fdb.FDB_RESULT_ITERATOR_FAIL) {
 		i.iter.Close()
 		i.iter = nil
 	}

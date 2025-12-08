@@ -113,6 +113,9 @@ func (r *ServerConfig) GetStr(key string) (string, error) {
 	k := createConfigKey(key)
 	data, err := r.repo.Get(SERVER_CONFIG, k)
 	if err != nil {
+		if storeErr, ok := err.(*StoreError); ok && storeErr != nil {
+			return "", storeErr
+		}
 		return "", common.WrapError(common.SERVER_CONFIG_ERROR, "Key = "+key, err)
 	}
 
@@ -125,6 +128,9 @@ func (r *ServerConfig) GetInt(key string) (uint64, error) {
 	k := createConfigKey(key)
 	data, err := r.repo.Get(SERVER_CONFIG, k)
 	if err != nil {
+		if storeErr, ok := err.(*StoreError); ok && storeErr != nil {
+			return 0, storeErr
+		}
 		return 0, common.WrapError(common.SERVER_CONFIG_ERROR, "Key = "+key, err)
 	}
 
