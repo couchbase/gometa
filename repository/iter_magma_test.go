@@ -91,7 +91,8 @@ func TestMagmaIter_CreateSnapshots(t *testing.T) {
 	repo.Close()
 
 	err = repo.CreateSnapshot(MAIN, 1)
-	if err != ErrRepoClosed {
+	storeErr := verifyMagmaStoreError(t, err, "CreateSnapshot after Close")
+	if storeErr == nil || storeErr.Code() != ErrRepoClosedCode {
 		t.Fatalf("expected CreateSnapshot to fail with store closed error but got %v", err)
 	}
 }
@@ -134,11 +135,15 @@ func TestMagmaIter_AcquireSnapshot(t *testing.T) {
 
 	txnid, iter, err := repo.AcquireSnapshot(MAIN)
 	if err != nil || txnid != 0 || iter != nil {
-		t.Fatalf("acquired snapshot when no snapshots exist should return nils but got: %v, txnid %d, iter %v",
-			err, txnid, iter)
+		t.Fatalf(
+			"acquired snapshot when no snapshots exist should return nils but got: %v, txnid %d, iter %v",
+			err,
+			txnid,
+			iter,
+		)
 	}
 
-	utilMagmaRepoSet(t, repo, repo.Set, t.Name())
+	utilRepoSet(t, repo, repo.Set, t.Name())
 
 	err = repo.CreateSnapshot(MAIN, 1)
 	if err != nil {
@@ -154,9 +159,9 @@ func TestMagmaIter_AcquireSnapshot(t *testing.T) {
 	repo.ReleaseSnapshot(MAIN, txnid)
 	repo.pruneSnapshotsNoLock(MAIN)
 
-	utilMagmaRepoDelete(t, repo, repo.SetNoCommit, repo.DeleteNoCommit, t.Name())
+	utilRepoDelete(t, repo, repo.SetNoCommit, repo.DeleteNoCommit, t.Name())
 
-	repo.CreateSnapshot(MAIN, 2)
+	handleError(t, repo.CreateSnapshot(MAIN, 2), t.Name())
 
 	key, val, err := iter.Next()
 	for ; err == nil; key, val, err = iter.Next() {
@@ -169,6 +174,7 @@ func TestMagmaIter_AcquireSnapshot(t *testing.T) {
 
 }
 
+/*
 func compareMultiIterators(t *testing.T,
 	count int, compareFunc func(keyA string, valA []byte, keyB string, valB []byte) bool,
 	iters ...IRepoIterator) {
@@ -216,7 +222,7 @@ func handleError(t *testing.T, err error, msg string) {
 	if err != nil {
 		t.Fatalf("%s: %v", msg, err)
 	}
-}
+} */
 
 func TestMagmaIter_Iterations(t *testing.T) {
 	key := func(i int) string {
@@ -271,16 +277,28 @@ func TestMagmaIter_Iterations(t *testing.T) {
 	assertNoDataFromIter(t, iterWithDeletedData)
 
 	// verify that iter(set and updated) data key is matching and val is different
-	compareMultiIterators(t, dataLen-1, func(keyA string, valA []byte, keyB string, valB []byte) bool {
-		return keyA == keyB && !bytes.Equal(valA, valB)
-	}, iterWithData, iterWithUpdatedData)
+	compareMultiIterators(
+		t,
+		dataLen-1,
+		func(keyA string, valA []byte, keyB string, valB []byte) bool {
+			return keyA == keyB && !bytes.Equal(valA, valB)
+		},
+		iterWithData,
+		iterWithUpdatedData,
+	)
 
-	compareMultiIterators(t, dataLen-1, func(keyA string, valA []byte, keyB string, valB []byte) bool {
-		return keyA == keyB && bytes.Equal(valA, valB)
-	}, iterWithUpdatedData2, iterWithSmallerStartKey)
+	compareMultiIterators(
+		t,
+		dataLen-1,
+		func(keyA string, valA []byte, keyB string, valB []byte) bool {
+			return keyA == keyB && bytes.Equal(valA, valB)
+		},
+		iterWithUpdatedData2,
+		iterWithSmallerStartKey,
+	)
 
 	nextKey, nextVal, err := iterWithData.Next()
-	if len(nextKey) == 0 || len(nextVal) == 0 || err != ErrIterFail {
+	if len(nextKey) == 0 || len(nextVal) == 0 || err != nil {
 		t.Fatalf("expected data and err but got: key(%s), val(%s), err(%v)", nextKey, nextVal, err)
 	}
 
@@ -299,8 +317,14 @@ func TestMagmaIter_Iterations(t *testing.T) {
 	// verify that iter with end key
 	for i := 0; i < 6; i++ {
 		nextKey, nextVal, err = iterWithEndKey.Next()
-		if (nextKey) != key(i) || len(nextVal) == 0 || (err != nil && err != ErrIterFail) {
-			t.Fatalf("expected data and err but got: key(%s), val(%s), err(%v)", nextKey, nextVal, err)
+		if (nextKey) != key(i) || len(nextVal) == 0 ||
+			(err != nil && err.(*StoreError).Code() != ErrIterFailCode) {
+			t.Fatalf(
+				"expected data and err but got: key(%s), val(%s), err(%v)",
+				nextKey,
+				nextVal,
+				err,
+			)
 		}
 	}
 	assertNoDataFromIter(t, iterWithEndKey)
@@ -308,8 +332,14 @@ func TestMagmaIter_Iterations(t *testing.T) {
 
 	for i := 3; i < dataLen; i++ {
 		nextKey, nextVal, err = iterWithStartKey.Next()
-		if (nextKey) != key(i) || len(nextVal) == 0 || (err != nil && err != ErrIterFail) {
-			t.Fatalf("expected data and err but got: key(%s), val(%s), err(%v)", nextKey, nextVal, err)
+		if (nextKey) != key(i) || len(nextVal) == 0 ||
+			(err != nil && err.(*StoreError).Code() != ErrIterFailCode) {
+			t.Fatalf(
+				"expected data and err but got: key(%s), val(%s), err(%v)",
+				nextKey,
+				nextVal,
+				err,
+			)
 		}
 	}
 	assertNoDataFromIter(t, iterWithStartKey)
@@ -317,8 +347,14 @@ func TestMagmaIter_Iterations(t *testing.T) {
 
 	for i := 3; i < 6; i++ {
 		nextKey, nextVal, err = iterWithStartAndEndKey.Next()
-		if (nextKey) != key(i) || len(nextVal) == 0 || (err != nil && err != ErrIterFail) {
-			t.Fatalf("expected data and err but got: key(%s), val(%s), err(%v)", nextKey, nextVal, err)
+		if (nextKey) != key(i) || len(nextVal) == 0 ||
+			(err != nil && err.(*StoreError).Code() != ErrIterFailCode) {
+			t.Fatalf(
+				"expected data and err but got: key(%s), val(%s), err(%v)",
+				nextKey,
+				nextVal,
+				err,
+			)
 		}
 	}
 	assertNoDataFromIter(t, iterWithStartAndEndKey)
@@ -327,7 +363,8 @@ func TestMagmaIter_Iterations(t *testing.T) {
 	repo.Close()
 
 	iter, err := repo.NewIterator(MAIN, "", "")
-	if err != ErrRepoClosed || iter != nil {
+	storeErr := verifyMagmaStoreError(t, err, "NewIterator after Close")
+	if storeErr == nil || storeErr.Code() != ErrRepoClosedCode || iter != nil {
 		t.Fatal("got valid iter after repo close")
 	}
 }
