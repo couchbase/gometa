@@ -288,10 +288,20 @@ func (l *LeaderServer) startProxy(peer *common.PeerPipe, packet common.Packet) {
 			}
 		} else {
 			log.Current.Errorf("LeaderServer:startProxy(): Leader Fail to synchronization with follower (TCP conn = %s)", peer.GetAddr())
+			// If LeaderSyncProxy fails to synchronize with the follower, we need to close the connection to avoid
+			// the follower from blocking.
+			common.SafeRun("LeaderServer.startProxy()",
+			func() {
+				peer.Close()
+			})
 		}
 	case <-killch:
 		log.Current.Infof("LeaderServer:startProxy(): Sync proxy is killed while synchronizing with follower (TCP conn == %s)",
 			peer.GetAddr())
+		common.SafeRun("LeaderServer.startProxy()",
+		func() {
+			peer.Close()
+		})
 	}
 }
 
