@@ -17,8 +17,10 @@ package repository
 
 import (
 	"errors"
+	"path/filepath"
 
 	"github.com/couchbase/gometa/common"
+	c "github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
 
 	// fdb "github.com/couchbase/goforestdb"
@@ -104,7 +106,7 @@ func genericFDbStoreError(err error) error {
 
 // Open a repository
 func OpenRepository() (IRepository, error) {
-	return OpenRepositoryWithName(common.REPOSITORY_NAME, uint64(0))
+	return OpenRepositoryWithName(common.FDB_REPOSITORY_NAME, uint64(0))
 }
 
 func OpenRepositoryWithName(name string, memory_quota uint64) (repo IRepository, err error) {
@@ -172,6 +174,24 @@ func OpenRepositoryWithName2(name string, memory_quota uint64, sleepDur uint64, 
 		snapshots: snapshots}
 
 	return repo, nil
+}
+
+func OpenFDbRepositoryWithParams(params RepoFactoryParams) (IRepository, error) {
+	if params.StoreType != FDbStoreType {
+		return nil, &StoreError{
+			sType:     FDbStoreType,
+			storeCode: ErrNotSupported,
+			errMsg:    fmt.Sprintf("cannot open store type - %v", params.StoreType),
+		}
+	}
+	path := filepath.Join(params.Dir, c.FDB_REPOSITORY_NAME)
+	return OpenRepositoryWithName2(
+		path,
+		params.MemoryQuota,
+		params.CompactionTimerDur,
+		params.CompactionThresholdPercent,
+		params.CompactionMinFileSize,
+	)
 }
 
 func upgradeAndOpenDBFile(name string, config *fdb.Config,

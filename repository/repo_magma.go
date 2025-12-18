@@ -11,6 +11,7 @@ import "C"
 import (
 	"encoding/binary"
 	"fmt"
+	"path/filepath"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -19,8 +20,6 @@ import (
 	c "github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
 )
-
-var l = log.Current
 
 // type aliases for ease of use
 type (
@@ -272,8 +271,51 @@ type Magma_Repository struct {
 
 const numRecsForMemAlloc = 1
 
-func OpenMagmaRepository(path string) (IRepository, error) {
+func OpenMagmaRepositoryAndUpgrade(params RepoFactoryParams) (IRepository, error) {
+	if params.StoreType != MagmaStoreType {
+		return nil, &StoreError{
+			sType:     MagmaStoreType,
+			storeCode: ErrNotSupported,
+			errMsg:    fmt.Sprintf("cannot open store type - %v", params.StoreType),
+		}
+	}
+
+	magmaPath := filepath.Join(params.Dir, c.MAGMA_SUB_DIR)
+	repo, err := openMagmaRepository(
+		magmaPath,
+		params.MemoryQuota, params.CompactionMinFileSize,
+		params.CompactionThresholdPercent,
+		params.EnableWAL,
+	)
+
+	// CORRUPTION HANDLE TODO: handle StatusNotFound, StatusCorruption for magma store file
+	// corruption
+
+	// MIGRATION TODO: implement migration from forestDb to magma
+	// MIGRATION TODO: add verification for migration
+
+	return repo, err
+}
+
+func openMagmaRepository(
+	path string,
+	memoryQuota, minTreeSize uint64,
+	compactionThreshold uint8,
+	enableWAL bool,
+) (IRepository, error) {
 	cfg := defaultMagmaCfg()
+
+	if enableWAL {
+		cfg.EnableWAL = 1
+	} else {
+		cfg.EnableWAL = 0
+	}
+
+	lsdFragRatio := C.double(compactionThreshold) / 100
+	cfg.LSDFragmentationRatio = lsdFragRatio
+
+	cfg.MemoryQuota = size_t(memoryQuota)
+	cfg.LSMMinCompactSize = size_t(minTreeSize)
 
 	c_path := C.CString(path)
 	defer C.free(unsafe.Pointer(c_path))
@@ -316,7 +358,7 @@ func OpenMagmaRepository(path string) (IRepository, error) {
 			)
 			m_repo.storeSeqNum[repoKind].Store(uint64(seqNum))
 
-			l.Infof("OpenMagmaRepository: found store %v with rev %v highSeqNo %v",
+			log.Current.Infof("OpenMagmaRepository: found store %v with rev %v highSeqNo %v",
 				storeIDString(storeId), rev, seqNum)
 		} else {
 			m_repo.storeRev[repoKind] = 1
@@ -328,7 +370,7 @@ func OpenMagmaRepository(path string) (IRepository, error) {
 			if err := translateMagmaErrToStoreErr(cstatus); err != nil {
 				return m_repo, err
 			}
-			l.Infof("OpenMagmaRepository: created kv store %v using rev 1",
+			log.Current.Infof("OpenMagmaRepository: created kv store %v using rev 1",
 				storeIDString(storeId))
 		}
 	}
@@ -626,7 +668,7 @@ func NewMagmaKIterWrapper(
 			buf,  // startKey *C.char
 		))
 		if err != nil {
-			l.Errorf("NewMagmaKIterWrapper: couldn't perform seek to key %v. iterator error - %v",
+			log.Current.Errorf("NewMagmaKIterWrapper: couldn't perform seek to key %v. iterator error - %v",
 				err)
 			return nil
 		}
@@ -635,7 +677,7 @@ func NewMagmaKIterWrapper(
 		// data without this
 		status := translateMagmaErrToStoreErr(C.MKVItr_SeekFirst(iter /**C.MagmaKeyIterator*/))
 		if status != nil {
-			l.Errorf("NewMagmaKIterWrapper couldn't perform first seek on iterator for kind %v, iterator error - %v", kind, status)
+			log.Current.Errorf("NewMagmaKIterWrapper couldn't perform first seek on iterator for kind %v, iterator error - %v", kind, status)
 		}
 	}
 	return &MagmaKIterWrapper{
@@ -689,7 +731,7 @@ func (wrapper *MagmaKIterWrapper) Next() (string, []byte, error) {
 	if !isOk {
 		if C.MKVItr_HasError(wrapper.iter /* *C.MagmaKeyIterator */) == 1 {
 			err := C.GoString(C.MKVItr_GetError(wrapper.iter /* *C.MagmaKeyIterator */))
-			l.Errorf(
+			log.Current.Errorf(
 				"MagmaKIterWrapper::Next: iter encountered an err - %v, kind: %",
 				err,
 				wrapper.kind,

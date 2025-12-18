@@ -7,15 +7,18 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/couchbase/gometa/log"
 	"github.com/couchbase/indexing/secondary/logging"
 )
 
 func init() {
-	l = &logging.SystemLogger
+	log.Current = &logging.SystemLogger
 }
 
 func getOpenRepo(path string) IRepository {
-	repo, err := OpenMagmaRepository(path)
+	repo, err := OpenMagmaRepository(
+		path, 4*1024*1024, 0, 30, true,
+	)
 	if err != nil {
 		panic(err)
 	}

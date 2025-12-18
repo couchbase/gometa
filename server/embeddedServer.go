@@ -33,7 +33,6 @@ import (
 /////////////////////////////////////////////////////////////////////////////
 
 type EmbeddedServer struct {
-	repoName    string
 	msgAddr     string
 	quota       uint64
 	repo        r.IRepository
@@ -51,11 +50,7 @@ type EmbeddedServer struct {
 	mutex       sync.RWMutex
 	resetCh     chan bool
 	authfn      common.ServerAuthFunction
-
-	//compaction
-	minFileSize uint64
-	sleepDur    uint64
-	threshold   uint8
+	params      r.RepoFactoryParams
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -68,8 +63,13 @@ func RunEmbeddedServer(msgAddr string) (*EmbeddedServer, error) {
 }
 
 func RunEmbeddedServerWithNotifier(msgAddr string, notifier action.EventNotifier) (*EmbeddedServer, error) {
-
-	return RunEmbeddedServerWithCustomHandler(msgAddr, notifier, nil, common.REPOSITORY_NAME, uint64(0))
+	return RunEmbeddedServerWithCustomHandler(
+		msgAddr,
+		notifier,
+		nil,
+		common.FDB_REPOSITORY_NAME,
+		uint64(0),
+	)
 }
 
 func RunEmbeddedServerWithCustomHandler(msgAddr string,
@@ -95,25 +95,47 @@ func RunEmbeddedServerWithCustomHandler2(msgAddr string,
 		repoName, memory_quota, sleepDur, threshold, minFileSize, nil)
 }
 
-func RunEmbeddedServerWithCustomHandler3(msgAddr string,
+func RunEmbeddedServerWithCustomHandler3(
+	msgAddr string,
 	notifier action.EventNotifier,
 	reqHandler protocol.CustomRequestHandler,
-	repoName string,
+	repoBaseDir string,
 	memory_quota uint64,
 	sleepDur uint64,
 	threshold uint8,
 	minFileSize uint64,
-	authfn common.ServerAuthFunction) (*EmbeddedServer, error) {
+	authfn common.ServerAuthFunction,
+) (*EmbeddedServer, error) {
+	return RunEmbeddedServerWithCustomHandler4(
+		msgAddr,
+		notifier,
+		reqHandler,
+		authfn,
+		r.RepoFactoryParams{
+			Dir:                        repoBaseDir,
+			MemoryQuota:                memory_quota,
+			CompactionTimerDur:         sleepDur,
+			CompactionMinFileSize:      minFileSize,
+			CompactionThresholdPercent: threshold,
+			StoreType:                  r.FDbStoreType,
+			EnableWAL:                  false,
+		},
+	)
+}
+
+func RunEmbeddedServerWithCustomHandler4(
+	msgAddr string,
+	notifier action.EventNotifier,
+	reqHandler protocol.CustomRequestHandler,
+	authfn common.ServerAuthFunction,
+	openParams r.RepoFactoryParams,
+) (*EmbeddedServer, error) {
 
 	server := new(EmbeddedServer)
 	server.msgAddr = msgAddr
 	server.notifier = notifier
 	server.reqHandler = reqHandler
-	server.repoName = repoName
-	server.quota = memory_quota
-	server.sleepDur = sleepDur
-	server.threshold = threshold
-	server.minFileSize = minFileSize
+	server.params = openParams
 	server.authfn = authfn
 
 	if err := server.bootstrap(); err != nil {
@@ -511,7 +533,7 @@ func (s *EmbeddedServer) bootstrap() (err error) {
 	s.txn = common.NewTxnState()
 
 	// Initialize repository service
-	s.repo, err = r.OpenRepositoryWithName2(s.repoName, s.quota, s.sleepDur, s.threshold, s.minFileSize)
+	s.repo, err = r.OpenOrCreateNewRepositoryFromParams(s.params)
 	if err != nil {
 		return err
 	}

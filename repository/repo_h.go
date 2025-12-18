@@ -101,6 +101,7 @@ const (
 	ErrRepoClosedCode StoreErrorCode = iota + 1
 	ErrIterFailCode
 	ErrResultNotFoundCode
+	ErrNotSupported
 	ErrInternalError StoreErrorCode = -1
 )
 
@@ -108,4 +109,35 @@ var errCodeMap = map[StoreErrorCode]string{
 	ErrRepoClosedCode:     "ERR_REPO_CLOSED",
 	ErrIterFailCode:       "ERR_ITERATOR_FAIL",
 	ErrResultNotFoundCode: "ERR_RESULT_NOT_FOUND",
+	ErrNotSupported:       "ERR_NOT_SUPPORTED",
+}
+
+type RepoFactoryParams struct {
+	Dir                        string
+	MemoryQuota                uint64
+	CompactionTimerDur         uint64
+	CompactionMinFileSize      uint64
+	CompactionThresholdPercent uint8
+	StoreType                  StoreType
+	EnableWAL                  bool
+}
+
+func (params RepoFactoryParams) String() string {
+	return fmt.Sprintf("{dir: %s; quota: %d MB; compact_timer: %d s; min_file_size: %d b; use_wal: %v; store: %v}",
+		params.Dir, params.MemoryQuota/(1024*1024), params.CompactionTimerDur,
+		params.CompactionMinFileSize, params.EnableWAL, params.StoreType,
+	)
+}
+
+func OpenOrCreateNewRepositoryFromParams(params RepoFactoryParams) (IRepository, error) {
+	switch params.StoreType {
+	case MagmaStoreType:
+		return OpenMagmaRepositoryAndUpgrade(params)
+	case FDbStoreType:
+		return OpenFDbRepositoryWithParams(params)
+	}
+	return nil, &StoreError{
+		sType:     params.StoreType,
+		storeCode: ErrNotSupported,
+	}
 }

@@ -40,7 +40,7 @@ var SYNC_TIMEOUT time.Duration = 300000                          // timeout for 
 var LEADER_TIMEOUT time.Duration = 100000                        // timeout for leader (millisecond)
 var RETRY_BACKOFF time.Duration = 1000                           // backoff time for retry (millisecond)
 var MAX_RETRY_BACKOFF time.Duration = 30000                      // max backoff time for retry (millisecond)
-var REPOSITORY_NAME = "MetadataStore"                            // Forest db name for metadata store
+var FDB_REPOSITORY_NAME = "MetadataStore"                        // Forest db name for metadata store
 var CONFIG_ACCEPTED_EPOCH = "AcceptedEpoch"                      // Server Config Param : AcceptedEpoch
 var CONFIG_CURRENT_EPOCH = "CurrentEpoch"                        // Server Config Param : CurrentEpoch
 var CONFIG_LAST_LOGGED_TXID = "LastLoggedTxid"                   // Server Config Param : LastLoggedTxid
@@ -56,3 +56,5 @@ var BOOTSTRAP_ACCEPTED_EPOCH uint32 = 0                          // Boostrap val
 var TCP_KEEP_ALIVE_PERIOD time.Duration = 100 * time.Millisecond // TCP keep alive period
 var MIN_FOREST_DB_CACHE_SIZE = uint64(1024 * 1024)               // Minimum Forestdb size
 var XACT_COMMIT_WAIT_TIME time.Duration = 20 * time.Millisecond  // Time to wait for the commit log before returning an error
+
+const MAGMA_SUB_DIR = "metadata_repo_v2"
