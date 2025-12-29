@@ -14,8 +14,7 @@ import (
 )
 
 func init() {
-	l = &logging.SystemLogger
-	log.Current = l
+	log.Current = &logging.SystemLogger
 	logging.SetLogLevel(logging.Debug)
 }
 

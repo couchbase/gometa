@@ -15,8 +15,7 @@ import (
 )
 
 func init() {
-	l = &logging.SystemLogger
-	log.Current = l
+	log.Current = &logging.SystemLogger
 	logging.SetLogLevel(logging.Debug)
 }
 
@@ -45,7 +44,10 @@ func setupRepositories(t *testing.T) *testRepositories {
 
 	// Create Magma repository
 	magmaPath := filepath.Join(dir, "magma_metadata")
-	magmaRepo, err := OpenMagmaRepository(magmaPath)
+	magmaRepo, err := openMagmaRepository(
+		magmaPath, 4*1024*1024,
+		0, 30, true,
+	)
 	if err != nil {
 		fdbRepo.Close()
 		t.Fatalf("Failed to open Magma repository: %v", err)

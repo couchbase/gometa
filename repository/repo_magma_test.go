@@ -15,14 +15,25 @@ func init() {
 	log.Current = &logging.SystemLogger
 }
 
-func getOpenRepo(path string) IRepository {
-	repo, err := OpenMagmaRepository(
-		path, 4*1024*1024, 0, 30, true,
-	)
+func getMagmaRepo(params RepoFactoryParams) IRepository {
+	repo, err := OpenMagmaRepositoryAndUpgrade(params)
 	if err != nil {
 		panic(err)
 	}
 	return repo
+}
+
+func getOpenRepo(path string) IRepository {
+	params := RepoFactoryParams{
+		Dir:                        path,
+		MemoryQuota:                4 * 1024 * 1024,
+		CompactionMinFileSize:      0,
+		CompactionThresholdPercent: 30,
+		EnableWAL:                  true,
+		StoreType:                  MagmaStoreType,
+	}
+
+	return getMagmaRepo(params)
 }
 
 // verifyMagmaStoreError verifies that an error is a StoreError with MagmaStoreType
