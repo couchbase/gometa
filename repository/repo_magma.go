@@ -319,12 +319,16 @@ func openMagmaRepository(
 
 	c_path := C.CString(path)
 	defer C.free(unsafe.Pointer(c_path))
+
+	log.Current.Debugf("OpenMagmaRepository: using path %s, config %+v", path, cfg)
+
 	mInst := C.NewMagmaKVStore(
 		c_path, // path *C.char
 		cfg,    // config *C.MagmaKVStoreConfig
 	)
 	cstatus := C.MKV_Open(mInst /*inst *C.MagmaKVStore*/)
 	if err := translateMagmaErrToStoreErr(cstatus); err != nil {
+		log.Current.Errorf("OpenMagmaRepository: magma open failed with err - %v", err)
 		return nil, err
 	}
 
@@ -343,19 +347,29 @@ func openMagmaRepository(
 		m_repo.storeSeqNum[repoKind] = &atomic.Uint64{}
 		if C.MKV_KVStoreExists(mInst /* *C.MagmaKVStore*/, storeId /*C.uint16_t*/) == 1 {
 			var rev uint32_t
-			C.MKV_GetKVStoreRevision(
+			cstatus := C.MKV_GetKVStoreRevision(
 				mInst,   // *C.MagmaKVStore
 				storeId, // C.uint16_t
 				&rev,    // *C.uint32_t
 			)
+			if err := translateMagmaErrToStoreErr(cstatus); err != nil {
+				log.Current.Errorf("OpenMagmaRepository: failed to read KV store revision for %v with error - %v",
+					storeIDString(storeId), err)
+				return nil, err
+			}
 			m_repo.storeRev[repoKind] = rev
 
 			var seqNum uint64_t
-			C.MKV_GetMaxSeqNo(
+			cstatus = C.MKV_GetMaxSeqNo(
 				mInst,   // *C.MagmaKVStore
 				storeId, // C.uint16_t
 				&seqNum, // *C.uint64_t
 			)
+			if err := translateMagmaErrToStoreErr(cstatus); err != nil {
+				log.Current.Errorf("OpenMagmaRepository failed to read Max Seq Num for %v with error - %v",
+					storeIDString(storeId), err)
+				return nil, err
+			}
 			m_repo.storeSeqNum[repoKind].Store(uint64(seqNum))
 
 			log.Current.Infof("OpenMagmaRepository: found store %v with rev %v highSeqNo %v",
@@ -368,7 +382,9 @@ func openMagmaRepository(
 				m_repo.storeRev[repoKind], // C.uint32_t
 			)
 			if err := translateMagmaErrToStoreErr(cstatus); err != nil {
-				return m_repo, err
+				log.Current.Errorf("OpenMagmaRepository: store %v creation fails with error - %v",
+					storeIDString(storeId), err)
+				return nil, err
 			}
 			log.Current.Infof("OpenMagmaRepository: created kv store %v using rev 1",
 				storeIDString(storeId))
@@ -397,6 +413,7 @@ func (m_repo *Magma_Repository) Close() {
 		C.MKV_DestroyWorkContext(m_repo.memAllocator /*ctx *C.MagmaWorkContext*/)
 		C.DestroyMagmaKVStore(m_repo.mInst /*inst *C.MagmaKVStore*/)
 		m_repo.mInst = nil
+		log.Current.Infof("MagmaRepository:Close:: closed magma repo")
 	}
 }
 
@@ -441,6 +458,9 @@ func (m_repo *Magma_Repository) setNoCommitNoLock(kind RepoKind, key string, con
 	// not be freed or overwritten by the golang GC
 	rec := newWriteMagmaRecord(MagmaOpUpsert, key, content, meta)
 
+	log.Current.Debugf("MagmaRepository:SetNCNL:: {key: %s, len(val): %d, seqNo: %d, sID: %d}",
+		key, len(content), seqNum, storeID)
+
 	// Magma write API is designed with batch inserts in mind. we always insert a single key,val
 	cstatus := C.MKV_Write(
 		m_repo.mInst,          // *C.MagmaKVStore
@@ -449,7 +469,12 @@ func (m_repo *Magma_Repository) setNoCommitNoLock(kind RepoKind, key string, con
 		rec,                   // recs (*C.CRecord) -> []{Op, C.SizedBuf, C.SizedBuf, C.SizedBuf}
 		1,                     // numRecs C.size_t
 	)
-	return translateMagmaErrToStoreErr(cstatus)
+	err := translateMagmaErrToStoreErr(cstatus)
+	if err != nil {
+		log.Current.Errorf("MagmaRepository::SetNCNL:: write error {key: %s, len(val): %d, seqNo: %d, store: %s, err: %v}",
+			key, len(content), seqNum, storeIDString(storeID), err)
+	}
+	return err
 }
 
 func (m_repo *Magma_Repository) SetNoCommit(kind RepoKind, key string, content []byte) error {
@@ -457,6 +482,8 @@ func (m_repo *Magma_Repository) SetNoCommit(kind RepoKind, key string, content [
 	defer m_repo.Unlock()
 
 	if m_repo.isClosed {
+		log.Current.Warnf("MagmaRepository:SetNC:: on closed repo {key: %s, len(val): %d, repo: %v}",
+			key, len(content), kind)
 		return magmaErrRepoClosed
 	}
 
@@ -468,6 +495,8 @@ func (m_repo *Magma_Repository) Set(kind RepoKind, key string, content []byte) e
 	defer m_repo.Unlock()
 
 	if m_repo.isClosed {
+		log.Current.Warnf("MagmaRepository:Set:: on closed repo {key: %s, len(val): %d, repo: %v}",
+			key, len(content), kind)
 		return magmaErrRepoClosed
 	}
 
@@ -481,7 +510,12 @@ func (m_repo *Magma_Repository) Set(kind RepoKind, key string, content []byte) e
 		m_repo.mInst, // *C.MagmaKVStore
 		storeID,      // C.uint16_t
 	)
-	return translateMagmaErrToStoreErr(cstatus)
+	err := translateMagmaErrToStoreErr(cstatus)
+	if err != nil {
+		log.Current.Errorf("MagmaRepository::Set:: sync error {key: %s, len(val): %d, store: %s, err: %v}",
+			key, len(content), storeIDString(storeID), err)
+	}
+	return err
 }
 
 func (m_repo *Magma_Repository) Get(kind RepoKind, key string) ([]byte, error) {
@@ -489,6 +523,8 @@ func (m_repo *Magma_Repository) Get(kind RepoKind, key string) ([]byte, error) {
 	defer m_repo.Unlock()
 
 	if m_repo.isClosed {
+		log.Current.Warnf("MagmaRepository:Get:: on closed repo {key: %s, repo: %v}",
+			key, kind)
 		return nil, magmaErrRepoClosed
 	}
 
@@ -519,11 +555,24 @@ func (m_repo *Magma_Repository) getNoLock(kind RepoKind, key string) ([]byte, er
 	m_repo.memAllocMutex.Unlock()
 
 	if cstatus.Code != 0 {
-		return nil, translateMagmaErrToStoreErr(cstatus)
+		err := translateMagmaErrToStoreErr(cstatus)
+		// reading non existent values is a valid API call. it will return an error.
+		// do not log it at error level for missing item
+		if merr, ok := err.(*StoreError); ok &&
+			merr != nil && merr.Code() != ErrResultNotFoundCode {
+			log.Current.Warnf("MagmaRepository:GetNL:: {key: %s, err: %v, sID: %d}",
+				key, err, storeID)
+		} else {
+			log.Current.Debugf("MagmaRepository:GetNL:: {key: %s, err: %v, sID: %d}",
+				key, err, storeID)
+		}
+		return nil, err
 	}
 
 	res := C.GoBytes(unsafe.Pointer(val.data), C.int(val.len))
 
+	log.Current.Debugf("MagmaRepository:GetNL:: {key: %s, len(val): %v, sID: %d}",
+		key, len(res), storeID)
 	return res, nil
 }
 
@@ -547,6 +596,9 @@ func (m_repo *Magma_Repository) deleteNoCommitNoLock(kind RepoKind, key string) 
 	meta := binary.LittleEndian.AppendUint64(nil, seqNum)
 	rec := newWriteMagmaRecord(MagmaOpDelete, key, nil, meta)
 
+	log.Current.Debugf("MagmaRepository:DeleteNCNL:: {key: %s, seqNo: %d, sID: %d}",
+		key, seqNum, storeID)
+
 	// to delete records from Magma, we have to use the Write API itself but the OpCode is
 	// MagmaOpDelete with increasing seqNum
 	cstatus := C.MKV_Write(
@@ -557,7 +609,12 @@ func (m_repo *Magma_Repository) deleteNoCommitNoLock(kind RepoKind, key string) 
 		1,                     // numRecs C.size_t
 	)
 
-	return translateMagmaErrToStoreErr(cstatus)
+	err := translateMagmaErrToStoreErr(cstatus)
+	if err != nil {
+		log.Current.Errorf("MagmaRepository::DeleteNCNL:: write error {key: %s, store: %s, err: %v}",
+			key, storeIDString(storeID), err)
+	}
+	return err
 }
 
 func (m_repo *Magma_Repository) DeleteNoCommit(kind RepoKind, key string) error {
@@ -565,6 +622,8 @@ func (m_repo *Magma_Repository) DeleteNoCommit(kind RepoKind, key string) error 
 	defer m_repo.Unlock()
 
 	if m_repo.isClosed {
+		log.Current.Warnf("MagmaRepository:DeleteNC:: on closed repo {key: %s, repo: %v}",
+			key, kind)
 		return magmaErrRepoClosed
 	}
 
@@ -576,6 +635,8 @@ func (m_repo *Magma_Repository) Delete(kind RepoKind, key string) error {
 	defer m_repo.Unlock()
 
 	if m_repo.isClosed {
+		log.Current.Warnf("MagmaRepository:Delete:: on closed repo {key: %s, repo: %v}",
+			key, kind)
 		return magmaErrRepoClosed
 	}
 
@@ -589,7 +650,12 @@ func (m_repo *Magma_Repository) Delete(kind RepoKind, key string) error {
 		m_repo.mInst, // *C.MagmaKVStore
 		storeID,      // C.uint16_t
 	)
-	return translateMagmaErrToStoreErr(cstatus)
+	err := translateMagmaErrToStoreErr(cstatus)
+	if err != nil {
+		log.Current.Errorf("MagmaRepository::Delete:: sync error {key: %s, store: %s, err: %v}",
+			key, storeIDString(storeID), err)
+	}
+	return err
 }
 
 func (m_repo *Magma_Repository) GetItemsCount(kind RepoKind) uint64 {
@@ -632,11 +698,16 @@ func (m_repo *Magma_Repository) Commit() error {
 	defer m_repo.Unlock()
 
 	if m_repo.isClosed {
+		log.Current.Warnf("MagmaRepository:Commit:: on closed repo")
 		return magmaErrRepoClosed
 	}
 
 	cstatus := C.MKV_Sync(m_repo.mInst /* *C.MagmaKVStore */)
-	return translateMagmaErrToStoreErr(cstatus)
+	if err := translateMagmaErrToStoreErr(cstatus); err != nil {
+		log.Current.Errorf("MagmaRepository:Commit:: repo sync error - %v", err)
+		return err
+	}
+	return nil
 }
 
 func (m_repo *Magma_Repository) Type() StoreType {
@@ -678,8 +749,11 @@ func NewMagmaKIterWrapper(
 		status := translateMagmaErrToStoreErr(C.MKVItr_SeekFirst(iter /**C.MagmaKeyIterator*/))
 		if status != nil {
 			log.Current.Errorf("NewMagmaKIterWrapper couldn't perform first seek on iterator for kind %v, iterator error - %v", kind, status)
+			return nil
 		}
 	}
+	log.Current.Debugf("NewMagmaKIterWrapper: created iterator for kind %d, startKey: %s, endKey: %s",
+		kind, startKey, endKey)
 	return &MagmaKIterWrapper{
 		iter:     iter,
 		startKey: startKey,
@@ -697,6 +771,8 @@ func (wrapper *MagmaKIterWrapper) closeNoLock() {
 		}
 		wrapper.isClosed = true
 		wrapper.iter = nil
+		log.Current.Debugf("MagmaKIterWrapper:closeNL:: closed iterator for kind %d",
+			wrapper.kind)
 	}
 }
 
@@ -778,12 +854,15 @@ func (snapC *magmaSnapContainer) close() {
 		iter.Close()
 	}
 	C.MKV_PutSnapshot(snapC.snap /* *C.MagmaSnapHandle */)
+	log.Current.Debugf("MagmaSnapContainer:close:: closed snapshot %p", snapC)
 }
 
 func (m_repo *Magma_Repository) CreateSnapshot(kind RepoKind, txnid c.Txnid) error {
 	m_repo.Lock()
 	defer m_repo.Unlock()
 	if m_repo.isClosed {
+		log.Current.Warnf("MagmaRepository:CreateSnapshot:: on closed repo {kind: %d, txnid: %d}",
+			kind, txnid)
 		return magmaErrRepoClosed
 	}
 
@@ -813,6 +892,9 @@ func (m_repo *Magma_Repository) CreateSnapshot(kind RepoKind, txnid c.Txnid) err
 
 	m_repo.snapshots[kind] = append(m_repo.snapshots[kind], container)
 
+	log.Current.Debugf("MagmaRepository:CreateSnapshot:: created snapshot %p for kind %d, txnid: %d",
+		container, kind, txnid)
+
 	return nil
 }
 
@@ -821,10 +903,14 @@ func (m_repo *Magma_Repository) AcquireSnapshot(kind RepoKind) (c.Txnid, IRepoIt
 	defer m_repo.Unlock()
 
 	if m_repo.isClosed {
+		log.Current.Warnf("MagmaRepository:AcquireSnapshot:: on closed repo {kind: %d}",
+			kind)
 		return 0, nil, magmaErrRepoClosed
 	}
 
 	if len(m_repo.snapshots[kind]) == 0 {
+		log.Current.Warnf("MagmaRepository:AcquireSnapshot:: no snapshots for kind %d",
+			kind)
 		return 0, nil, nil
 	}
 
@@ -836,7 +922,11 @@ func (m_repo *Magma_Repository) AcquireSnapshot(kind RepoKind) (c.Txnid, IRepoIt
 		snapContainer.snap, /* *C.MagmaSnapHandle */
 	)
 	if iter == nil {
-		return 0, nil, nil
+		log.Current.Warnf("MagmaRepository:AcquireSnapshot:: failed to create iterator for kind %d, txnid: %d",
+			kind, snapContainer.txnID)
+		return 0, nil, translateMagmaErrToStoreErr(MagmaOpStatus{
+			Code: MagmaStatusInternal,
+		})
 	}
 
 	// do not pass snapC here. refer to NewIterator for more info about snapC. we do not pass
@@ -844,6 +934,9 @@ func (m_repo *Magma_Repository) AcquireSnapshot(kind RepoKind) (c.Txnid, IRepoIt
 	// the iterator is closed. we could still create more iterators from the same snapshot
 	iterWrapper := NewMagmaKIterWrapper(iter, "", "", kind, nil)
 	snapContainer.iterators = append(snapContainer.iterators, iterWrapper)
+
+	log.Current.Debugf("MagmaRepository:AcquireSnapshot:: acquired snapshot %p for kind %d, txnid: %d",
+		snapContainer, kind, snapContainer.txnID)
 
 	return snapContainer.txnID, iterWrapper, nil
 }
@@ -858,7 +951,8 @@ func (m_repo *Magma_Repository) ReleaseSnapshot(kind RepoKind, txnid c.Txnid) {
 	for _, snapContiner := range m_repo.snapshots[kind] {
 		if snapContiner.txnID == txnid && snapContiner.refCount > 0 {
 			snapContiner.refCount--
-
+			log.Current.Debugf("MagmaRepository:ReleaseSnapshot:: ref count decr %v for snapshot %p for kind %d, txnid: %d",
+				snapContiner.refCount, snapContiner.snap, kind, txnid)
 			// do not release snapshot. we could still call AcquireSnapshot to get a snapshot
 		}
 	}
@@ -871,6 +965,8 @@ func (m_repo *Magma_Repository) NewIterator(kind RepoKind,
 	defer m_repo.Unlock()
 
 	if m_repo.isClosed {
+		log.Current.Warnf("MagmaRepository:NewIterator:: on closed repo {kind: %d, startKey: %s, endKey: %s}",
+			kind, startKey, endKey)
 		return nil, magmaErrRepoClosed
 	}
 
@@ -895,7 +991,11 @@ func (m_repo *Magma_Repository) NewIterator(kind RepoKind,
 
 	iter := C.MKV_NewKeyIterator(m_repo.mInst, snap)
 	if iter == nil {
-		return nil, nil
+		log.Current.Warnf("MagmaRepository:NewIterator:: failed to create iterator for kind %d, startKey: %s, endKey: %s",
+			kind, startKey, endKey)
+		return nil, translateMagmaErrToStoreErr(MagmaOpStatus{
+			Code: MagmaStatusInternal,
+		})
 	}
 
 	// keep a track of the magma snapshot. when we close iterators which are directly created
@@ -907,10 +1007,14 @@ func (m_repo *Magma_Repository) pruneSnapshotsNoLock(kind RepoKind) {
 	newList := make([]*magmaSnapContainer, 0, len(m_repo.snapshots[kind]))
 	for _, snapContainer := range m_repo.snapshots[kind] {
 		if snapContainer.refCount <= 0 {
+			log.Current.Debugf("MagmaRepository:pruneSnapshotsNL:: closing 0-ref snapshot %p for kind %d, txnid: %d",
+				snapContainer, kind, snapContainer.txnID)
 			snapContainer.close()
 		} else {
 			newList = append(newList, snapContainer)
 		}
 	}
 	m_repo.snapshots[kind] = newList
+	log.Current.Debugf("MagmaRepository:pruneSnapshotsNL:: open snapshots for kind %d: %d",
+		kind, len(newList))
 }

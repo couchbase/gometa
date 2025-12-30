@@ -13,6 +13,7 @@ import (
 
 func init() {
 	log.Current = &logging.SystemLogger
+	logging.SetLogLevel(logging.Debug)
 }
 
 func getMagmaRepo(params RepoFactoryParams) IRepository {
