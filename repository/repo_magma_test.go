@@ -231,7 +231,7 @@ func TestMagmaRepository_Reopen(t *testing.T) {
 
 	repo := getOpenRepo(dir)
 	utilRepoSet(t, repo, repo.Set, t.Name())
-	itemCount := repo.(*Magma_Repository).GetItemsCount(MAIN)
+	itemCount := repo.(*Magma_Repository).getRepoStats(MAIN).TotalItemCount
 	repo.Close()
 
 	// verify repo closed
@@ -242,7 +242,7 @@ func TestMagmaRepository_Reopen(t *testing.T) {
 	}
 
 	repo = getOpenRepo(dir)
-	reopenItemsCount := repo.(*Magma_Repository).GetItemsCount(MAIN)
+	reopenItemsCount := repo.(*Magma_Repository).getRepoStats(MAIN).TotalItemCount
 	if itemCount != reopenItemsCount {
 		t.Errorf("item count mismatch on magma re-instantiation. Old - %v, New - %v",
 			itemCount, reopenItemsCount)

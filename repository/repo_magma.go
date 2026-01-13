@@ -40,6 +40,7 @@ type (
 	MagmaOpStatus     = C.CStatus
 	MagmaSnapshot     = C.MagmaSnapHandle
 	MagmaStatusCode   = C.int
+	MagmaStats        = C.MagmaKVStoreStats
 )
 
 func defaultMagmaCfg() *MagmaShardConfig {
@@ -658,14 +659,8 @@ func (m_repo *Magma_Repository) Delete(kind RepoKind, key string) error {
 	return err
 }
 
-func (m_repo *Magma_Repository) GetItemsCount(kind RepoKind) uint64 {
-	m_repo.Lock()
-	defer m_repo.Unlock()
-
-	if m_repo.isClosed {
-		return 0
-	}
-
+// read entire stats object for a store. take lock on m_repo before calling this
+func (m_repo *Magma_Repository) getRepoStats(kind RepoKind) *MagmaStoreStats {
 	storeID := repoKindToMagmaStoreID(kind)
 
 	statObj := &MagmaStoreStats{}
@@ -677,17 +672,22 @@ func (m_repo *Magma_Repository) GetItemsCount(kind RepoKind) uint64 {
 		1,            // range C.int (aggregate KVStats over range of kv stores)
 	)
 
-	return uint64(statObj.TotalItemCount)
+	return statObj
 }
 
-func (m_repo *Magma_Repository) GetBufMemoryUsed() uint64 {
-	m_repo.Lock()
-	defer m_repo.Unlock()
+func (m_repo *Magma_Repository) getStoreStats() *MagmaStats {
+	statObj := &MagmaStats{}
 
-	if m_repo.isClosed {
-		return 0
-	}
+	C.MKV_GetStats(
+		m_repo.mInst,
+		statObj,
+	)
 
+	return statObj
+}
+
+// read buf memory used by magma. take lock on m_repo before calling this
+func (m_repo *Magma_Repository) getBufMemoryUsedNoLock() uint64 {
 	m_repo.memAllocMutex.Lock()
 	defer m_repo.memAllocMutex.Unlock()
 	return uint64(C.MKV_GetWorkContextMemUsed(m_repo.memAllocator /**C.MagmaWorkContext*/))
@@ -1017,4 +1017,47 @@ func (m_repo *Magma_Repository) pruneSnapshotsNoLock(kind RepoKind) {
 	m_repo.snapshots[kind] = newList
 	log.Current.Debugf("MagmaRepository:pruneSnapshotsNL:: open snapshots for kind %d: %d",
 		kind, len(newList))
+}
+
+func (m_repo *Magma_Repository) GetStoreStats() MetastoreStats {
+
+	m_repo.Lock()
+	defer m_repo.Unlock()
+
+	if m_repo.isClosed {
+		return MetastoreStats{}
+	}
+
+	var diskInUse uint64 = 0
+	var rawStats = make(map[string]interface{})
+
+	if statObj := m_repo.getStoreStats(); statObj != nil {
+		rawStats["magma_stats"] = statObj
+		diskInUse = uint64(statObj.TotalDiskUsage)
+	}
+
+	var itemsCount uint64 = 0
+
+	if statsObj := m_repo.getRepoStats(MAIN); statsObj != nil {
+		itemsCount = uint64(statsObj.TotalItemCount)
+		rawStats["main_store"] = statsObj
+	}
+
+	if statsObj := m_repo.getRepoStats(SERVER_CONFIG); statsObj != nil {
+		rawStats["server_config_store"] = statsObj
+	}
+	if statsObj := m_repo.getRepoStats(COMMIT_LOG); statsObj != nil {
+		rawStats["commit_log_store"] = statsObj
+	}
+	if statsObj := m_repo.getRepoStats(LOCAL); statsObj != nil {
+		rawStats["local_store"] = statsObj
+	}
+
+	return MetastoreStats{
+		Type:       MagmaStoreType,
+		ItemsCount: itemsCount,
+		MemInUse:   m_repo.getBufMemoryUsedNoLock(),
+		DiskInUse:  diskInUse,
+		Raw:        rawStats,
+	}
 }

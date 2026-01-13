@@ -3,10 +3,33 @@
 package repository
 
 import (
+	"encoding/json"
 	"fmt"
 
 	c "github.com/couchbase/gometa/common"
 )
+
+type MetastoreStats struct {
+	Type       StoreType   `json:"meta_store_type"`
+	MemInUse   uint64      `json:"meta_store_mem_inuse,omitempty"`
+	DiskInUse  uint64      `json:"meta_store_disk_inuse,omitempty"`
+	ItemsCount uint64      `json:"meta_store_items_count"` // only record item count of MAIN kind store
+	Raw        interface{} `json:"-"`
+}
+
+func (ms MetastoreStats) Map() map[string]interface{} {
+	return map[string]interface{}{
+		"meta_store_type":        ms.Type.String(),
+		"meta_store_mem_inuse":   ms.MemInUse,
+		"meta_store_disk_inuse":  ms.DiskInUse,
+		"meta_store_items_count": ms.ItemsCount,
+	}
+}
+
+func (ms MetastoreStats) StatsString() string {
+	return fmt.Sprintf("{\"meta_state_type\": \"%s\", \"meta_store_mem_inuse\": %d, \"meta_store_disk_inuse\": %d, \"meta_store_items_count\": %d}",
+		ms.Type, ms.MemInUse, ms.DiskInUse, ms.ItemsCount)
+}
 
 type IRepoIterator interface {
 	Close()
@@ -25,7 +48,7 @@ type IRepository interface {
 	Commit() error
 	Close()
 	NewIterator(kind RepoKind, startKey, endKey string) (IRepoIterator, error)
-	Type() StoreType
+	GetStoreStats() MetastoreStats
 }
 
 type StoreType uint8
@@ -45,6 +68,32 @@ func (sType StoreType) String() string {
 	default:
 		return "unknown"
 	}
+}
+
+func (sType StoreType) MarshalText() ([]byte, error) {
+	return []byte(sType.String()), nil
+}
+
+func (sType StoreType) MarshalJSON() ([]byte, error) {
+	str := sType.String()
+	return json.Marshal(str)
+}
+
+func (sType *StoreType) UnmarshalJSON(bts []byte) error {
+	var storeStr string
+	err := json.Unmarshal(bts, &storeStr)
+	if err != nil {
+		return err
+	}
+	switch storeStr {
+	case "magma":
+		*sType = MagmaStoreType
+	case "fdb":
+		*sType = FDbStoreType
+	default:
+		return fmt.Errorf("invalid store '%s'", storeStr)
+	}
+	return nil
 }
 
 type StoreErrorCode int

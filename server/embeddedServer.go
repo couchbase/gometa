@@ -479,6 +479,13 @@ func (s *EmbeddedServer) GetConfigValue(key string) (string, error) {
 	return s.srvConfig.GetStr(key)
 }
 
+func (s *EmbeddedServer) GetMetastoreStats() r.MetastoreStats {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	return s.repo.GetStoreStats()
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // Server
 /////////////////////////////////////////////////////////////////////////////

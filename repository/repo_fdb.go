@@ -20,7 +20,6 @@ import (
 	"path/filepath"
 
 	"github.com/couchbase/gometa/common"
-	c "github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
 
 	// fdb "github.com/couchbase/goforestdb"
@@ -184,7 +183,7 @@ func OpenFDbRepositoryWithParams(params RepoFactoryParams) (IRepository, error) 
 			errMsg:    fmt.Sprintf("cannot open store type - %v", params.StoreType),
 		}
 	}
-	path := filepath.Join(params.Dir, c.FDB_REPOSITORY_NAME)
+	path := filepath.Join(params.Dir, common.FDB_REPOSITORY_NAME)
 	return OpenRepositoryWithName2(
 		path,
 		params.MemoryQuota,
@@ -591,4 +590,48 @@ func CollateString(key string) ([]byte, error) {
 
 func DecodeString(data []byte) string {
 	return string(data)
+}
+
+func (r *Fdb_Repository) GetStoreStats() MetastoreStats {
+
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	if r.dbfile == nil {
+		return MetastoreStats{}
+	}
+
+	var rawStats = make(map[string]interface{})
+	var diskUsed uint64 = 0
+
+	if fileInfo, err := r.dbfile.Info(); err == nil && fileInfo != nil {
+		rawStats["db_handle"] = fileInfo.String()
+		diskUsed = fileInfo.SpaceUsed()
+	}
+
+	var docCount uint64 = 0
+
+	if storeInfo, err := r.stores[MAIN].Info(); err == nil && storeInfo != nil {
+		docCount = storeInfo.DocCount()
+		rawStats["main_store"] = storeInfo.String()
+	}
+
+	if storeInfo, err := r.stores[SERVER_CONFIG].Info(); err == nil && storeInfo != nil {
+		rawStats["server_config_store"] = storeInfo.String()
+	}
+
+	if storeInfo, err := r.stores[COMMIT_LOG].Info(); err == nil && storeInfo != nil {
+		rawStats["commit_log_store"] = storeInfo.String()
+	}
+
+	if storeInfo, err := r.stores[LOCAL].Info(); err == nil && storeInfo != nil {
+		rawStats["local_store"] = storeInfo.String()
+	}
+
+	return MetastoreStats{
+		Type:       FDbStoreType,
+		ItemsCount: docCount,
+		MemInUse:   0,
+		DiskInUse:  diskUsed,
+		Raw:        rawStats,
+	}
 }
