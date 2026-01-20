@@ -4,9 +4,12 @@
 package repository
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
+	c "github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
 	"github.com/couchbase/indexing/secondary/logging"
 )
@@ -30,6 +33,7 @@ func getOpenRepo(path string) IRepository {
 		MemoryQuota:                4 * 1024 * 1024,
 		CompactionMinFileSize:      0,
 		CompactionThresholdPercent: 30,
+		CompactionTimerDur:         60000,
 		EnableWAL:                  true,
 		StoreType:                  MagmaStoreType,
 	}
@@ -56,6 +60,7 @@ func verifyMagmaStoreError(t *testing.T, err error, operation string) *StoreErro
 func TestMagmaRepository_Set(t *testing.T) {
 	dir := t.TempDir()
 	repo := getOpenRepo(dir)
+	verifyMigrationMarkerExists(t, dir)
 	defer repo.Close()
 
 	utilRepoSet(t, repo, repo.Set, t.Name())
@@ -75,6 +80,7 @@ func TestMagmaRepository_Set(t *testing.T) {
 func TestMagmaRepository_SetNoCommit(t *testing.T) {
 	dir := t.TempDir()
 	repo := getOpenRepo(dir)
+	verifyMigrationMarkerExists(t, dir)
 	defer repo.Close()
 
 	utilRepoSet(t, repo, repo.SetNoCommit, t.Name())
@@ -94,6 +100,7 @@ func TestMagmaRepository_SetNoCommit(t *testing.T) {
 func TestMagmaRepository_Delete(t *testing.T) {
 	dir := t.TempDir()
 	repo := getOpenRepo(dir)
+	verifyMigrationMarkerExists(t, dir)
 	defer repo.Close()
 
 	utilRepoDelete(t, repo, repo.Set, repo.Delete, t.Name())
@@ -113,6 +120,7 @@ func TestMagmaRepository_Delete(t *testing.T) {
 func TestMagmaRepository_DeleteNoCommit(t *testing.T) {
 	dir := t.TempDir()
 	repo := getOpenRepo(dir)
+	verifyMigrationMarkerExists(t, dir)
 	defer repo.Close()
 
 	utilRepoDelete(t, repo, repo.Set, repo.DeleteNoCommit, t.Name())
@@ -132,6 +140,7 @@ func TestMagmaRepository_DeleteNoCommit(t *testing.T) {
 func TestMagmaRepository_Get(t *testing.T) {
 	dir := t.TempDir()
 	repo := getOpenRepo(dir)
+	verifyMigrationMarkerExists(t, dir)
 	defer repo.Close()
 	utilRepoGet(t, repo)
 }
@@ -139,6 +148,7 @@ func TestMagmaRepository_Get(t *testing.T) {
 func TestMagmaRepository_EmptyValue(t *testing.T) {
 	dir := t.TempDir()
 	repo := getOpenRepo(dir)
+	verifyMigrationMarkerExists(t, dir)
 	defer repo.Close()
 
 	// Test 1: Insert empty value using empty byte slice
@@ -230,6 +240,7 @@ func TestMagmaRepository_Reopen(t *testing.T) {
 	dir := t.TempDir()
 
 	repo := getOpenRepo(dir)
+	verifyMigrationMarkerExists(t, dir)
 	utilRepoSet(t, repo, repo.Set, t.Name())
 	itemCount := repo.(*Magma_Repository).getRepoStats(MAIN).TotalItemCount
 	repo.Close()
@@ -242,10 +253,32 @@ func TestMagmaRepository_Reopen(t *testing.T) {
 	}
 
 	repo = getOpenRepo(dir)
+	verifyMigrationMarkerExists(t, dir)
 	reopenItemsCount := repo.(*Magma_Repository).getRepoStats(MAIN).TotalItemCount
 	if itemCount != reopenItemsCount {
 		t.Errorf("item count mismatch on magma re-instantiation. Old - %v, New - %v",
 			itemCount, reopenItemsCount)
 	}
 	repo.Close()
+}
+
+func verifyMigrationMarkerExists(t *testing.T, path string) {
+	t.Helper()
+
+	checkptFile := filepath.Join(path, c.MAGMA_SUB_DIR, c.MAGMA_MIGRATION_MARKER)
+	if _, err := os.ReadFile(checkptFile); err != nil {
+		t.Errorf("failed to read marker file with error %v", err)
+	}
+}
+
+func verifyNoMigrationMarkerExists(t *testing.T, path string) {
+	t.Helper()
+
+	checkptFile := filepath.Join(path, c.MAGMA_SUB_DIR, c.MAGMA_MIGRATION_MARKER)
+	if cnt, err := os.ReadFile(checkptFile); err != nil && !os.IsNotExist(err) {
+		t.Errorf("failed to read marker file with error %v", err)
+	} else if err == nil {
+		t.Errorf("expected magma marker file to exist but it exists with content - %v",
+			cnt)
+	}
 }

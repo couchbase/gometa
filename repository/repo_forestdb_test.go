@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	c "github.com/couchbase/gometa/common"
 	"github.com/couchbase/gometa/log"
 	"github.com/couchbase/indexing/secondary/logging"
 )
@@ -65,7 +66,7 @@ func usageInHuman(usage uint64) string {
 }
 
 func getOpenForestDBRepo(dir string) IRepository {
-	path := filepath.Join(dir, "metadata.fdb")
+	path := filepath.Join(dir, c.FDB_REPOSITORY_NAME)
 	repo, err := OpenRepositoryWithName(path, 4*1024*1024*1024)
 	if err != nil {
 		panic(err)
@@ -312,7 +313,8 @@ func verifyStoreErrorForRepo(t *testing.T, repo IRepository, err error, operatio
 	if err == nil {
 		return
 	}
-	expectedType := repo.Type()
+	t.Helper()
+	expectedType := repo.GetStoreStats().Type
 
 	storeErr, ok := err.(*StoreError)
 	if !ok {
@@ -332,6 +334,7 @@ func verifyStoreErrorForRepo(t *testing.T, repo IRepository, err error, operatio
 // Generalized Get test helper that works for any repository implementation
 // repo: the main repository instance to test
 func utilRepoGet(t *testing.T, repo IRepository) {
+	t.Helper()
 
 	// Test 1: Get existing keys with different value sizes in MAIN
 	for _, tc := range setTestCases {
