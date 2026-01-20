@@ -10,11 +10,15 @@ import "C"
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unsafe"
 
 	c "github.com/couchbase/gometa/common"
@@ -282,6 +286,41 @@ func OpenMagmaRepositoryAndUpgrade(params RepoFactoryParams) (IRepository, error
 	}
 
 	magmaPath := filepath.Join(params.Dir, c.MAGMA_SUB_DIR)
+	checkpointFilePath := filepath.Join(magmaPath, c.MAGMA_MIGRATION_MARKER)
+
+	////////// if no `migration` file exists, cleanup stale metadata dir contents
+	var doesMigrationMarkerExist = true
+	checkpointFile, err := os.Open(checkpointFilePath)
+	if err != nil && !os.IsNotExist(err) {
+		log.Current.Errorf("OpenMagmaRepositoryAndUpgrade:: couldn't open migration marker %v due to err - %v",
+			checkpointFilePath, err)
+		return nil, &StoreError{
+			sType:     MagmaStoreType,
+			storeCode: ErrInternalError,
+			errMsg:    err.Error(),
+		}
+	} else if os.IsNotExist(err) {
+		doesMigrationMarkerExist = false
+		// CORRUPTION HANDLE TODO: instead of dir removal, increment the KV store revisions or
+		// backup the old files in a separate directory
+		err = os.RemoveAll(magmaPath)
+		if err != nil {
+			log.Current.Errorf("OpenMagmaRepositoryAndUpgrade:: couldn't remove stale metadata files %v due to err - %v",
+				magmaPath, err)
+			return nil, &StoreError{
+				sType:     MagmaStoreType,
+				storeCode: ErrInternalError,
+				errMsg:    err.Error(),
+			}
+		} else {
+			log.Current.Infof("OpenMagmaRepositoryAndUpgrade:: removed metadata dir %v as no marker exists",
+				magmaPath)
+		}
+	} else {
+		checkpointFile.Close()
+	}
+
+	////////// derive magma path from base storage dir (@2i => @2i/metadata_repo_v2)
 	repo, err := openMagmaRepository(
 		magmaPath,
 		params.MemoryQuota, params.CompactionMinFileSize,
@@ -289,13 +328,169 @@ func OpenMagmaRepositoryAndUpgrade(params RepoFactoryParams) (IRepository, error
 		params.EnableWAL,
 	)
 
+	if err != nil {
+		log.Current.Errorf("OpenMagmaRepositoryAndUpgrade:: Failed to open magma stores with error %v",
+			err)
+		return nil, err
+	}
+
 	// CORRUPTION HANDLE TODO: handle StatusNotFound, StatusCorruption for magma store file
 	// corruption
 
-	// MIGRATION TODO: implement migration from forestDb to magma
+	////////// check if forestDb files exist or not
+	var foundFdbFile = false
+	files, err := os.ReadDir(params.Dir)
+	if err != nil {
+		log.Current.Errorf("OpenMagmaRepositoryAndUpgrade:: Failed to read metadata dir %v with err - %v",
+			params.Dir, err)
+		return nil, &StoreError{
+			sType:     MagmaStoreType,
+			storeCode: ErrInternalError,
+			errMsg:    err.Error(),
+		}
+	}
+	for _, file := range files {
+		if strings.Contains(file.Name(), c.FDB_REPOSITORY_NAME) {
+			foundFdbFile = true
+			break
+		}
+	}
+
+	////////// open forestDb for migration
+	if foundFdbFile && !doesMigrationMarkerExist {
+		log.Current.Infof("OpenMagmaRepositoryAndUpgrade:: Starting metadata migration from fDb to magma...")
+		var migrationStart = time.Now()
+
+		fdbRepo, err := OpenFDbRepositoryWithParams(RepoFactoryParams{
+			Dir:         params.Dir,
+			MemoryQuota: params.MemoryQuota,
+			StoreType:   FDbStoreType,
+
+			// since CompactionTimerDur is not relevant for magma stores, it can empty. use a max of
+			// 1000s timer duration for compaction. FDb stores will not open on 0s timer duration
+			CompactionTimerDur: max(params.CompactionTimerDur, 1000),
+
+			CompactionMinFileSize:      params.CompactionMinFileSize,
+			CompactionThresholdPercent: params.CompactionThresholdPercent,
+		})
+		if err != nil {
+			log.Current.Errorf("OpenMagmaRepositoryAndUpgrade:: Failed to read fdb metadata with err - %v",
+				err)
+			return nil, err
+		}
+		defer fdbRepo.Close()
+
+		migrateStore := func(kind RepoKind) error {
+			storeMirgrationStart := time.Now()
+			iter, err := fdbRepo.NewIterator(kind, "", "")
+			if err != nil {
+				log.Current.Errorf("OpenMagmaRepositoryAndUpgrade:: Failed to start iterator for %v store with err - %v",
+					kind, err)
+				return err
+			}
+			defer iter.Close()
+
+			item, val, iterErr := iter.Next()
+			for iterErr == nil {
+				// use SetNoCommit and avoid too many flushes
+				setErr := repo.SetNoCommit(kind, item, val)
+				if setErr != nil {
+					log.Current.Errorf("OpenMagmaRepositoryAndUpgrade:: Failed to set key %v for %v store with err - %v",
+						item, kind, setErr)
+					return setErr
+				}
+
+				item, val, iterErr = iter.Next()
+			}
+			if !errors.Is(iterErr, &StoreError{storeCode: ErrIterFailCode}) {
+				log.Current.Errorf("OpenMagmaRepositoryAndUpgrade:: iterator error %v on fdb store %v during migration",
+					err, kind)
+				return err
+			}
+
+			log.Current.Infof("OpenMagmaRepositoryAndUpgrade:: store %v migrated successfully in %v",
+				kind, time.Since(storeMirgrationStart))
+			return nil
+		}
+
+		var errCh = make(chan error, 4)
+		var wg = sync.WaitGroup{}
+		for _, kind := range []RepoKind{MAIN, SERVER_CONFIG, COMMIT_LOG, LOCAL} {
+			wg.Add(1)
+
+			// do migration in parallel. usually MAIN and COMMIT_LOG will be heavy stores so we can
+			// can save time in iterator loads
+			go func(kind RepoKind) {
+				defer wg.Done()
+				if err := migrateStore(kind); err != nil {
+					errCh <- err
+				}
+			}(kind)
+		}
+
+		wg.Wait()
+		close(errCh)
+
+		if len(errCh) > 0 {
+			for err := range errCh {
+				return nil, err
+			}
+		}
+
+		err = repo.Commit()
+		if err != nil {
+			log.Current.Errorf("OpenMagmaRepositoryAndUpgrade:: failed to sync magma stores to disk with error - %v",
+				err)
+			return nil, err
+		}
+
+		log.Current.Infof("OpenMagmaRepositoryAndUpgrade:: metadata migration successful. time spent %v. will save migration marker file",
+			time.Since(migrationStart))
+	} else if !foundFdbFile {
+		log.Current.Infof("OpenMagmaRepositoryAndUpgrade:: no old metadata files found. no migration is performed")
+	}
+
 	// MIGRATION TODO: add verification for migration
 
+	////////// save marker file to confirm migration is completed
+	// do this even if no migration is performed to ensure we don't treat valid metadata files as
+	// stale files, which get deleted to ensure consistency, after an indexer restarts.
+	if !doesMigrationMarkerExist {
+		now := time.Now().String()
+		// WriteFile is not atomic. it can lead to a partial state on disk. for our use case, just
+		// a presence of the file eeans succesful migration hence it is fine
+
+		err = os.WriteFile(checkpointFilePath, []byte(now), 0x0777)
+		if err != nil {
+			log.Current.Errorf("OpenMagmaRepositoryAndUpgrade:: couldn't write migration marker to disk. err - %v",
+				err)
+			return nil, &StoreError{
+				sType:     MagmaStoreType,
+				errMsg:    err.Error(),
+				storeCode: ErrInternalError,
+			}
+		}
+		log.Current.Infof("OpenMagmaRepositoryAndUpgrade:: save metadata migration file successfully")
+	} else if foundFdbFile {
+		err = DestroyRepositoryWithParams(RepoFactoryParams{
+			Dir:         params.Dir,
+			MemoryQuota: params.MemoryQuota,
+			StoreType:   FDbStoreType,
+
+			// since CompactionTimerDur is not relevant for magma stores, it can empty. use a max of
+			// 1000s timer duration for compaction. FDb stores will not open on 0s timer duration
+			CompactionTimerDur: max(params.CompactionTimerDur, 1000),
+
+			CompactionMinFileSize:      params.CompactionMinFileSize,
+			CompactionThresholdPercent: params.CompactionThresholdPercent,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return repo, err
+
 }
 
 func openMagmaRepository(
@@ -1025,7 +1220,9 @@ func (m_repo *Magma_Repository) GetStoreStats() MetastoreStats {
 	defer m_repo.Unlock()
 
 	if m_repo.isClosed {
-		return MetastoreStats{}
+		return MetastoreStats{
+			Type: MagmaStoreType,
+		}
 	}
 
 	var diskInUse uint64 = 0

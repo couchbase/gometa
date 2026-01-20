@@ -597,7 +597,9 @@ func (r *Fdb_Repository) GetStoreStats() MetastoreStats {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 	if r.dbfile == nil {
-		return MetastoreStats{}
+		return MetastoreStats{
+			Type: FDbStoreType,
+		}
 	}
 
 	var rawStats = make(map[string]interface{})
@@ -634,4 +636,55 @@ func (r *Fdb_Repository) GetStoreStats() MetastoreStats {
 		DiskInUse:  diskUsed,
 		Raw:        rawStats,
 	}
+}
+
+func DestroyRepositoryWithParams(params RepoFactoryParams) error {
+	if params.StoreType != FDbStoreType {
+		return &StoreError{
+			sType:     FDbStoreType,
+			storeCode: ErrNotSupported,
+			errMsg:    fmt.Sprintf("cannot open store type - %v", params.StoreType),
+		}
+	}
+	fdbPath := filepath.Join(params.Dir, common.FDB_REPOSITORY_NAME)
+
+	config := fdb.DefaultConfig()
+	var memoryQuota uint64 = params.MemoryQuota
+	if params.MemoryQuota < common.MIN_FOREST_DB_CACHE_SIZE {
+		memoryQuota = common.MIN_FOREST_DB_CACHE_SIZE
+	}
+
+	config.SetBufferCacheSize(memoryQuota)
+
+	// Set Compaction parameters.
+	config.SetBlockReuseThreshold(uint8(65))
+	config.SetCompactorSleepDuration(params.CompactionTimerDur)
+	config.SetCompactionThreshold(params.CompactionThresholdPercent)
+
+	if params.CompactionMinFileSize != 0 {
+		config.SetCompactionMinimumFilesize(params.CompactionMinFileSize)
+	}
+
+	config.SetCompactionMode(fdb.COMPACT_AUTO)
+	dbfile, err := fdb.Open(fdbPath, config)
+	if err != nil {
+		if err.Error() != fdb.FDB_RESULT_INVALID_COMPACTION_MODE.Error() {
+			log.Current.Errorf("DestroyRepositoryWithParams:: Error (%v) in opening with COMPACT_AUTO mode",
+				err.Error())
+			return genericFDbStoreError(err)
+		}
+
+		log.Current.Infof("DestroyRepositoryWithParams:: Cannot open with COMPACT_AUTO mode. Trying with COMPACT_MANUAL mode")
+
+		config.SetCompactionMode(fdb.COMPACT_MANUAL)
+		dbfile, err = fdb.Open(fdbPath, config)
+		if err != nil {
+			log.Current.Errorf("DestroyRepositoryWithParams:: Error (%v) in Open with COMPACT_MANUAL mode",
+				err.Error())
+			return genericFDbStoreError(err)
+		}
+	}
+	_ = dbfile.Close()
+
+	return genericFDbStoreError(fdb.Destroy(fdbPath, config))
 }

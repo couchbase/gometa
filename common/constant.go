@@ -58,3 +58,4 @@ var MIN_FOREST_DB_CACHE_SIZE = uint64(1024 * 1024)               // Minimum Fore
 var XACT_COMMIT_WAIT_TIME time.Duration = 20 * time.Millisecond  // Time to wait for the commit log before returning an error
 
 const MAGMA_SUB_DIR = "metadata_repo_v2"
+const MAGMA_MIGRATION_MARKER = ".migration_marker"
