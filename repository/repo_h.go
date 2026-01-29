@@ -5,6 +5,7 @@ package repository
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	c "github.com/couchbase/gometa/common"
 )
@@ -85,15 +86,22 @@ func (sType *StoreType) UnmarshalJSON(bts []byte) error {
 	if err != nil {
 		return err
 	}
-	switch storeStr {
-	case "magma":
-		*sType = MagmaStoreType
-	case "fdb":
-		*sType = FDbStoreType
-	default:
+	*sType = GetStoreTypeFromString(storeStr)
+	if *sType == NAStoreType {
 		return fmt.Errorf("invalid store '%s'", storeStr)
 	}
 	return nil
+}
+
+func GetStoreTypeFromString(str string) StoreType {
+	str = strings.ToLower(str)
+	switch str {
+	case "magma":
+		return MagmaStoreType
+	case "fdb", "forestdb":
+		return FDbStoreType
+	}
+	return NAStoreType
 }
 
 type StoreErrorCode int
