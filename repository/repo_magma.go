@@ -696,22 +696,27 @@ func (m_repo *Magma_Repository) Set(kind RepoKind, key string, content []byte) e
 		return magmaErrRepoClosed
 	}
 
-	storeID := repoKindToMagmaStoreID(kind)
-
 	if err := m_repo.setNoCommitNoLock(kind, key, content); err != nil {
 		return err
 	}
 
-	cstatus := C.MKV_SyncKVStore(
-		m_repo.mInst, // *C.MagmaKVStore
-		storeID,      // C.uint16_t
-	)
-	err := translateMagmaErrToStoreErr(cstatus)
-	if err != nil {
-		log.Current.Errorf("MagmaRepository::Set:: sync error {key: %s, len(val): %d, store: %s, err: %v}",
-			key, len(content), storeIDString(storeID), err)
-	}
-	return err
+	// On every SyncKVStore, magma dumps the current memtable to SS table. this can lead to an issue
+	// that we are creating very small SSTables on disk. The files are 8Kb large but barely have
+	// data in them. Since we have WAL enabled, we can rather skip the sync to disk as the WAL
+	// guarantees durable writes
+
+	// storeID := repoKindToMagmaStoreID(kind)
+
+	// cstatus := C.MKV_SyncKVStore(
+	// 	m_repo.mInst, // *C.MagmaKVStore
+	// 	storeID,      // C.uint16_t
+	// )
+	// err := translateMagmaErrToStoreErr(cstatus)
+	// if err != nil {
+	// 	log.Current.Errorf("MagmaRepository::Set:: sync error {key: %s, len(val): %d, store: %s, err: %v}",
+	// 		key, len(content), storeIDString(storeID), err)
+	// }
+	return nil
 }
 
 func (m_repo *Magma_Repository) Get(kind RepoKind, key string) ([]byte, error) {
@@ -836,11 +841,12 @@ func (m_repo *Magma_Repository) Delete(kind RepoKind, key string) error {
 		return magmaErrRepoClosed
 	}
 
-	storeID := repoKindToMagmaStoreID(kind)
-
 	if err := m_repo.deleteNoCommitNoLock(kind, key); err != nil {
 		return err
 	}
+
+	// continue to sync KV store for deletes. Refer MB-70588 for more info
+	storeID := repoKindToMagmaStoreID(kind)
 
 	cstatus := C.MKV_SyncKVStore(
 		m_repo.mInst, // *C.MagmaKVStore
@@ -851,6 +857,7 @@ func (m_repo *Magma_Repository) Delete(kind RepoKind, key string) error {
 		log.Current.Errorf("MagmaRepository::Delete:: sync error {key: %s, store: %s, err: %v}",
 			key, storeIDString(storeID), err)
 	}
+
 	return err
 }
 
