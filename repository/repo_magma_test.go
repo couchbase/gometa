@@ -4,7 +4,10 @@
 package repository
 
 import (
+	"bytes"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -242,7 +245,9 @@ func TestMagmaRepository_Reopen(t *testing.T) {
 	repo := getOpenRepo(dir)
 	verifyMigrationMarkerExists(t, dir)
 	utilRepoSet(t, repo, repo.Set, t.Name())
-	itemCount := repo.(*Magma_Repository).getRepoStats(MAIN).TotalItemCount
+	repo.Commit()
+	itemCount := repo.(*Magma_Repository).getRepoStats(MAIN).ItemCount
+	totalItemCount := repo.(*Magma_Repository).getRepoStats(MAIN).TotalItemCount
 	repo.Close()
 
 	// verify repo closed
@@ -254,12 +259,106 @@ func TestMagmaRepository_Reopen(t *testing.T) {
 
 	repo = getOpenRepo(dir)
 	verifyMigrationMarkerExists(t, dir)
-	reopenItemsCount := repo.(*Magma_Repository).getRepoStats(MAIN).TotalItemCount
+	reopenItemsCount := repo.(*Magma_Repository).getRepoStats(MAIN).ItemCount
+	reopenTotalItemsCount := repo.(*Magma_Repository).getRepoStats(MAIN).TotalItemCount
 	if itemCount != reopenItemsCount {
 		t.Errorf("item count mismatch on magma re-instantiation. Old - %v, New - %v",
 			itemCount, reopenItemsCount)
 	}
+	if totalItemCount != reopenTotalItemsCount {
+		t.Errorf("total item count mismatch on magma re-instantiation. Old - %v, New - %v",
+			totalItemCount, reopenTotalItemsCount)
+	}
 	repo.Close()
+}
+
+func TestMagmaRepository_SetNoCommitPersistsAfterReopen(t *testing.T) {
+	dir := filepath.Join(os.TempDir(), "metadata_repo") // use static paths here
+	if os.Getenv(CHILD_PROC_TEST_ENV) != "1" {
+		os.RemoveAll(dir)
+		os.MkdirAll(dir, 0x0777)
+	}
+
+	key := "persist_no_commit_key"
+	val := []byte("persist-no-commit-value")
+
+	t.Run("ValSetter", runInChildProc(func(t *testing.T) {
+		repo := getOpenRepo(dir)
+		verifyMigrationMarkerExists(t, dir)
+
+		if err := repo.SetNoCommit(MAIN, key, val); err != nil {
+			verifyStoreErrorForRepo(t, repo, err, "SetNoCommit")
+			t.Fatalf("SetNoCommit failed for key=%s: %v", key, err)
+		}
+
+		os.Exit(0)
+	}))
+
+	t.Run("ValGetter", runInChildProc(func(t *testing.T) {
+		repo := getOpenRepo(dir)
+		verifyMigrationMarkerExists(t, dir)
+		defer repo.Close()
+
+		got, err := repo.Get(MAIN, key)
+		if err != nil {
+			verifyStoreErrorForRepo(t, repo, err, "Get after reopen (SetNoCommit)")
+			t.Fatalf("Get failed after reopen for key=%s: %v", key, err)
+		}
+
+		if !reflect.DeepEqual(got, val) {
+			t.Fatalf("value mismatch after reopen for key=%s: expected %v, got %v",
+				key, val, got)
+		}
+	}))
+}
+
+func TestMagmaRepository_DeletePersistsAfterReopen(t *testing.T) {
+	dir := filepath.Join(os.TempDir(), "metadata_repo")
+	if os.Getenv(CHILD_PROC_TEST_ENV) != "1" {
+		os.RemoveAll(dir)
+		os.MkdirAll(dir, 0x0777)
+	}
+
+	key := "delete_no_commit_key"
+	val := []byte("delete-no-commit-value")
+
+	t.Run("ValOps", runInChildProc(func(t *testing.T) {
+		defer func() {
+			e := recover()
+			log.Current.Infof("recovered panic - %v", e)
+		}()
+		repo := getOpenRepo(dir)
+		verifyMigrationMarkerExists(t, dir)
+
+		if err := repo.Set(MAIN, key, val); err != nil {
+			verifyStoreErrorForRepo(t, repo, err, "Set before DeleteNoCommit")
+			t.Fatalf("Set failed for key=%s: %v", key, err)
+		}
+
+		if err := repo.Delete(MAIN, key); err != nil {
+			verifyStoreErrorForRepo(t, repo, err, "DeleteNoCommit")
+			t.Fatalf("DeleteNoCommit failed for key=%s: %v", key, err)
+		}
+
+		// TODO: replace with testcode induced functions
+		panic("induce panic")
+	}))
+
+	t.Run("ValTest", runInChildProc(func(t *testing.T) {
+		repo := getOpenRepo(dir)
+		verifyMigrationMarkerExists(t, dir)
+
+		res, err := repo.Get(MAIN, key)
+		storeErr := verifyMagmaStoreError(t, err, "Get after reopen (DeleteNoCommit)")
+		if err == nil {
+			t.Fatalf("expected ErrResultNotFoundCode after reopen for key=%s, got value: %v", key, res)
+		}
+		if storeErr == nil || storeErr.Code() != ErrResultNotFoundCode {
+			t.Fatalf("expected ErrResultNotFoundCode after reopen for key=%s, got: %v", key, storeErr)
+		}
+
+		repo.Close()
+	}))
 }
 
 func verifyMigrationMarkerExists(t *testing.T, path string) {
@@ -280,5 +379,86 @@ func verifyNoMigrationMarkerExists(t *testing.T, path string) {
 	} else if err == nil {
 		t.Errorf("expected magma marker file to exist but it exists with content - %v",
 			cnt)
+	}
+}
+
+const CHILD_PROC_TEST_ENV = "CHILD_EXEC"
+
+type linePrefixWriter struct {
+	dst         io.Writer
+	prefix      []byte
+	atLineStart bool
+}
+
+func newLinePrefixWriter(dst io.Writer, prefix string) *linePrefixWriter {
+	return &linePrefixWriter{
+		dst:         dst,
+		prefix:      []byte(prefix),
+		atLineStart: true,
+	}
+}
+
+func (w *linePrefixWriter) Write(p []byte) (int, error) {
+	written := 0
+
+	for len(p) > 0 {
+		if w.atLineStart {
+			if _, err := w.dst.Write(w.prefix); err != nil {
+				return written, err
+			}
+			w.atLineStart = false
+		}
+
+		idx := bytes.IndexByte(p, '\n')
+		if idx == -1 {
+			n, err := w.dst.Write(p)
+			written += n
+			return written, err
+		}
+
+		n, err := w.dst.Write(p[:idx+1])
+		written += n
+		if err != nil {
+			return written, err
+		}
+		w.atLineStart = true
+		p = p[idx+1:]
+	}
+
+	return written, nil
+}
+
+func runInChildProc(testFn func(subt *testing.T)) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Helper()
+
+		if os.Getenv(CHILD_PROC_TEST_ENV) == "1" {
+			log.Current.Infof("[child] running in child process mode. executing test %v", t.Name())
+			testFn(t)
+		} else {
+			// spin up separate process
+			env := append(os.Environ(), "CHILD_EXEC=1")
+
+			bin, err := os.Executable()
+			handleError(t, err, "failed to get binary for current process")
+
+			childProc := exec.Command(bin, "-test.v", "-test.run", t.Name())
+
+			childProc.Env = env
+
+			childProc.Stderr = newLinePrefixWriter(os.Stderr, "\t")
+			childProc.Stdout = newLinePrefixWriter(os.Stdout, "\t")
+			childProc.Stdin = nil
+
+			handleError(t, childProc.Start(), "failed to start child process")
+
+			log.Current.Infof("[parent] started child process to run test %v in PID- %v",
+				t.Name(), childProc.Process.Pid)
+
+			err = childProc.Wait()
+			if err != nil && err.(*exec.ExitError) != nil {
+				t.Errorf("child process non-0 exit - %v", err)
+			}
+		}
 	}
 }
