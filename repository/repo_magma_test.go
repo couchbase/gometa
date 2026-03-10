@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -273,11 +274,18 @@ func TestMagmaRepository_Reopen(t *testing.T) {
 }
 
 func TestMagmaRepository_SetNoCommitPersistsAfterReopen(t *testing.T) {
-	dir := filepath.Join(os.TempDir(), "metadata_repo") // use static paths here
+	u, _ := user.Current()
+	t.Logf("user - %+v", u)
+	dir := filepath.Join(os.TempDir(), "test_repo")
 	if os.Getenv(CHILD_PROC_TEST_ENV) != "1" {
 		os.RemoveAll(dir)
-		os.MkdirAll(dir, 0x0777)
+		os.Remove(dir)
+		handleError(t, os.Mkdir(dir, 0777), "folder not created")
 	}
+	defer func() {
+		os.RemoveAll(dir)
+		os.Remove(dir)
+	}()
 
 	key := "persist_no_commit_key"
 	val := []byte("persist-no-commit-value")
@@ -313,11 +321,18 @@ func TestMagmaRepository_SetNoCommitPersistsAfterReopen(t *testing.T) {
 }
 
 func TestMagmaRepository_DeletePersistsAfterReopen(t *testing.T) {
-	dir := filepath.Join(os.TempDir(), "metadata_repo")
+	u, _ := user.Current()
+	t.Logf("user - %+v", u)
+	dir := filepath.Join(os.TempDir(), "test_repo")
 	if os.Getenv(CHILD_PROC_TEST_ENV) != "1" {
 		os.RemoveAll(dir)
-		os.MkdirAll(dir, 0x0777)
+		os.Remove(dir)
+		handleError(t, os.Mkdir(dir, 0777), "folder not created")
 	}
+	defer func() {
+		os.RemoveAll(dir)
+		os.Remove(dir)
+	}()
 
 	key := "delete_no_commit_key"
 	val := []byte("delete-no-commit-value")
