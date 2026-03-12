@@ -638,6 +638,20 @@ func (r *Fdb_Repository) GetStoreStats() MetastoreStats {
 	}
 }
 
+func (r *Fdb_Repository) GetItemsCount(kind RepoKind) uint64 {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	if r.dbfile == nil {
+		return 0
+	}
+
+	if storeInfo, err := r.stores[kind].Info(); err == nil && storeInfo != nil {
+		return storeInfo.DocCount()
+	}
+
+	return 0
+}
+
 func DestroyRepositoryWithParams(params RepoFactoryParams) error {
 	if params.StoreType != FDbStoreType {
 		return &StoreError{

@@ -5,11 +5,13 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	c "github.com/couchbase/gometa/common"
+	"github.com/couchbase/gometa/log"
 )
 
 var gMetadata map[string][]byte
@@ -450,5 +452,518 @@ func TestMagmaMigration_CopyAndCorruptWithFix(t *testing.T) {
 			verifyMigrationMarkerExists(t, dir1)
 		}
 
+	}
+}
+
+func TestMagmaMigration_CountMismatch(t *testing.T) {
+	dir := t.TempDir()
+
+	payload := map[RepoKind]map[string][]byte{
+		MAIN: {
+			"key1": []byte("value1"),
+			"key2": []byte("value2"),
+		},
+	}
+
+	seedForestDB(t, dir, payload)
+
+	params := RepoFactoryParams{
+		Dir:                        dir,
+		MemoryQuota:                4 * 1024 * 1024,
+		CompactionMinFileSize:      0,
+		CompactionThresholdPercent: 30,
+		CompactionTimerDur:         60000,
+		EnableWAL:                  true,
+		StoreType:                  MagmaStoreType,
+	}
+
+	repo, err := OpenMagmaRepositoryAndUpgrade(params)
+	if err != nil {
+		t.Fatalf("expected successful migration, got error: %v", err)
+	}
+	defer repo.Close()
+
+	stats := repo.GetStoreStats()
+	if stats.ItemsCount != 2 {
+		t.Fatalf("expected 2 items in MAIN store, got %d", stats.ItemsCount)
+	}
+
+	for key, expected := range payload[MAIN] {
+		got, err := repo.Get(MAIN, key)
+		handleError(t, err, fmt.Sprintf("failed to read key %s after migration", key))
+		if !assertEqual(got, expected) {
+			t.Errorf("value mismatch for %s: expected %v, got %v", key, expected, got)
+		}
+	}
+}
+
+func TestMagmaMigration_SmallMAINStore(t *testing.T) {
+	dir := t.TempDir()
+
+	payload := map[RepoKind]map[string][]byte{
+		MAIN: {
+			"key1": []byte("value1"),
+			"key2": []byte("value2"),
+			"key3": []byte("value3"),
+		},
+	}
+
+	seedForestDB(t, dir, payload)
+
+	params := RepoFactoryParams{
+		Dir:                        dir,
+		MemoryQuota:                4 * 1024 * 1024,
+		CompactionMinFileSize:      0,
+		CompactionThresholdPercent: 30,
+		CompactionTimerDur:         60000,
+		EnableWAL:                  true,
+		StoreType:                  MagmaStoreType,
+	}
+
+	repo, err := OpenMagmaRepositoryAndUpgrade(params)
+	if err != nil {
+		t.Fatalf("expected successful migration with verification, got error: %v", err)
+	}
+	defer repo.Close()
+
+	for key, expected := range payload[MAIN] {
+		got, err := repo.Get(MAIN, key)
+		if err != nil {
+			t.Fatalf("failed to read key %s from MAIN store after migration: %v", key, err)
+		}
+		if !reflect.DeepEqual(got, expected) {
+			t.Errorf("value mismatch for key %s: expected %v, got %v", key, expected, got)
+		}
+	}
+}
+
+func TestMagmaMigration_FullConfigStore(t *testing.T) {
+	dir := t.TempDir()
+
+	configData := make(map[string][]byte)
+	for i := 0; i < 20; i++ {
+		configData[fmt.Sprintf("config_key_%d", i)] = []byte(fmt.Sprintf("config_value_%d", i))
+	}
+
+	payload := map[RepoKind]map[string][]byte{
+		MAIN: {
+			"main_key": []byte("main_value"),
+		},
+		SERVER_CONFIG: configData,
+	}
+
+	seedForestDB(t, dir, payload)
+
+	params := RepoFactoryParams{
+		Dir:                        dir,
+		MemoryQuota:                4 * 1024 * 1024,
+		CompactionMinFileSize:      0,
+		CompactionThresholdPercent: 30,
+		CompactionTimerDur:         60000,
+		EnableWAL:                  true,
+		StoreType:                  MagmaStoreType,
+	}
+
+	repo, err := OpenMagmaRepositoryAndUpgrade(params)
+	if err != nil {
+		t.Fatalf("expected successful migration with full config verification, got error: %v", err)
+	}
+	defer repo.Close()
+
+	for key, expected := range configData {
+		got, err := repo.Get(SERVER_CONFIG, key)
+		if err != nil {
+			t.Fatalf("failed to read key %s from SERVER_CONFIG store after migration: %v", key, err)
+		}
+		if !reflect.DeepEqual(got, expected) {
+			t.Errorf("value mismatch for config key %s: expected %v, got %v", key, expected, got)
+		}
+	}
+}
+
+func TestMagmaMigration_LargeMAINStore(t *testing.T) {
+	dir := t.TempDir()
+
+	mainData := make(map[string][]byte)
+	for i := 0; i < 2000; i++ {
+		mainData[fmt.Sprintf("main_key_%d", i)] = []byte(fmt.Sprintf("main_value_%d", i))
+	}
+
+	payload := map[RepoKind]map[string][]byte{
+		MAIN: mainData,
+	}
+
+	seedForestDB(t, dir, payload)
+
+	params := RepoFactoryParams{
+		Dir:                        dir,
+		MemoryQuota:                4 * 1024 * 1024,
+		CompactionMinFileSize:      0,
+		CompactionThresholdPercent: 30,
+		CompactionTimerDur:         60000,
+		EnableWAL:                  true,
+		StoreType:                  MagmaStoreType,
+	}
+
+	repo, err := OpenMagmaRepositoryAndUpgrade(params)
+	if err != nil {
+		t.Fatalf("expected successful migration with sampling, got error: %v", err)
+	}
+	defer repo.Close()
+
+	for key, expected := range mainData {
+		got, err := repo.Get(MAIN, key)
+		if err != nil {
+			t.Fatalf("failed to read key %s from MAIN store after migration: %v", key, err)
+		}
+		if !reflect.DeepEqual(got, expected) {
+			t.Errorf("value mismatch for main key %s: expected %v, got %v", key, expected, got)
+		}
+	}
+}
+
+func TestMagmaMigration_AllStoresEmpty(t *testing.T) {
+	dir := t.TempDir()
+
+	fdbRepo := getOpenForestDBRepo(dir)
+	fdbRepo.Close()
+
+	params := RepoFactoryParams{
+		Dir:                        dir,
+		MemoryQuota:                4 * 1024 * 1024,
+		CompactionMinFileSize:      0,
+		CompactionThresholdPercent: 30,
+		CompactionTimerDur:         60000,
+		EnableWAL:                  true,
+		StoreType:                  MagmaStoreType,
+	}
+
+	repo, err := OpenMagmaRepositoryAndUpgrade(params)
+	if err != nil {
+		t.Fatalf("expected successful migration with empty stores, got error: %v", err)
+	}
+	defer repo.Close()
+
+	stats := repo.GetStoreStats()
+	if stats.ItemsCount != 0 {
+		t.Fatalf("expected 0 items in empty migration, got %d", stats.ItemsCount)
+	}
+}
+
+func TestMagmaMigration_VerificationLogs(t *testing.T) {
+	dir := t.TempDir()
+
+	payload := map[RepoKind]map[string][]byte{
+		MAIN: {
+			"key1": []byte("value1"),
+			"key2": []byte("value2"),
+		},
+		SERVER_CONFIG: {
+			"config1": []byte("config_value1"),
+		},
+	}
+
+	seedForestDB(t, dir, payload)
+
+	params := RepoFactoryParams{
+		Dir:                        dir,
+		MemoryQuota:                4 * 1024 * 1024,
+		CompactionMinFileSize:      0,
+		CompactionThresholdPercent: 30,
+		CompactionTimerDur:         60000,
+		EnableWAL:                  true,
+		StoreType:                  MagmaStoreType,
+	}
+
+	repo, err := OpenMagmaRepositoryAndUpgrade(params)
+	if err != nil {
+		t.Fatalf("expected successful migration with verification logs, got error: %v", err)
+	}
+	defer repo.Close()
+}
+
+func TestMagmaMigration_MarkerCreatedAfterVerification(t *testing.T) {
+	dir := t.TempDir()
+
+	payload := map[RepoKind]map[string][]byte{
+		MAIN: {
+			"key1": []byte("value1"),
+		},
+	}
+
+	seedForestDB(t, dir, payload)
+
+	params := RepoFactoryParams{
+		Dir:                        dir,
+		MemoryQuota:                4 * 1024 * 1024,
+		CompactionMinFileSize:      0,
+		CompactionThresholdPercent: 30,
+		CompactionTimerDur:         60000,
+		EnableWAL:                  true,
+		StoreType:                  MagmaStoreType,
+	}
+
+	repo, err := OpenMagmaRepositoryAndUpgrade(params)
+	if err != nil {
+		t.Fatalf("expected successful migration, got error: %v", err)
+	}
+	defer repo.Close()
+
+	markerPath := filepath.Join(dir, c.MAGMA_SUB_DIR, c.MAGMA_MIGRATION_MARKER)
+	if _, err := os.Stat(markerPath); err != nil {
+		t.Fatalf("expected migration marker to exist after successful verification: %v", err)
+	}
+}
+
+func TestMagmaMigration_MixedStoreSizes(t *testing.T) {
+	dir := t.TempDir()
+
+	mainData := make(map[string][]byte)
+	for i := 0; i < 1500; i++ {
+		mainData[fmt.Sprintf("main_%d", i)] = []byte(fmt.Sprintf("val_%d", i))
+	}
+
+	configData := make(map[string][]byte)
+	for i := 0; i < 10; i++ {
+		configData[fmt.Sprintf("cfg_%d", i)] = []byte(fmt.Sprintf("cfgval_%d", i))
+	}
+
+	payload := map[RepoKind]map[string][]byte{
+		MAIN:          mainData,
+		SERVER_CONFIG: configData,
+		COMMIT_LOG:    {},
+		LOCAL:         {},
+	}
+
+	seedForestDB(t, dir, payload)
+
+	params := RepoFactoryParams{
+		Dir:                        dir,
+		MemoryQuota:                4 * 1024 * 1024,
+		CompactionMinFileSize:      0,
+		CompactionThresholdPercent: 30,
+		CompactionTimerDur:         60000,
+		EnableWAL:                  true,
+		StoreType:                  MagmaStoreType,
+	}
+
+	repo, err := OpenMagmaRepositoryAndUpgrade(params)
+	if err != nil {
+		t.Fatalf("expected successful migration with mixed store sizes, got error: %v", err)
+	}
+	defer repo.Close()
+
+	for key, expected := range configData {
+		got, err := repo.Get(SERVER_CONFIG, key)
+		if err != nil {
+			t.Fatalf("failed to read config key %s after migration: %v", key, err)
+		}
+		if !reflect.DeepEqual(got, expected) {
+			t.Errorf("config value mismatch for %s: expected %v, got %v", key, expected, got)
+		}
+	}
+
+	for key, expected := range mainData {
+		got, err := repo.Get(MAIN, key)
+		if err != nil {
+			t.Fatalf("failed to read main key %s after migration: %v", key, err)
+		}
+		if !reflect.DeepEqual(got, expected) {
+			t.Errorf("main value mismatch for %s: expected %v, got %v", key, expected, got)
+		}
+	}
+}
+
+func TestMagmaMigration_SpecialKeys(t *testing.T) {
+	dir := t.TempDir()
+
+	payload := map[RepoKind]map[string][]byte{
+		MAIN: {
+			"special_chαr_key":   []byte("special"),
+			"key_with_space":     []byte("space"),
+			"key_with_newline\n": []byte("newline"),
+			"unicode_键":          []byte("unicode_key"),
+		},
+		SERVER_CONFIG: {
+			"config_empty": []byte("empty_config"),
+		},
+	}
+
+	seedForestDB(t, dir, payload)
+
+	params := RepoFactoryParams{
+		Dir:                        dir,
+		MemoryQuota:                4 * 1024 * 1024,
+		CompactionMinFileSize:      0,
+		CompactionThresholdPercent: 30,
+		CompactionTimerDur:         60000,
+		EnableWAL:                  true,
+		StoreType:                  MagmaStoreType,
+	}
+
+	repo, err := OpenMagmaRepositoryAndUpgrade(params)
+	if err != nil {
+		t.Fatalf("expected successful migration with special keys, got error: %v", err)
+	}
+	defer repo.Close()
+
+	for key, expected := range payload[MAIN] {
+		got, err := repo.Get(MAIN, key)
+		if err != nil {
+			t.Fatalf("failed to read special key %q from MAIN store: %v", key, err)
+		}
+		if !reflect.DeepEqual(got, expected) {
+			t.Errorf("value mismatch for special key %q: expected %v, got %v", key, expected, got)
+		}
+	}
+
+	for key, expected := range payload[SERVER_CONFIG] {
+		got, err := repo.Get(SERVER_CONFIG, key)
+		if err != nil {
+			t.Fatalf("failed to read config key %q: %v", key, err)
+		}
+		if !reflect.DeepEqual(got, expected) {
+			t.Errorf("config value mismatch for %q: expected %v, got %v", key, expected, got)
+		}
+	}
+}
+
+func TestMagmaMigration_TimePerformance(t *testing.T) {
+	dir := t.TempDir()
+
+	mainData := make(map[string][]byte)
+	for i := 0; i < 10000; i++ {
+		mainData[fmt.Sprintf("key_%d", i)] = []byte(fmt.Sprintf("value_%d", i))
+	}
+
+	configData := make(map[string][]byte)
+	for i := 0; i < 50; i++ {
+		configData[fmt.Sprintf("cfg_%d", i)] = []byte(fmt.Sprintf("cfgval_%d", i))
+	}
+
+	payload := map[RepoKind]map[string][]byte{
+		MAIN:          mainData,
+		SERVER_CONFIG: configData,
+	}
+
+	seedForestDB(t, dir, payload)
+
+	params := RepoFactoryParams{
+		Dir:                        dir,
+		MemoryQuota:                4 * 1024 * 1024,
+		CompactionMinFileSize:      0,
+		CompactionThresholdPercent: 30,
+		CompactionTimerDur:         60000,
+		EnableWAL:                  true,
+		StoreType:                  MagmaStoreType,
+	}
+
+	start := time.Now()
+	repo, err := OpenMagmaRepositoryAndUpgrade(params)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("expected successful migration, got error: %v", err)
+	}
+	repo.Close()
+
+	t.Logf("Migration with verification took %v for %d MAIN and %d SERVER_CONFIG items",
+		elapsed, len(mainData), len(configData))
+}
+
+func TestMagmaMigration_Neg_EmptyStore(t *testing.T) {
+	fdbDir := t.TempDir()
+
+	mainData := make(map[string][]byte)
+	for i := 0; i < 10000; i++ {
+		mainData[fmt.Sprintf("key_%d", i)] = []byte(fmt.Sprintf("value_%d", i))
+	}
+
+	configData := make(map[string][]byte)
+	for i := 0; i < 50; i++ {
+		configData[fmt.Sprintf("cfg_%d", i)] = []byte(fmt.Sprintf("cfgval_%d", i))
+	}
+
+	payload := map[RepoKind]map[string][]byte{
+		MAIN:          mainData,
+		SERVER_CONFIG: configData,
+	}
+
+	seedForestDB(t, fdbDir, payload)
+
+	fdbRepo := getOpenForestDBRepo(fdbDir)
+	defer fdbRepo.Close()
+
+	magmaDir := t.TempDir()
+	magmaRepo := getOpenRepo(magmaDir)
+	defer magmaRepo.Close()
+
+	err := verifyMigration(fdbRepo, magmaRepo)
+	if err == nil {
+		t.Fatalf("%v expected migration to fail but got no error", t.Name())
+	} else {
+		log.Current.Infof("%v migration failed as expected with error %v",
+			t.Name(), err)
+	}
+}
+
+func TestMagmaMigration_Neg_DiffValuesDetection(t *testing.T) {
+	fdbDir := t.TempDir()
+
+	mainData := make(map[string][]byte)
+	for i := 0; i < 10000; i++ {
+		mainData[fmt.Sprintf("key_%d", i)] = []byte(fmt.Sprintf("value_%d", i))
+	}
+
+	payload := map[RepoKind]map[string][]byte{
+		MAIN: mainData,
+	}
+
+	seedForestDB(t, fdbDir, payload)
+
+	fdbRepo := getOpenForestDBRepo(fdbDir)
+	defer fdbRepo.Close()
+
+	magmaDir := t.TempDir()
+	magmaRepo := getOpenRepo(magmaDir)
+	defer magmaRepo.Close()
+
+	// obfuscate 1% values
+	for i := 0; i < 100; i++ {
+		handleError(
+			t,
+			magmaRepo.Set(MAIN, fmt.Sprintf("key_%d", i), []byte("hello")),
+			"failed to set key in magma",
+		)
+	}
+
+	// missing 1% values
+	for i := 100; i < 200; i++ {
+		handleError(
+			t,
+			magmaRepo.Set(MAIN, fmt.Sprintf("key__%d", i), []byte("hello")),
+			"failed to set key in magma",
+		)
+	}
+
+	for i := 200; i < 10000; i++ {
+		handleError(
+			t,
+			magmaRepo.Set(
+				MAIN,
+				fmt.Sprintf("key_%d", i),
+				[]byte(fmt.Sprintf("value_%d", i)),
+			),
+			"failed to set key in magma",
+		)
+	}
+	handleError(t, magmaRepo.Commit(), "failed to commit magma store")
+
+	err := verifyMigration(fdbRepo, magmaRepo)
+	if err == nil {
+		t.Fatalf("%v expected migration to fail but got no error", t.Name())
+	} else {
+		log.Current.Infof("%v migration failed as expected with error %v",
+			t.Name(), err)
 	}
 }

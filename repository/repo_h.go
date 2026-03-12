@@ -50,6 +50,7 @@ type IRepository interface {
 	Close()
 	NewIterator(kind RepoKind, startKey, endKey string) (IRepoIterator, error)
 	GetStoreStats() MetastoreStats
+	GetItemsCount(kind RepoKind) uint64
 }
 
 type StoreType uint8
@@ -159,14 +160,17 @@ const (
 	ErrIterFailCode
 	ErrResultNotFoundCode
 	ErrNotSupported
+	ErrMigrationVerificationFailure
 	ErrInternalError StoreErrorCode = -1
 )
 
 var errCodeMap = map[StoreErrorCode]string{
-	ErrRepoClosedCode:     "ERR_REPO_CLOSED",
-	ErrIterFailCode:       "ERR_ITERATOR_FAIL",
-	ErrResultNotFoundCode: "ERR_RESULT_NOT_FOUND",
-	ErrNotSupported:       "ERR_NOT_SUPPORTED",
+	ErrRepoClosedCode:               "ERR_REPO_CLOSED",
+	ErrIterFailCode:                 "ERR_ITERATOR_FAIL",
+	ErrResultNotFoundCode:           "ERR_RESULT_NOT_FOUND",
+	ErrNotSupported:                 "ERR_NOT_SUPPORTED",
+	ErrMigrationVerificationFailure: "ERR_MIGRATION_VERIFICATION_FAILURE",
+	ErrInternalError:                "ERR_INTERNAL_FAILURE",
 }
 
 type RepoFactoryParams struct {

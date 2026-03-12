@@ -12,6 +12,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -390,8 +391,10 @@ func OpenMagmaRepositoryAndUpgrade(params RepoFactoryParams) (IRepository, error
 			}
 			defer iter.Close()
 
+			count := 0
 			item, val, iterErr := iter.Next()
 			for iterErr == nil {
+				count++
 				// use SetNoCommit and avoid too many flushes
 				setErr := repo.SetNoCommit(kind, item, val)
 				if setErr != nil {
@@ -408,8 +411,8 @@ func OpenMagmaRepositoryAndUpgrade(params RepoFactoryParams) (IRepository, error
 				return err
 			}
 
-			log.Current.Infof("OpenMagmaRepositoryAndUpgrade:: store %v migrated successfully in %v",
-				kind, time.Since(storeMirgrationStart))
+			log.Current.Infof("OpenMagmaRepositoryAndUpgrade:: store %v migrated successfully in %v (total items %v)",
+				kind, time.Since(storeMirgrationStart), count)
 			return nil
 		}
 
@@ -444,13 +447,20 @@ func OpenMagmaRepositoryAndUpgrade(params RepoFactoryParams) (IRepository, error
 			return nil, err
 		}
 
+		////////// MIGRATION verification
+		log.Current.Infof("OpenMagmaRepositoryAndUpgrade:: verifying migration...")
+		err = verifyMigration(fdbRepo, repo)
+		if err != nil {
+			log.Current.Errorf("OpenMagmaRepositoryAndUpgrade:: migration verification failed: %v",
+				err)
+			return nil, err
+		}
+
 		log.Current.Infof("OpenMagmaRepositoryAndUpgrade:: metadata migration successful. time spent %v. will save migration marker file",
 			time.Since(migrationStart))
 	} else if !foundFdbFile {
 		log.Current.Infof("OpenMagmaRepositoryAndUpgrade:: no old metadata files found. no migration is performed")
 	}
-
-	// MIGRATION TODO: add verification for migration
 
 	////////// save marker file to confirm migration is completed
 	// do this even if no migration is performed to ensure we don't treat valid metadata files as
@@ -491,6 +501,192 @@ func OpenMagmaRepositoryAndUpgrade(params RepoFactoryParams) (IRepository, error
 
 	return repo, err
 
+}
+
+func verifyMigration(fdbRepo, magmaRepo IRepository) error {
+	verificationStartTime := time.Now()
+
+	var storesToVerify = []RepoKind{MAIN, SERVER_CONFIG, COMMIT_LOG, LOCAL}
+	var overallErrors []string
+
+	for _, kind := range storesToVerify {
+		storeVerificationStart := time.Now()
+
+		var (
+			fdbItemStoreCount   = fdbRepo.GetItemsCount(kind)
+			magmaItemStoreCount = magmaRepo.GetItemsCount(kind)
+		)
+
+		if fdbItemStoreCount != magmaItemStoreCount {
+			errMsg := fmt.Sprintf("item count mismatch for %v store - fdb: %d, magma: %d",
+				kind, fdbItemStoreCount, magmaItemStoreCount)
+			log.Current.Errorf("OpenMagmaRepositoryAndUpgrade::verifyMigration: %v", errMsg)
+			overallErrors = append(overallErrors, errMsg)
+			continue
+		}
+
+		if fdbItemStoreCount == 0 {
+			log.Current.Infof("verifyMigration: store %v has 0 items, skipping key verification",
+				kind)
+			continue
+		}
+
+		var (
+			missingKeys     []string
+			valueMismatches []string
+			keysVerified    uint64
+		)
+
+		switch kind {
+		case MAIN:
+			sampleSize := max((fdbItemStoreCount*10)/100, 100)
+			log.Current.Infof("verifyMigration: sampling %d keys from MAIN store",
+				sampleSize)
+
+			keysVerified, missingKeys, valueMismatches = sampleAndVerifyKeys(
+				fdbRepo, magmaRepo,
+				kind,
+				sampleSize, fdbItemStoreCount,
+			)
+		case SERVER_CONFIG:
+			log.Current.Infof("verifyMigration: verifying ALL keys in SERVER_CONFIG store")
+
+			keysVerified, missingKeys, valueMismatches = sampleAndVerifyKeys(
+				fdbRepo, magmaRepo,
+				kind,
+				fdbItemStoreCount, fdbItemStoreCount,
+			)
+		default:
+			log.Current.Infof("verifyMigration: store %v has %d items,"+
+				" skipping key verification (only MAIN and SERVER_CONFIG verified)",
+				kind, fdbItemStoreCount)
+		}
+
+		if len(missingKeys) > 0 {
+			errMsg := fmt.Sprintf("verifyMigration: found %d missing keys in %v store",
+				len(missingKeys), kind)
+			log.Current.Errorf("%s. Missing keys: %v", errMsg, missingKeys)
+			overallErrors = append(overallErrors, errMsg)
+		}
+
+		if len(valueMismatches) > 0 {
+			errMsg := fmt.Sprintf("verifyMigration: found %d value mismatches in %v store",
+				len(valueMismatches), kind)
+			log.Current.Errorf("%s. Mismatched keys: %v", errMsg, valueMismatches)
+			overallErrors = append(overallErrors, errMsg)
+		}
+
+		log.Current.Infof(
+			"verifyMigration: store %v verification completed in %v - verified %d keys",
+			kind,
+			time.Since(storeVerificationStart),
+			keysVerified,
+		)
+	}
+
+	if len(overallErrors) > 0 {
+		err := &StoreError{
+			sType:     MagmaStoreType,
+			storeCode: ErrMigrationVerificationFailure,
+			errMsg: fmt.Sprintf("migration verification failed with %d errors: %v",
+				len(overallErrors), strings.Join(overallErrors, "; ")),
+		}
+		log.Current.Errorf("verifyMigration: completed with errors in %v - %v",
+			time.Since(verificationStartTime), err.Error())
+		return err
+	}
+
+	log.Current.Infof("verifyMigration: all verification passed successfully in %v",
+		time.Since(verificationStartTime))
+	return nil
+}
+
+func sampleAndVerifyKeys(
+	fdbRepo, magmaRepo IRepository,
+	kind RepoKind,
+	sampleSize, totalItems uint64,
+) (uint64, []string, []string) {
+
+	keys := collectAllKeys(fdbRepo, kind)
+	if len(keys) == 0 {
+		return 0, nil, nil
+	}
+
+	rand.Shuffle(len(keys), func(i, j int) {
+		keys[i], keys[j] = keys[j], keys[i]
+	})
+
+	keysToVerify := keys
+	if int(sampleSize) < len(keys) {
+		keysToVerify = keys[:sampleSize]
+	}
+
+	var missingKeys []string
+	var valueMismatches []string
+	var verifiedCount uint64
+
+	for _, key := range keysToVerify {
+		fdbVal, fdbErr := fdbRepo.Get(kind, key)
+		if fdbErr != nil {
+			if storeErr, ok := fdbErr.(*StoreError); ok &&
+				storeErr.Code() == ErrResultNotFoundCode {
+
+				missingKeys = append(missingKeys, key)
+				continue
+			}
+			log.Current.Errorf("sampleAndVerifyKeys: failed to read key %v from fdb %v store: %v",
+				key, kind, fdbErr)
+			continue
+		}
+
+		magmaVal, magmaErr := magmaRepo.Get(kind, key)
+		if magmaErr != nil {
+			if storeErr, ok := magmaErr.(*StoreError); ok &&
+				storeErr.Code() == ErrResultNotFoundCode {
+
+				missingKeys = append(missingKeys, key)
+				continue
+			}
+			log.Current.Errorf("sampleAndVerifyKeys: failed to read key %v from magma %v store: %v",
+				key, kind, magmaErr)
+			continue
+		}
+
+		if !reflect.DeepEqual(fdbVal, magmaVal) {
+			valueMismatches = append(valueMismatches, key)
+		}
+		verifiedCount++
+	}
+
+	return verifiedCount, missingKeys, valueMismatches
+}
+
+func collectAllKeys(repo IRepository, kind RepoKind) []string {
+	iter, err := repo.NewIterator(kind, "", "")
+	if err != nil {
+		log.Current.Errorf("collectAllKeys: failed to create iterator for %v store: %v",
+			kind, err)
+		return nil
+	}
+	defer iter.Close()
+
+	keys := make([]string, 0)
+
+	for {
+		key, _, err := iter.Next()
+		if err != nil {
+			if storeErr, ok := err.(*StoreError); ok &&
+				storeErr.Code() == ErrIterFailCode {
+
+				break
+			}
+			log.Current.Errorf("collectAllKeys: iterator error for %v store: %v", kind, err)
+			break
+		}
+		keys = append(keys, key)
+	}
+
+	return keys
 }
 
 func openMagmaRepository(
@@ -1243,7 +1439,7 @@ func (m_repo *Magma_Repository) GetStoreStats() MetastoreStats {
 	var itemsCount uint64 = 0
 
 	if statsObj := m_repo.getRepoStats(MAIN); statsObj != nil {
-		itemsCount = uint64(statsObj.TotalItemCount)
+		itemsCount = uint64(statsObj.ItemCount)
 		rawStats["main_store"] = statsObj
 	}
 
@@ -1264,4 +1460,19 @@ func (m_repo *Magma_Repository) GetStoreStats() MetastoreStats {
 		DiskInUse:  diskInUse,
 		Raw:        rawStats,
 	}
+}
+
+func (m_repo *Magma_Repository) GetItemsCount(kind RepoKind) uint64 {
+	m_repo.Lock()
+	defer m_repo.Unlock()
+
+	if !m_repo.isClosed {
+		var statsObj = m_repo.getRepoStats(kind)
+
+		if statsObj != nil {
+			return uint64(statsObj.ItemCount)
+		}
+	}
+
+	return 0
 }
