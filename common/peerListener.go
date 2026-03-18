@@ -165,7 +165,10 @@ func (l *PeerListener) ResetConnections() (*PeerListener, error) {
 EMPTY:
 	for {
 		select {
-		case <-l.connch:
+		case pc := <-l.connch:
+			if err := pc.GetConn().Close(); err != nil {
+				log.Current.Errorf("PeerListener.ResetConnections(): error closing conn %v", err)
+			}
 		default:
 			break EMPTY
 		}
