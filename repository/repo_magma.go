@@ -3,9 +3,49 @@
 
 package repository
 
-//#cgo LDFLAGS: -lmagma_shared
-//#include <stdlib.h>
-//#include <libmagma/magma_capi.h>
+/*
+#cgo LDFLAGS: -lmagma_shared -ljemalloc
+#include <stdlib.h>
+#include <string.h>
+#include <libmagma/magma_capi.h>
+// #include <libmagma/magma_data_recovery.h>
+
+extern DataEncryptionKey* go_global_get_encryption_key(SizedBuf id, void* ctx);
+
+extern void* je_malloc(size_t size);
+extern void je_free(void* ptr);
+
+// Static unencrypted DEK - must persist for program lifetime
+static DataEncryptionKey unencryptedDEK = {0};
+
+static void initUnencryptedDEK(void) {
+	unencryptedDEK.id = "unencrypted";
+	unencryptedDEK.cipher = "None";
+	unencryptedDEK.key.data = NULL;
+	unencryptedDEK.key.len = 0;
+}
+
+static DataEncryptionKey* getUnencryptedDEK(void) {
+	return &unencryptedDEK;
+}
+
+// Allocate a null-terminated C string using jemalloc
+static char* je_strdup(const char* src) {
+	if (!src) return NULL;
+	size_t len = strlen(src) + 1;
+	char* dst = (char*)je_malloc(len);
+	if (dst) memcpy(dst, src, len);
+	return dst;
+}
+
+// Allocate a byte buffer using jemalloc
+static char* je_memdup(const char* src, size_t len) {
+	if (!src || len == 0) return NULL;
+	char* dst = (char*)je_malloc(len);
+	if (dst) memcpy(dst, src, len);
+	return dst;
+}
+*/
 import "C"
 
 import (
@@ -16,6 +56,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -46,7 +87,13 @@ type (
 	MagmaSnapshot     = C.MagmaSnapHandle
 	MagmaStatusCode   = C.int
 	MagmaStats        = C.MagmaKVStoreStats
+	MagmaDEK          = C.DataEncryptionKey
 )
+
+func init() {
+	// Initialize the static C unencrypted DEK
+	C.initUnencryptedDEK()
+}
 
 func defaultMagmaCfg() *MagmaShardConfig {
 	numFlushers := uint64_t(1)
@@ -57,6 +104,9 @@ func defaultMagmaCfg() *MagmaShardConfig {
 	cfg.StatsSamplePeriodSecs = 300
 	cfg.MemoryQuota = 4 * 1024 * 1024
 	cfg.EnableAutoCheckpointing = 1
+	cfg.EnablePerKVStoreEncryptionManagement = 0
+	cfg.GetEncryptionKeyCallback = (C.GetEncryptionKeyCb)(C.go_global_get_encryption_key)
+	// GetEncryptionKeyCallbackCtx will be set after repo struct is created
 	return &cfg
 }
 
@@ -261,18 +311,29 @@ var (
 		errMsg:    "MAGMA_ITERATOR_FAIL",
 		storeCode: ErrIterFailCode,
 	}
+	magmaErrNotImplemented = &StoreError{
+		sType:     MagmaStoreType,
+		errMsg:    "Method not implemented",
+		storeCode: ErrInternalError,
+	}
 )
 
 // Magma_Repository is the global interface to magma backed store
 type Magma_Repository struct {
 	sync.Mutex
-	mInst         *MagmaShard
-	storeRev      map[RepoKind]uint32_t
-	storeSeqNum   map[RepoKind]*atomic.Uint64
-	snapshots     map[RepoKind][]*magmaSnapContainer
-	memAllocMutex sync.Mutex // memAllocMutex is to serialize access to memAllocator. this is kept as a separate lock so we can remove overall lock in future
-	memAllocator  *MagmaMemAllocator
-	isClosed      bool
+	mInst             *MagmaShard
+	storeRev          map[RepoKind]uint32_t
+	storeSeqNum       map[RepoKind]*atomic.Uint64
+	snapshots         map[RepoKind][]*magmaSnapContainer
+	memAllocMutex     sync.Mutex // memAllocMutex is to serialize access to memAllocator.
+	memAllocator      *MagmaMemAllocator
+	isClosed          bool
+	keyStoreCallbacks IEncryptionKeyStoreCallbacks
+	dekCache          map[string]*MagmaDEK // keyID -> C-allocated DEK
+	currentDEK        *MagmaDEK            // current active key
+	currentKeyID      string               // track active key ID for change detection
+	dekCacheMu        sync.RWMutex
+	pinner            runtime.Pinner
 }
 
 const numRecsForMemAlloc = 1
@@ -327,6 +388,7 @@ func OpenMagmaRepositoryAndUpgrade(params RepoFactoryParams) (IRepository, error
 		params.MemoryQuota, params.CompactionMinFileSize,
 		params.CompactionThresholdPercent,
 		params.EnableWAL,
+		params.EarCallbacks,
 	)
 
 	if err != nil {
@@ -694,8 +756,24 @@ func openMagmaRepository(
 	memoryQuota, minTreeSize uint64,
 	compactionThreshold uint8,
 	enableWAL bool,
+	earCallbacks IEncryptionKeyStoreCallbacks,
 ) (IRepository, error) {
+
+	m_repo := &Magma_Repository{
+		storeRev:     make(map[RepoKind]uint32_t, 4),
+		snapshots:    make(map[RepoKind][]*magmaSnapContainer, 4),
+		storeSeqNum:  make(map[RepoKind]*atomic.Uint64, 4),
+		memAllocator: C.MKV_CreateWorkContext(numRecsForMemAlloc /*numRecs C.size_t*/),
+	}
+
+	if earCallbacks != nil {
+		m_repo.keyStoreCallbacks = earCallbacks
+		m_repo.dekCache = make(map[string]*MagmaDEK)
+	}
+
 	cfg := defaultMagmaCfg()
+	m_repo.pinner.Pin(m_repo)
+	cfg.GetEncryptionKeyCallbackCtx = unsafe.Pointer(m_repo)
 
 	if enableWAL {
 		cfg.EnableWAL = 1
@@ -724,13 +802,7 @@ func openMagmaRepository(
 		return nil, err
 	}
 
-	m_repo := &Magma_Repository{
-		mInst:        mInst,
-		storeRev:     make(map[RepoKind]uint32_t, 4),
-		snapshots:    make(map[RepoKind][]*magmaSnapContainer, 4),
-		storeSeqNum:  make(map[RepoKind]*atomic.Uint64, 4),
-		memAllocator: C.MKV_CreateWorkContext(numRecsForMemAlloc /*numRecs C.size_t*/),
-	}
+	m_repo.mInst = mInst
 
 	for _, storeId := range []MagmaStoreID{
 		MainMagmaStoreID, CommitLogMagmaStoreID, ServerConfigMagmaStoreID, LocalMagmaStoreID,
@@ -801,6 +873,25 @@ func (m_repo *Magma_Repository) Close() {
 				snapContainer.close()
 			}
 		}
+
+		// Free C-allocated DEK cache (allocated via jemalloc)
+		m_repo.dekCacheMu.Lock()
+		for keyID, dek := range m_repo.dekCache {
+			if keyID == "" {
+				continue
+			}
+			C.je_free(unsafe.Pointer(dek.id))
+			C.je_free(unsafe.Pointer(dek.cipher))
+			if dek.key.data != nil {
+				C.je_free(unsafe.Pointer(dek.key.data))
+			}
+			C.je_free(unsafe.Pointer(dek))
+		}
+		m_repo.dekCache = nil
+		m_repo.currentDEK = nil
+		m_repo.dekCacheMu.Unlock()
+
+		m_repo.pinner.Unpin()
 
 		C.MKV_DestroyWorkContext(m_repo.memAllocator /*ctx *C.MagmaWorkContext*/)
 		C.DestroyMagmaKVStore(m_repo.mInst /*inst *C.MagmaKVStore*/)
@@ -1475,4 +1566,321 @@ func (m_repo *Magma_Repository) GetItemsCount(kind RepoKind) uint64 {
 	}
 
 	return 0
+}
+
+// global function which call the registered EaR keys store callbacks to make keyID available
+// this method has to remain global as we cannot export a method on a type to other libraries.
+//
+//export go_global_get_encryption_key
+func go_global_get_encryption_key(keyID MagmaStringBuf, ctx unsafe.Pointer) *MagmaDEK {
+	if ctx == nil {
+		return C.getUnencryptedDEK()
+	}
+
+	m_repo := (*Magma_Repository)(ctx)
+	if m_repo == nil {
+		return C.getUnencryptedDEK()
+	}
+
+	// Empty keyID means caller wants the current/active key
+	if keyID.data == nil || keyID.len == 0 {
+		// Try callback first if registered
+		if m_repo.keyStoreCallbacks != nil {
+			key, err := m_repo.keyStoreCallbacks.GetActiveKeyCipher()
+			if err == nil && key != nil {
+				return m_repo.getOrCreateDEK(key)
+			}
+		}
+		// Fallback to cache
+		m_repo.dekCacheMu.RLock()
+		dek := m_repo.currentDEK
+		m_repo.dekCacheMu.RUnlock()
+		if dek != nil {
+			return dek
+		}
+		return C.getUnencryptedDEK()
+	}
+
+	// Convert C keyID to Go string
+	goKeyID := C.GoStringN(keyID.data, C.int(keyID.len))
+
+	// Try cache first (most common path for lookup by ID)
+	m_repo.dekCacheMu.RLock()
+	dek, ok := m_repo.dekCache[goKeyID]
+	m_repo.dekCacheMu.RUnlock()
+	if ok {
+		return dek
+	}
+
+	// Try callback if registered
+	if m_repo.keyStoreCallbacks != nil {
+		key, err := m_repo.keyStoreCallbacks.GetKeyCipherByID(goKeyID)
+		if err == nil && key != nil {
+			return m_repo.getOrCreateDEK(key)
+		} else {
+			log.Current.Warnf("go_global_get_encryption_key failed to get key %s: %v",
+				goKeyID, err)
+		}
+	}
+
+	// Not in cache, return unencrypted (key not found)
+	return C.getUnencryptedDEK()
+}
+
+// getOrCreateDEK returns a C-allocated DEK from cache or creates a new one
+func (m_repo *Magma_Repository) getOrCreateDEK(key *EarKey) *MagmaDEK {
+	if key == nil {
+		return C.getUnencryptedDEK()
+	}
+
+	// Check cache first
+	m_repo.dekCacheMu.RLock()
+	dek, ok := m_repo.dekCache[key.Id]
+	m_repo.dekCacheMu.RUnlock()
+	if ok {
+		return dek
+	}
+
+	// Create new C-allocated DEK
+	m_repo.dekCacheMu.Lock()
+	defer m_repo.dekCacheMu.Unlock()
+
+	// Double check after acquiring write lock
+	if dek, ok := m_repo.dekCache[key.Id]; ok {
+		return dek
+	}
+
+	if len(key.Id) == 0 {
+		dek = C.getUnencryptedDEK()
+	} else {
+		// Allocate C memory for the DEK using jemalloc
+		dek = (*MagmaDEK)(C.je_malloc(C.size_t(unsafe.Sizeof(MagmaDEK{}))))
+
+		cId := C.CString(key.Id)
+		dek.id = C.je_strdup(cId)
+		C.free(unsafe.Pointer(cId))
+
+		cCipher := C.CString(key.Cipher)
+		dek.cipher = C.je_strdup(cCipher)
+		C.free(unsafe.Pointer(cCipher))
+
+		if len(key.Key) > 0 {
+			dek.key.data = C.je_memdup((*C.char)(unsafe.Pointer(&key.Key[0])), C.size_t(len(key.Key)))
+		} else {
+			dek.key.data = nil
+		}
+		dek.key.len = C.size_t(len(key.Key))
+	}
+
+	m_repo.dekCache[key.Id] = dek
+	return dek
+}
+
+// DropKeys implements [IEaRExtension] drop keys callback to remove data encrypted using keyID
+// The expectation is that the data will be re-written with current active encryption key
+func (m_repo *Magma_Repository) DropKeys(keyIDs []KeyID) error {
+	m_repo.Lock()
+	defer m_repo.Unlock()
+
+	if m_repo.isClosed {
+		return magmaErrRepoClosed
+	}
+
+	if len(keyIDs) == 0 {
+		return nil
+	}
+
+	// Drop keys from all KV stores
+	for _, storeID := range []MagmaStoreID{
+		MainMagmaStoreID, CommitLogMagmaStoreID, ServerConfigMagmaStoreID, LocalMagmaStoreID,
+	} {
+		// Convert keyIDs to C array
+		cKeys := make([]*C.char, len(keyIDs))
+		for i, kid := range keyIDs {
+			if kid == "" {
+				cKeys[i] = C.CString("unencrypted")
+			} else {
+				cKeys[i] = C.CString(kid)
+			}
+			defer C.free(unsafe.Pointer(cKeys[i]))
+		}
+
+		cstatus := C.MKV_DropEncryptionKeys(
+			m_repo.mInst,
+			storeID,
+			&cKeys[0],
+			size_t(len(keyIDs)),
+		)
+		if err := translateMagmaErrToStoreErr(cstatus); err != nil {
+			log.Current.Errorf("MagmaRepository::DropKeys:: failed for store %s: %v",
+				storeIDString(storeID), err)
+			return err
+		}
+	}
+
+	log.Current.Infof("MagmaRepository::DropKeys:: dropped keys %v", keyIDs)
+	return nil
+}
+
+// GetInuseKeys implements [IEaRExtension]. Can be used by caller to know which keys is the data
+// currently encrypted using
+func (m_repo *Magma_Repository) GetInuseKeys() ([]KeyID, error) {
+	m_repo.Lock()
+	defer m_repo.Unlock()
+
+	if m_repo.isClosed {
+		return nil, magmaErrRepoClosed
+	}
+
+	var (
+		keyIDs  []KeyID
+		cKeyIDs *MagmaStringBuf
+		numKeys size_t
+	) //nolint:golines // false positive
+
+	cstatus := C.MKV_GetActiveEncryptionKeyIDs(
+		m_repo.mInst,
+		&cKeyIDs,
+		&numKeys, //nolint:gocritic // false positive
+	)
+	if err := translateMagmaErrToStoreErr(cstatus); err != nil {
+		log.Current.Errorf("MagmaRepository::GetInuseKeys:: failed: %v", err)
+		return nil, err
+	}
+	unencryptedKeyID := C.GoString(C.getUnencryptedDEK().id)
+
+	// Convert C array to Go slice and free memory allocated by Magma.
+	// Per magma_capi.h: "Each SizedBuf must be freed individually by the caller.
+	// keyIDs must also be freed by the caller."
+	// Individual SizedBufs are freed via MKV_Free; the outer array via MKV_Free
+	// with a wrapper SizedBuf since both use the same jemalloc-backed allocator.
+	if numKeys > 0 {
+		var cKeyIDSlice = unsafe.Slice(cKeyIDs, numKeys)
+		for i := size_t(0); i < numKeys; i++ {
+			keyID := C.GoStringN(cKeyIDSlice[i].data, C.int(cKeyIDSlice[i].len))
+			if keyID == unencryptedKeyID {
+				keyID = ""
+			}
+			keyIDs = append(keyIDs, keyID)
+			C.MKV_Free(cKeyIDSlice[i])
+		}
+		// Free the outer SizedBuf array allocated by cb_malloc (jemalloc).
+		// cb_malloc uses je_malloc internally, so we use je_free directly
+		// since cb_free is not exported from libmagma_shared.
+		C.je_free(unsafe.Pointer(cKeyIDs))
+	}
+
+	// Notify callback if registered
+	if m_repo.keyStoreCallbacks != nil && len(keyIDs) > 0 {
+		for _, kid := range keyIDs {
+			err := m_repo.keyStoreCallbacks.SetInuseKeys(kid)
+			if err != nil {
+				log.Current.Warnf(
+					"MagmaRepository::GetInuseKeys unable to report keyIDs %v with err %v",
+					keyIDs, err,
+				)
+			}
+		}
+	}
+
+	log.Current.Debugf("MagmaRepository::GetInuseKeys:: keys: %v", keyIDs)
+	return keyIDs, nil
+}
+
+// RefreshKeys implements [IEaRExtension] which refreshs the current set of keys available
+// with the system. this can be used to change the current active encryption key
+func (m_repo *Magma_Repository) RefreshKeys() error {
+	m_repo.Lock()
+	defer m_repo.Unlock()
+
+	if m_repo.isClosed {
+		return magmaErrRepoClosed
+	}
+
+	// Get keys from callback if registered, otherwise use provided keys
+	var keyInfo *EncryKeyInfo
+	var activeKeyID string
+
+	if m_repo.keyStoreCallbacks != nil {
+		info, err := m_repo.keyStoreCallbacks.GetEncryptionKeys()
+		if err != nil {
+			err = fmt.Errorf("keyStoreCallbacks.GetEncryptionKeys failed: %w", err)
+			log.Current.Errorf("MagmaRepository::RefreshKeys: %v", err)
+			return err
+		}
+		if info != nil {
+			keyInfo = info
+			activeKeyID = info.ActiveKeyId
+		}
+	}
+
+	if keyInfo == nil {
+		return nil
+	}
+
+	// Build set of new key IDs
+	newKeyIDs := make(map[string]bool)
+	for i := range keyInfo.Keys {
+		newKeyIDs[keyInfo.Keys[i].Id] = true
+	}
+
+	// Find and free keys no longer needed (allocated via jemalloc)
+	m_repo.dekCacheMu.Lock()
+	for keyID, dek := range m_repo.dekCache {
+		if !newKeyIDs[keyID] {
+			// Key no longer in use, free C memory (jemalloc)
+			C.je_free(unsafe.Pointer(dek.id))
+			C.je_free(unsafe.Pointer(dek.cipher))
+			if dek.key.data != nil {
+				C.je_free(unsafe.Pointer(dek.key.data))
+			}
+			C.je_free(unsafe.Pointer(dek))
+			delete(m_repo.dekCache, keyID)
+			log.Current.Debugf("MagmaRepository::RefreshKeys:: freed unused key %s", keyID)
+		}
+	}
+	m_repo.dekCacheMu.Unlock()
+
+	// Add or update keys in the DEK cache
+	for i := range keyInfo.Keys {
+		k := &keyInfo.Keys[i]
+		m_repo.getOrCreateDEK(k)
+	}
+
+	// Detect active key change and notify Magma
+	if activeKeyID != m_repo.currentKeyID {
+		m_repo.dekCacheMu.RLock()
+		dek, ok := m_repo.dekCache[activeKeyID]
+		m_repo.dekCacheMu.RUnlock()
+
+		if ok && dek != nil {
+			cstatus := C.MKV_SetCurrentEncryptionKey(m_repo.mInst, dek)
+			if err := translateMagmaErrToStoreErr(cstatus); err != nil {
+				log.Current.Errorf(
+					"MagmaRepository::RefreshKeys:: failed to set current key %s: %v",
+					activeKeyID, err)
+				return err
+			}
+
+			m_repo.dekCacheMu.Lock()
+			m_repo.currentDEK = dek
+			m_repo.currentKeyID = activeKeyID
+			m_repo.dekCacheMu.Unlock()
+
+			log.Current.Infof("MagmaRepository::RefreshKeys:: set current key to %s", activeKeyID)
+		}
+	}
+
+	return nil
+}
+
+// RegisterEncryptionKeyStoreCallback implements [IEaRExtension]. It registers a set of callbacks
+// required by the repository to get system keys
+func (m_repo *Magma_Repository) RegisterEncryptionKeyStoreCallback(
+	cb IEncryptionKeyStoreCallbacks,
+) {
+
+	m_repo.Lock()
+	defer m_repo.Unlock()
+	m_repo.keyStoreCallbacks = cb
 }

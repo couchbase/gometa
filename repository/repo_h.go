@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/couchbase/cbauth"
+	"github.com/couchbase/cbauth/cbauthimpl"
 	c "github.com/couchbase/gometa/common"
 )
 
@@ -51,6 +53,7 @@ type IRepository interface {
 	NewIterator(kind RepoKind, startKey, endKey string) (IRepoIterator, error)
 	GetStoreStats() MetastoreStats
 	GetItemsCount(kind RepoKind) uint64
+	IEaRExtension
 }
 
 type StoreType uint8
@@ -181,6 +184,7 @@ type RepoFactoryParams struct {
 	CompactionThresholdPercent uint8
 	StoreType                  StoreType
 	EnableWAL                  bool
+	EarCallbacks               IEncryptionKeyStoreCallbacks
 }
 
 func (params RepoFactoryParams) String() string {
@@ -201,4 +205,26 @@ func OpenOrCreateNewRepositoryFromParams(params RepoFactoryParams) (IRepository,
 		sType:     params.StoreType,
 		storeCode: ErrNotSupported,
 	}
+}
+
+type KeyID = string
+type EncryKeyInfo = cbauth.EncrKeysInfo
+type EarKey = cbauthimpl.EaRKey
+
+// IEaRExtension is the main type which will be extended by the IRepository to support encryption
+// at rest for the metadata repository
+type IEaRExtension interface {
+	GetInuseKeys() ([]KeyID, error)
+	RefreshKeys() error
+	DropKeys([]KeyID) error
+	RegisterEncryptionKeyStoreCallback(IEncryptionKeyStoreCallbacks)
+}
+
+// IEncryptionKeyStoreCallbacks defines a set of callbacks which any repository will call
+// to get encryption key cipher required during bootstrap and decryption
+type IEncryptionKeyStoreCallbacks interface {
+	GetActiveKeyCipher() (*EarKey, error)
+	GetKeyCipherByID(KeyID) (*EarKey, error)
+	GetEncryptionKeys() (*EncryKeyInfo, error)
+	SetInuseKeys(KeyID) error
 }

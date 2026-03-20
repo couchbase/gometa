@@ -21,6 +21,7 @@ PROJECT (gometa)
 
 INCLUDE (FindCouchbaseGo)
 INCLUDE (FindCouchbaseCurl)
+INCLUDE (FindCouchbaseJemalloc)
 
 SET (_deps n1ql-yacc sigar)
 IF (TARGET forestdb)
@@ -28,6 +29,9 @@ IF (TARGET forestdb)
 ENDIF ()
 
 IF (BUILD_ENTERPRISE)
+  IF(NOT JEMALLOC_FOUND)
+    MESSAGE (FATAL_ERROR "Gometa requires jemalloc normally, but it was not found")
+  ENDIF(NOT JEMALLOC_FOUND)
   MESSAGE(STATUS "Building EE edition of Gometa")
 ELSE (BUILD_ENTERPRISE)
   MESSAGE(STATUS "Building CE edition of Gometa")

@@ -68,6 +68,11 @@ var fdbErrRepoClosed = &StoreError{
 	errMsg:    ErrRepoClosedCode.Error(),
 	storeCode: ErrRepoClosedCode,
 }
+var fdbErrNotImplemented = &StoreError{
+	sType:     FDbStoreType,
+	errMsg:    "Method not implemented",
+	storeCode: ErrInternalError,
+}
 
 func genericFDbStoreError(err error) error {
 	if err == nil {
@@ -702,3 +707,25 @@ func DestroyRepositoryWithParams(params RepoFactoryParams) error {
 
 	return genericFDbStoreError(fdb.Destroy(fdbPath, config))
 }
+
+// DropKeys implements [IEaRExtension] drop keys callback to remove data encrypted using keyID
+// The expectation is that the data will be re-written with current active encryption key
+func (fdb_repo *Fdb_Repository) DropKeys([]KeyID) error {
+	return fdbErrNotImplemented
+}
+
+// GetInuseKeys implements [IEaRExtension]. Can be used by caller to know which keys is the data
+// currently encrypted using
+func (fdb_repo *Fdb_Repository) GetInuseKeys() ([]KeyID, error) {
+	return nil, fdbErrNotImplemented
+}
+
+// RefreshKeys implements [IEaRExtension] which refreshs the current set of keys available
+// with the system. this can be used to change the current active encryption key
+func (fdb_repo *Fdb_Repository) RefreshKeys() error {
+	return fdbErrNotImplemented
+}
+
+// RegisterEncryptionKeyStoreCallback implements [IEaRExtension]. It registers a set of callbacks
+// required by the repository to get system keys
+func (fdb_repo *Fdb_Repository) RegisterEncryptionKeyStoreCallback(IEncryptionKeyStoreCallbacks) {}
