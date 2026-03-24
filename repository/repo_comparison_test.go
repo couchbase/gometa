@@ -46,7 +46,7 @@ func setupRepositories(t *testing.T) *testRepositories {
 	magmaPath := filepath.Join(dir, "magma_metadata")
 	magmaRepo, err := openMagmaRepository(
 		magmaPath, 4*1024*1024,
-		0, 30, true,
+		0, 30, true, nil,
 	)
 	if err != nil {
 		fdbRepo.Close()
