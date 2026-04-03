@@ -6,11 +6,12 @@ package repository
 import (
 	"bytes"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	c "github.com/couchbase/gometa/common"
@@ -274,8 +275,6 @@ func TestMagmaRepository_Reopen(t *testing.T) {
 }
 
 func TestMagmaRepository_SetNoCommitPersistsAfterReopen(t *testing.T) {
-	u, _ := user.Current()
-	t.Logf("user - %+v", u)
 	dir := filepath.Join(os.TempDir(), "test_repo")
 	if os.Getenv(CHILD_PROC_TEST_ENV) != "1" {
 		os.RemoveAll(dir)
@@ -539,4 +538,219 @@ func runInChildProc(testFn func(subt *testing.T)) func(*testing.T) {
 			}
 		}
 	}
+}
+
+func walkerToDelWAL(dir string) error {
+	return filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !d.IsDir() && strings.Contains(d.Name(), "wal") {
+			log.Current.Infof("walker:: deleting %v", path)
+			if err := os.Remove(path); err != nil {
+				return err
+			}
+			return filepath.SkipAll
+		}
+
+		return nil
+	})
+}
+
+func TestMagamRepository_CorruptionAndRecoveery_DeletedWAL(t *testing.T) {
+	dir := t.TempDir()
+
+	// step 1 prepopulation
+	log.Current.Infof("********************** step 1 prepopulation")
+	{
+		repo := getOpenRepo(dir)
+		verifyMigrationMarkerExists(t, dir)
+		defer repo.Close()
+
+		utilRepoSet(t, repo, repo.Set, t.Name())
+
+		// Test that Set fails if we write after repo is closed
+		repo.Close()
+		err := repo.Set(MAIN, "key_after_close", []byte("val"))
+		storeErr := verifyMagmaStoreError(t, err, "Set after Close")
+		if storeErr != nil && storeErr.Code() != ErrRepoClosedCode {
+			t.Errorf(
+				"Set should fail after repo is closed, expected ErrRepoClosedCode, got: %v",
+				storeErr.Code(),
+			)
+		}
+	}
+
+	// Step 2 corruption
+	log.Current.Infof("********************** step 2 corruption")
+	{
+		magmaDir := filepath.Join(dir, c.MAGMA_SUB_DIR)
+		err := walkerToDelWAL(magmaDir)
+		if err != nil {
+			t.Fatalf("%v failed to delete sstables with err %v", t.Name(), err)
+		}
+	}
+
+	// Step 3 auto recovery with higher version
+	log.Current.Infof("********************** step 3 auto recovery with higher version")
+	{
+		repo := getOpenRepo(dir)
+		defer repo.Close()
+
+		for _, kind := range []RepoKind{MAIN, COMMIT_LOG, SERVER_CONFIG, LOCAL} {
+			if ic := repo.GetItemsCount(kind); ic > 0 {
+				t.Errorf("%v expected store to be reset post corruption but got %v items",
+					t.Name(), ic)
+			}
+		}
+	}
+
+}
+
+func walkerToDeleteStoreConfigs(dir string) error {
+
+	return filepath.WalkDir(dir,
+		func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if path == dir {
+				return nil
+			}
+
+			if !d.IsDir() && strings.Contains(path, "kvstore") &&
+				d.Name() == "config.json" {
+				log.Current.Infof("walker:: deleting %v", path)
+
+				return os.Remove(path)
+			}
+
+			return nil
+		},
+	)
+}
+
+func TestMagmaRepository_CorruptionAndRecovery_DeletedStoreConfigs(t *testing.T) {
+	dir := t.TempDir()
+
+	// step 1 prepopulation
+	log.Current.Infof("********************** step 1 prepopulation")
+	{
+		repo := getOpenRepo(dir)
+		verifyMigrationMarkerExists(t, dir)
+		defer repo.Close()
+
+		utilRepoSet(t, repo, repo.Set, t.Name())
+
+		// Test that Set fails if we write after repo is closed
+		repo.Close()
+		err := repo.Set(MAIN, "key_after_close", []byte("val"))
+		storeErr := verifyMagmaStoreError(t, err, "Set after Close")
+		if storeErr != nil && storeErr.Code() != ErrRepoClosedCode {
+			t.Errorf(
+				"Set should fail after repo is closed, expected ErrRepoClosedCode, got: %v",
+				storeErr.Code(),
+			)
+		}
+	}
+
+	// Step 2 corruption
+	log.Current.Infof("********************** step 2 corruption")
+	{
+		magmaDir := filepath.Join(dir, c.MAGMA_SUB_DIR)
+		err := walkerToDeleteStoreConfigs(magmaDir)
+		if err != nil {
+			t.Fatalf("%v failed to corrupt stores with err %v", t.Name(), err)
+		}
+	}
+
+	// Step 3 auto recovery with higher version
+	log.Current.Infof("********************** step 3 auto recovery with higher version")
+	{
+		repo := getOpenRepo(dir)
+		defer repo.Close()
+
+		for _, kind := range []RepoKind{MAIN, COMMIT_LOG, SERVER_CONFIG, LOCAL} {
+			if ic := repo.GetItemsCount(kind); ic > 0 {
+				t.Errorf("%v expected store to be reset post corruption but got %v items",
+					t.Name(), ic)
+			}
+		}
+	}
+
+}
+func walkerToCorruptStoreConfigs(dir string) error {
+
+	return filepath.WalkDir(dir,
+		func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if path == dir {
+				return nil
+			}
+
+			if !d.IsDir() && strings.Contains(path, "kvstore") &&
+				d.Name() == "config.json" {
+				log.Current.Infof("walker:: corrupting %v", path)
+
+				return os.WriteFile(path, genData(100), os.ModeAppend)
+			}
+
+			return nil
+		},
+	)
+}
+
+func TestMagmaRepository_CorruptionAndRecovery_CorruptedStoreConfigs(t *testing.T) {
+	dir := t.TempDir()
+
+	// step 1 prepopulation
+	log.Current.Infof("********************** step 1 prepopulation")
+	{
+		repo := getOpenRepo(dir)
+		verifyMigrationMarkerExists(t, dir)
+		defer repo.Close()
+
+		utilRepoSet(t, repo, repo.Set, t.Name())
+
+		// Test that Set fails if we write after repo is closed
+		repo.Close()
+		err := repo.Set(MAIN, "key_after_close", []byte("val"))
+		storeErr := verifyMagmaStoreError(t, err, "Set after Close")
+		if storeErr != nil && storeErr.Code() != ErrRepoClosedCode {
+			t.Errorf(
+				"Set should fail after repo is closed, expected ErrRepoClosedCode, got: %v",
+				storeErr.Code(),
+			)
+		}
+	}
+
+	// Step 2 corruption
+	log.Current.Infof("********************** step 2 corruption")
+	{
+		magmaDir := filepath.Join(dir, c.MAGMA_SUB_DIR)
+		err := walkerToCorruptStoreConfigs(magmaDir)
+		if err != nil {
+			t.Fatalf("%v failed to corrupt stores with err %v", t.Name(), err)
+		}
+	}
+
+	// Step 3 auto recovery with higher version
+	log.Current.Infof("********************** step 3 auto recovery with higher version")
+	{
+		repo := getOpenRepo(dir)
+		defer repo.Close()
+
+		for _, kind := range []RepoKind{MAIN, COMMIT_LOG, SERVER_CONFIG, LOCAL} {
+			if ic := repo.GetItemsCount(kind); ic > 0 {
+				t.Errorf("%v expected store to be reset post corruption but got %v items",
+					t.Name(), ic)
+			}
+		}
+	}
+
 }

@@ -284,6 +284,8 @@ func translateMagmaErrToStoreErr(status MagmaOpStatus) error {
 	switch status.Code {
 	case MagmaStatusOkNotFound:
 		errCode = ErrResultNotFoundCode
+	case MagmaStatusCorruption, MagmaStatusEncryptionKeyNotFound:
+		errCode = ErrStoreCorrupted
 		// TODO: extend generic error codes and expand them here too
 	}
 	return &StoreError{
@@ -347,6 +349,10 @@ func OpenMagmaRepositoryAndUpgrade(params RepoFactoryParams) (IRepository, error
 		}
 	}
 
+	if params.retries == 10 {
+		return nil, params.lastErr
+	}
+
 	magmaPath := filepath.Join(params.Dir, c.MAGMA_SUB_DIR)
 	checkpointFilePath := filepath.Join(magmaPath, c.MAGMA_MIGRATION_MARKER)
 
@@ -363,8 +369,7 @@ func OpenMagmaRepositoryAndUpgrade(params RepoFactoryParams) (IRepository, error
 		}
 	} else if os.IsNotExist(err) {
 		doesMigrationMarkerExist = false
-		// CORRUPTION HANDLE TODO: instead of dir removal, increment the KV store revisions or
-		// backup the old files in a separate directory
+
 		err = os.RemoveAll(magmaPath)
 		if err != nil {
 			log.Current.Errorf("OpenMagmaRepositoryAndUpgrade:: couldn't remove stale metadata files %v due to err - %v",
@@ -392,6 +397,33 @@ func OpenMagmaRepositoryAndUpgrade(params RepoFactoryParams) (IRepository, error
 	)
 
 	if err != nil {
+		errCode := errors.Unwrap(err)
+		if errCode != nil && errors.Is(errCode, ErrStoreCorrupted) {
+			params.retries++
+			params.lastErr = err
+			// instead of returning error and making indexer enter crash loop
+			// try to fix it by removing marker file and retrying the Open operation
+			// on retry, since marker file does not exist we will cleanup the metadata
+			// dir and recreate the stores
+
+			if params.ConsoleErrorReporter != nil {
+				params.ConsoleErrorReporter(err)
+			}
+
+			if rErr := os.Remove(checkpointFilePath); rErr != nil &&
+				!os.IsNotExist(rErr) {
+
+				log.Current.Warnf(
+					"OpenMagmaRepositoryAndUpgrade:: corruption handle failed to remove marker with err %v",
+					rErr,
+				)
+			}
+
+			log.Current.Infof(
+				"OpenMagmaRepositoryAndUpgrade:: metadata corruption detected. Retrying open with clean slate...",
+			)
+			return OpenMagmaRepositoryAndUpgrade(params)
+		}
 		log.Current.Errorf("OpenMagmaRepositoryAndUpgrade:: Failed to open magma stores with error %v",
 			err)
 		return nil, err
@@ -1632,8 +1664,8 @@ func go_global_get_encryption_key(keyID MagmaStringBuf, ctx unsafe.Pointer) *Mag
 		}
 	}
 
-	// Not in cache, return unencrypted (key not found)
-	return C.getUnencryptedDEK()
+	// Not in cache, return nil to avoid magma crash
+	return nil
 }
 
 // getOrCreateDEK returns a C-allocated DEK from cache or creates a new one

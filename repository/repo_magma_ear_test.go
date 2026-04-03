@@ -14,6 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/couchbase/cbauth"
 )
 
 // ============================================================================
@@ -2179,4 +2181,52 @@ func TestEaR_DropKeys_EncryptedDataAfterSwitchToUnencrypted(t *testing.T) {
 			t.Errorf("data mismatch for %s: got %q, want %q", k, string(val), expected)
 		}
 	}
+}
+
+// TestEaR_Corruption - The idea is we have a valid metadata store (with config, etc) but
+// we don't have the keys to decrypt them. Expectation is that we will get a corruption status
+// from magma at that point and we will reset the metadata stores
+func TestEaR_Corruption(t *testing.T) {
+	// t.Skip("Skip test until magma crash is fixed")
+	dir := t.TempDir()
+
+	// Phase 1: Write encrypted data
+	keyInfo := generateRandomEncryKeyInfo(1, 0)
+	mock := setupMockWithKeys(keyInfo)
+
+	mRepo := openTestRepoAtWithCallbacks(dir, mock)
+	defer mRepo.Close()
+
+	err := mRepo.RefreshKeys()
+	requireNoError(t, err, "RefreshKeys encrypted")
+
+	for i := 0; i < 5; i++ {
+		k := fmt.Sprintf("enc_%d", i)
+		v := fmt.Sprintf("enc_val_%d", i)
+		err := mRepo.Set(MAIN, k, []byte(v))
+		requireNoError(t, err, fmt.Sprintf("Set enc %s", k))
+	}
+	err = mRepo.Commit()
+	requireNoError(t, err, "Commit encrypted")
+	mRepo.Close()
+
+	// Phase 2: restart but without mock. should fail
+	emptyKey := EarKey{Id: "", Cipher: "None"}
+	newMock := setupMockWithKeys(&cbauth.EncrKeysInfo{
+		ActiveKeyId: "",
+		Keys:        []EarKey{emptyKey},
+	})
+	mRepo = openTestRepoAtWithCallbacks(dir, newMock)
+	defer mRepo.Close()
+
+	for i := 0; i < 5; i++ {
+		k := fmt.Sprintf("enc_%d", i)
+		v, err := mRepo.Get(MAIN, k)
+		requireError(t, err, "RefreshKeys Get should've failed")
+		if !assertEmptyRes(v, err) {
+			t.Errorf("%v expected get for %v to fail as store is corrupted",
+				t.Name(), k)
+		}
+	}
+
 }

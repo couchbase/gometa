@@ -159,12 +159,17 @@ func (sErr StoreError) Is(err error) bool {
 	return false
 }
 
+func (sErr StoreError) Unwrap() error {
+	return sErr.storeCode
+}
+
 const (
 	ErrRepoClosedCode StoreErrorCode = iota + 1
 	ErrIterFailCode
 	ErrResultNotFoundCode
 	ErrNotSupported
 	ErrMigrationVerificationFailure
+	ErrStoreCorrupted
 	ErrInternalError StoreErrorCode = -1
 )
 
@@ -174,6 +179,7 @@ var errCodeMap = map[StoreErrorCode]string{
 	ErrResultNotFoundCode:           "ERR_RESULT_NOT_FOUND",
 	ErrNotSupported:                 "ERR_NOT_SUPPORTED",
 	ErrMigrationVerificationFailure: "ERR_MIGRATION_VERIFICATION_FAILURE",
+	ErrStoreCorrupted:               "ERR_STORE_CORRUPTED",
 	ErrInternalError:                "ERR_INTERNAL_FAILURE",
 }
 
@@ -187,6 +193,9 @@ type RepoFactoryParams struct {
 	EnableWAL                  bool
 	EarCallbacks               IEncryptionKeyStoreCallbacks
 	TestSleepDur               int64
+	retries                    int
+	lastErr                    error
+	ConsoleErrorReporter       func(error)
 }
 
 func (params RepoFactoryParams) String() string {
