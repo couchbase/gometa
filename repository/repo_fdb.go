@@ -729,3 +729,7 @@ func (fdb_repo *Fdb_Repository) RefreshKeys() error {
 // RegisterEncryptionKeyStoreCallback implements [IEaRExtension]. It registers a set of callbacks
 // required by the repository to get system keys
 func (fdb_repo *Fdb_Repository) RegisterEncryptionKeyStoreCallback(IEncryptionKeyStoreCallbacks) {}
+
+func (fdb_repo *Fdb_Repository) CompactStores() error {
+	return fdbErrNotImplemented
+}

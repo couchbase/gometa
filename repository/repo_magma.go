@@ -1894,3 +1894,50 @@ func (m_repo *Magma_Repository) RegisterEncryptionKeyStoreCallback(
 	defer m_repo.Unlock()
 	m_repo.keyStoreCallbacks = cb
 }
+
+func (m_repo *Magma_Repository) CompactStores() error {
+	m_repo.Lock()
+	defer m_repo.Unlock()
+
+	if m_repo.isClosed {
+		return magmaErrRepoClosed
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 4)
+
+	for _, kind := range []RepoKind{MAIN, COMMIT_LOG, SERVER_CONFIG, LOCAL} {
+		wg.Add(1)
+
+		go func(kind RepoKind) {
+			defer wg.Done()
+
+			start := time.Now()
+			storeID := repoKindToMagmaStoreID(kind)
+			cstatus := C.MKV_CompactKVStore(m_repo.mInst, storeID)
+			if err := translateMagmaErrToStoreErr(cstatus); err != nil {
+				log.Current.Errorf(
+					"MagmaRepository::CompactStores: compacting %v failed with err %v",
+					storeIDString(storeID), err)
+				errCh <- err
+			} else {
+				log.Current.Infof(
+					"MagmaRepository::CompactStores: done compacting store %v in %v",
+					storeIDString(storeID), time.Since(start))
+			}
+		}(kind)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	if len(errCh) > 0 {
+		var errs = make([]error, len(errCh))
+		for cerr := range errCh {
+			errs = append(errs, cerr)
+		}
+		return errors.Join(errs...)
+	}
+
+	return nil
+}

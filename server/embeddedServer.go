@@ -486,6 +486,13 @@ func (s *EmbeddedServer) GetMetastoreStats() r.MetastoreStats {
 	return s.repo.GetStoreStats()
 }
 
+func (s *EmbeddedServer) CompactStores() error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	return s.repo.CompactStores() //nolint:wrapcheck
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // Server
 /////////////////////////////////////////////////////////////////////////////

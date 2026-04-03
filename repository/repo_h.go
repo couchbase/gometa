@@ -53,6 +53,7 @@ type IRepository interface {
 	NewIterator(kind RepoKind, startKey, endKey string) (IRepoIterator, error)
 	GetStoreStats() MetastoreStats
 	GetItemsCount(kind RepoKind) uint64
+	CompactStores() error
 	IEaRExtension
 }
 
