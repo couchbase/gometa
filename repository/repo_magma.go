@@ -421,6 +421,16 @@ func OpenMagmaRepositoryAndUpgrade(params RepoFactoryParams) (IRepository, error
 
 	////////// open forestDb for migration
 	if foundFdbFile && !doesMigrationMarkerExist {
+
+		if params.TestSleepDur > 0 {
+			sleepDur := min(time.Duration(params.TestSleepDur)*time.Second, 5*time.Minute)
+
+			log.Current.Warnf("OpenMagmaRepositoryAndUpgrade:: test induced sleep for %v",
+				sleepDur.Seconds())
+
+			time.Sleep(sleepDur)
+		}
+
 		log.Current.Infof("OpenMagmaRepositoryAndUpgrade:: Starting metadata migration from fDb to magma...")
 		var migrationStart = time.Now()
 

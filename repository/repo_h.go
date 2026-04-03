@@ -185,6 +185,7 @@ type RepoFactoryParams struct {
 	StoreType                  StoreType
 	EnableWAL                  bool
 	EarCallbacks               IEncryptionKeyStoreCallbacks
+	TestSleepDur               int64
 }
 
 func (params RepoFactoryParams) String() string {
