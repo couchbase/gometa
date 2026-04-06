@@ -1142,20 +1142,19 @@ func (m_repo *Magma_Repository) Delete(kind RepoKind, key string) error {
 		return err
 	}
 
-	// continue to sync KV store for deletes. Refer MB-70588 for more info
-	storeID := repoKindToMagmaStoreID(kind)
+	// storeID := repoKindToMagmaStoreID(kind)
 
-	cstatus := C.MKV_SyncKVStore(
-		m_repo.mInst, // *C.MagmaKVStore
-		storeID,      // C.uint16_t
-	)
-	err := translateMagmaErrToStoreErr(cstatus)
-	if err != nil {
-		log.Current.Errorf("MagmaRepository::Delete:: sync error {key: %s, store: %s, err: %v}",
-			key, storeIDString(storeID), err)
-	}
+	// cstatus := C.MKV_SyncKVStore(
+	// 	m_repo.mInst, // *C.MagmaKVStore
+	// 	storeID,      // C.uint16_t
+	// )
+	// err := translateMagmaErrToStoreErr(cstatus)
+	// if err != nil {
+	// 	log.Current.Errorf("MagmaRepository::Delete:: sync error {key: %s, store: %s, err: %v}",
+	// 		key, storeIDString(storeID), err)
+	// }
 
-	return err
+	return nil
 }
 
 // read entire stats object for a store. take lock on m_repo before calling this

@@ -320,9 +320,7 @@ func TestMagmaRepository_SetNoCommitPersistsAfterReopen(t *testing.T) {
 	}))
 }
 
-func TestMagmaRepository_DeletePersistsAfterReopen(t *testing.T) {
-	u, _ := user.Current()
-	t.Logf("user - %+v", u)
+func TestMagmaRepository_DeleteNoCommitAfterReopen(t *testing.T) {
 	dir := filepath.Join(os.TempDir(), "test_repo")
 	if os.Getenv(CHILD_PROC_TEST_ENV) != "1" {
 		os.RemoveAll(dir)
@@ -350,13 +348,78 @@ func TestMagmaRepository_DeletePersistsAfterReopen(t *testing.T) {
 			t.Fatalf("Set failed for key=%s: %v", key, err)
 		}
 
-		if err := repo.Delete(MAIN, key); err != nil {
+		if err := repo.DeleteNoCommit(MAIN, key); err != nil {
 			verifyStoreErrorForRepo(t, repo, err, "DeleteNoCommit")
 			t.Fatalf("DeleteNoCommit failed for key=%s: %v", key, err)
 		}
 
-		// TODO: replace with testcode induced functions
-		panic("induce panic")
+		os.Exit(0)
+	}))
+
+	t.Run("ValTest", runInChildProc(func(t *testing.T) {
+		repo := getOpenRepo(dir)
+		verifyMigrationMarkerExists(t, dir)
+
+		res, err := repo.Get(MAIN, key)
+		storeErr := verifyMagmaStoreError(t, err, "Get after reopen (DeleteNoCommit)")
+		if err == nil {
+			t.Fatalf("expected ErrResultNotFoundCode after reopen for key=%s, got value: %v", key, res)
+		}
+		if storeErr == nil || storeErr.Code() != ErrResultNotFoundCode {
+			t.Fatalf("expected ErrResultNotFoundCode after reopen for key=%s, got: %v", key, storeErr)
+		}
+
+		repo.Close()
+	}))
+}
+
+func TestMagmaRepository_SetCommitDeleteNoCommit(t *testing.T) {
+	dir := filepath.Join(os.TempDir(), "test_repo")
+	if os.Getenv(CHILD_PROC_TEST_ENV) != "1" {
+		os.RemoveAll(dir)
+		os.Remove(dir)
+		handleError(t, os.Mkdir(dir, 0777), "folder not created")
+	}
+	defer func() {
+		os.RemoveAll(dir)
+		os.Remove(dir)
+	}()
+
+	key := "delete_no_commit_key"
+	val := []byte("delete-no-commit-value")
+
+	t.Run("ValSet", runInChildProc(func(t *testing.T) {
+		defer func() {
+			e := recover()
+			log.Current.Infof("recovered panic - %v", e)
+		}()
+		repo := getOpenRepo(dir)
+		verifyMigrationMarkerExists(t, dir)
+
+		if err := repo.Set(MAIN, key, val); err != nil {
+			verifyStoreErrorForRepo(t, repo, err, "Set before DeleteNoCommit")
+			t.Fatalf("Set failed for key=%s: %v", key, err)
+		}
+
+		handleError(t, repo.Commit(), "failed to commit repo")
+
+		os.Exit(0)
+	}))
+
+	t.Run("ValDel", runInChildProc(func(t *testing.T) {
+		defer func() {
+			e := recover()
+			log.Current.Infof("recovered panic - %v", e)
+		}()
+		repo := getOpenRepo(dir)
+		verifyMigrationMarkerExists(t, dir)
+
+		if err := repo.Delete(MAIN, key); err != nil {
+			verifyStoreErrorForRepo(t, repo, err, "Delete without commit failed")
+			t.Fatalf("Delete failed for key=%s: %v", key, err)
+		}
+
+		os.Exit(0)
 	}))
 
 	t.Run("ValTest", runInChildProc(func(t *testing.T) {
