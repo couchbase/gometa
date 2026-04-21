@@ -1868,7 +1868,7 @@ func (m_repo *Magma_Repository) RefreshKeys() error {
 	// Find and free keys no longer needed (allocated via jemalloc)
 	m_repo.dekCacheMu.Lock()
 	for keyID, dek := range m_repo.dekCache {
-		if !newKeyIDs[keyID] {
+		if !newKeyIDs[keyID] && keyID != "" {
 			// Key no longer in use, free C memory (jemalloc)
 			C.je_free(unsafe.Pointer(dek.id))
 			C.je_free(unsafe.Pointer(dek.cipher))
@@ -1907,6 +1907,15 @@ func (m_repo *Magma_Repository) RefreshKeys() error {
 			m_repo.currentDEK = dek
 			m_repo.currentKeyID = activeKeyID
 			m_repo.dekCacheMu.Unlock()
+
+			if m_repo.keyStoreCallbacks != nil {
+				if err := m_repo.keyStoreCallbacks.SetInuseKeys(activeKeyID); err != nil {
+					log.Current.Warnf(
+						"MagmaRepository::RefreshKeys:: error setting in-use key %s: %v",
+						activeKeyID, err,
+					)
+				}
+			}
 
 			log.Current.Infof("MagmaRepository::RefreshKeys:: set current key to %s", activeKeyID)
 		}

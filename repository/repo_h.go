@@ -228,7 +228,7 @@ type IEaRExtension interface {
 	GetInuseKeys() ([]KeyID, error)
 	RefreshKeys() error
 	DropKeys([]KeyID) error
-	RegisterEncryptionKeyStoreCallback(IEncryptionKeyStoreCallbacks)
+	RegisterEncryptionKeyStoreCallback(IEncryptionKeyStoreCallbacks) // Don't use. Set as open param
 }
 
 // IEncryptionKeyStoreCallbacks defines a set of callbacks which any repository will call

@@ -17,6 +17,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -819,4 +820,61 @@ func (s *EmbeddedServer) GetEnsembleSize() uint64 {
 
 func (s *EmbeddedServer) GetFollowerId() string {
 	return s.msgAddr
+}
+
+// DropKeys - wrapper to the underlying repo drop key action
+func (s *EmbeddedServer) DropKeys(keyIDs []r.KeyID) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	if !s.isActiveNoLock() {
+		return common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
+	}
+
+	if err := s.repo.DropKeys(keyIDs); err != nil {
+		return fmt.Errorf("embedded server drop keys: %w", err)
+	}
+	return nil
+}
+
+// GetInuseKeys - wrapper to read in use keys from underlying repo
+func (s *EmbeddedServer) GetInuseKeys() ([]r.KeyID, error) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	if !s.isActiveNoLock() {
+		return nil, common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
+	}
+
+	keyIDs, err := s.repo.GetInuseKeys()
+	if err != nil {
+		return nil, fmt.Errorf("embedded server get in-use keys: %w", err)
+	}
+	return keyIDs, nil
+}
+
+// RefreshKeys - wrapper to refresh keys on the underlying store
+func (s *EmbeddedServer) RefreshKeys() error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	if !s.isActiveNoLock() {
+		return common.NewError(common.SERVER_ERROR, "Terminate Request due to server termination")
+	}
+
+	if err := s.repo.RefreshKeys(); err != nil {
+		return fmt.Errorf("embedded server refresh keys: %w", err)
+	}
+	return nil
+}
+
+func (s *EmbeddedServer) RegisterEncryptionKeyStoreCallback(cb r.IEncryptionKeyStoreCallbacks) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	if !s.isActiveNoLock() {
+		return
+	}
+
+	s.repo.RegisterEncryptionKeyStoreCallback(cb)
 }
