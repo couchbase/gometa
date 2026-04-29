@@ -699,12 +699,12 @@ func TestEaR_GetInuseKeys_CallbackNotification(t *testing.T) {
 	keyInfo := generateRandomEncryKeyInfo(1, 0)
 	mock := setupMockWithKeys(keyInfo)
 
-	var setInuseKeysIDs []KeyID
+	var setInuseKeysIDs = make(map[KeyID]struct{})
 	var setInuseMu sync.Mutex
 	mock.setInuseKeysFn = func(id KeyID) error {
 		setInuseMu.Lock()
 		defer setInuseMu.Unlock()
-		setInuseKeysIDs = append(setInuseKeysIDs, id)
+		setInuseKeysIDs[id] = struct{}{}
 		return nil
 	}
 	mRepo.RegisterEncryptionKeyStoreCallback(mock)
