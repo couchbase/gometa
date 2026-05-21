@@ -155,11 +155,11 @@ func createConfigKey(key string) string {
 func (r *ServerConfig) bootstrap() {
 	value, err := r.GetInt(common.CONFIG_MAGIC)
 	if err != nil || value != common.CONFIG_MAGIC_VALUE {
-		r.bootstrapKey(common.CONFIG_MAGIC, uint64(common.CONFIG_MAGIC_VALUE))
 		r.bootstrapKey(common.CONFIG_CURRENT_EPOCH, uint64(common.BOOTSTRAP_CURRENT_EPOCH))
 		r.bootstrapKey(common.CONFIG_ACCEPTED_EPOCH, uint64(common.BOOTSTRAP_ACCEPTED_EPOCH))
 		r.bootstrapKey(common.CONFIG_LAST_LOGGED_TXID, uint64(common.BOOTSTRAP_LAST_LOGGED_TXID))
 		r.bootstrapKey(common.CONFIG_LAST_COMMITTED_TXID, uint64(common.BOOTSTRAP_LAST_COMMITTED_TXID))
+		r.bootstrapKey(common.CONFIG_MAGIC, uint64(common.CONFIG_MAGIC_VALUE))
 		if err := r.repo.Commit(); err != nil {
 			panic(fmt.Sprintf("unable to initialize gometa due to storage error = %v", err))
 		}
