@@ -574,7 +574,7 @@ func OpenMagmaRepositoryAndUpgrade(params RepoFactoryParams) (IRepository, error
 		// WriteFile is not atomic. it can lead to a partial state on disk. for our use case, just
 		// a presence of the file eeans succesful migration hence it is fine
 
-		err = os.WriteFile(checkpointFilePath, []byte(now), 0x0777)
+		err = os.WriteFile(checkpointFilePath, []byte(now), 0777)
 		if err != nil {
 			log.Current.Errorf("OpenMagmaRepositoryAndUpgrade:: couldn't write migration marker to disk. err - %v",
 				err)
