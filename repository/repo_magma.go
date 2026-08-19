@@ -1398,12 +1398,17 @@ func (m_repo *Magma_Repository) CreateSnapshot(kind RepoKind, txnid c.Txnid) err
 
 	storeID := repoKindToMagmaStoreID(kind)
 
-	C.MKV_SyncKVStore(m_repo.mInst, storeID)
+	// Do not SyncKVStore here. This is called once per committed write, so forcing
+	// a memtable flush per commit keeps the write cache from ever accumulating, the
+	// same reason Set skips its sync. The snapshot is derived state, not the record
+	// of truth: it is retired and recreated on the next commit, and recreated at
+	// bootstrap by NewTransientCommitLog, so a memory snapshot is sufficient here.
+	// C.MKV_SyncKVStore(m_repo.mInst, storeID)
 
 	snap := C.MKV_GetSnapshot(
 		m_repo.mInst, /* *C.MagmaKVStore */
 		storeID,      /* C.uint16_t */
-		1,            /* C.int_t - use a disk snapshot on 1 */
+		0,            /* C.int_t - 0 for a memory snapshot, 1 for disk */
 	)
 	if snap == nil {
 		return translateMagmaErrToStoreErr(MagmaOpStatus{
