@@ -319,6 +319,190 @@ func TestMagmaRepository_SetNoCommitPersistsAfterReopen(t *testing.T) {
 	}))
 }
 
+// TestMagmaRepository_RecoveryAfterPartialMultiStoreWrite covers a logical
+// metadata operation that spans stores when only some of its writes land. Writes
+// to MAIN, COMMIT_LOG, SERVER_CONFIG and LOCAL are not atomic with each other, so
+// an exit part way through leaves a mix of updated and untouched stores. MB-72006
+// was this bug: a partial server config init left some keys written and others
+// missing, and every later bootstrap failed on it.
+//
+// Recovery must tolerate the partial state. Each store must come back with
+// exactly what it received, the store that got nothing must simply be empty
+// rather than broken, the server config must still bootstrap, and a snapshot must
+// still be creatable and readable.
+func TestMagmaRepository_RecoveryAfterPartialMultiStoreWrite(t *testing.T) {
+	dir := filepath.Join(os.TempDir(), "test_repo_partial_multistore")
+	if os.Getenv(CHILD_PROC_TEST_ENV) != "1" {
+		os.RemoveAll(dir)
+		os.Remove(dir)
+		handleError(t, os.Mkdir(dir, 0777), "folder not created")
+	}
+	defer func() {
+		os.RemoveAll(dir)
+		os.Remove(dir)
+	}()
+
+	// Three stores receive their write; SERVER_CONFIG is the one left behind.
+	landed := []struct {
+		kind RepoKind
+		key  string
+		val  string
+	}{
+		{MAIN, "/multi/main", "main-value"},
+		{COMMIT_LOG, "/multi/commitlog", "commitlog-value"},
+		{LOCAL, "/multi/local", "local-value"},
+	}
+	const missingKey = "/multi/serverconfig"
+
+	t.Run("WritePartiallyThenDie", runInChildProc(func(t *testing.T) {
+		repo := getOpenRepo(dir)
+		verifyMigrationMarkerExists(t, dir)
+
+		for _, w := range landed {
+			if err := repo.Set(w.kind, w.key, []byte(w.val)); err != nil {
+				verifyStoreErrorForRepo(t, repo, err, "Set")
+				t.Fatalf("Set(kind %d, %s) failed: %v", w.kind, w.key, err)
+			}
+		}
+		if err := repo.CreateSnapshot(MAIN, 7); err != nil {
+			t.Fatalf("CreateSnapshot failed: %v", err)
+		}
+
+		// Die before the SERVER_CONFIG write that would have completed the
+		// operation, with no Close.
+		os.Exit(0)
+	}))
+
+	t.Run("RecoverFromPartialWrite", runInChildProc(func(t *testing.T) {
+		repo := getOpenRepo(dir)
+		verifyMigrationMarkerExists(t, dir)
+		defer repo.Close()
+
+		// Every store that received a write must come back with it.
+		for _, w := range landed {
+			got, err := repo.Get(w.kind, w.key)
+			if err != nil {
+				verifyStoreErrorForRepo(t, repo, err, "Get after partial write")
+				t.Fatalf("Get(kind %d, %s) failed after recovery: %v", w.kind, w.key, err)
+			}
+			if !reflect.DeepEqual(got, []byte(w.val)) {
+				t.Errorf("kind %d key %s wrong after recovery: expected %q, got %q",
+					w.kind, w.key, w.val, string(got))
+			}
+		}
+
+		// The store that never got its write must be merely empty, not broken.
+		if _, err := repo.Get(SERVER_CONFIG, missingKey); err == nil {
+			t.Errorf("SERVER_CONFIG returned a key that was never written")
+		}
+		if err := repo.Set(SERVER_CONFIG, missingKey, []byte("written-after-recovery")); err != nil {
+			t.Fatalf("SERVER_CONFIG is not writable after a partial write: %v", err)
+		}
+
+		// Server config bootstrap must succeed over the partial state. This is the
+		// MB-72006 path.
+		config := NewServerConfig(repo)
+		if _, err := config.GetAcceptedEpoch(); err != nil {
+			t.Errorf("GetAcceptedEpoch failed after recovery from a partial write: %v", err)
+		}
+		if _, err := config.GetCurrentEpoch(); err != nil {
+			t.Errorf("GetCurrentEpoch failed after recovery from a partial write: %v", err)
+		}
+		if _, err := config.GetLastCommittedTxnId(); err != nil {
+			t.Errorf("GetLastCommittedTxnId failed after recovery from a partial write: %v", err)
+		}
+
+		// And a snapshot over the recovered state must be usable.
+		if err := repo.CreateSnapshot(MAIN, 7); err != nil {
+			t.Fatalf("CreateSnapshot after recovery failed: %v", err)
+		}
+		txnid, contents := snapshotContents(t, repo, MAIN)
+		if txnid != 7 {
+			t.Errorf("expected snapshot txnid 7, got %d", txnid)
+		}
+		if contents["/multi/main"] != "main-value" {
+			t.Errorf("post-recovery snapshot missing the MAIN write, got %q",
+				contents["/multi/main"])
+		}
+	}))
+}
+
+// TestMagmaRepository_SnapshotAfterAbruptExit is the durability case behind
+// CreateSnapshot no longer forcing a flush. Data is written with Set, which
+// performs no explicit flush, and the process exits abruptly with no Close. After
+// reopen the data must be recovered AND a snapshot taken post-recovery must
+// observe it. That second half is the chain gometa depends on at bootstrap, where
+// NewTransientCommitLog creates a snapshot at the last committed txid.
+func TestMagmaRepository_SnapshotAfterAbruptExit(t *testing.T) {
+	dir := filepath.Join(os.TempDir(), "test_repo_snapshot_recovery")
+	if os.Getenv(CHILD_PROC_TEST_ENV) != "1" {
+		os.RemoveAll(dir)
+		os.Remove(dir)
+		handleError(t, os.Mkdir(dir, 0777), "folder not created")
+	}
+	defer func() {
+		os.RemoveAll(dir)
+		os.Remove(dir)
+	}()
+
+	want := map[string]string{
+		"/recover/defn/1": "defn-one",
+		"/recover/defn/2": "defn-two",
+		"/recover/topo/a": "topo-a",
+	}
+
+	t.Run("WriteThenDie", runInChildProc(func(t *testing.T) {
+		repo := getOpenRepo(dir)
+		verifyMigrationMarkerExists(t, dir)
+
+		for k, v := range want {
+			if err := repo.Set(MAIN, k, []byte(v)); err != nil {
+				verifyStoreErrorForRepo(t, repo, err, "Set")
+				t.Fatalf("Set(%s) failed: %v", k, err)
+			}
+		}
+
+		// Snapshot as a committed write does, then die without Close().
+		if err := repo.CreateSnapshot(MAIN, 42); err != nil {
+			t.Fatalf("CreateSnapshot failed: %v", err)
+		}
+
+		os.Exit(0)
+	}))
+
+	t.Run("RecoverAndSnapshot", runInChildProc(func(t *testing.T) {
+		repo := getOpenRepo(dir)
+		verifyMigrationMarkerExists(t, dir)
+		defer repo.Close()
+
+		for k, v := range want {
+			got, err := repo.Get(MAIN, k)
+			if err != nil {
+				verifyStoreErrorForRepo(t, repo, err, "Get after abrupt exit")
+				t.Fatalf("Get(%s) failed after recovery: %v", k, err)
+			}
+			if !reflect.DeepEqual(got, []byte(v)) {
+				t.Fatalf("value mismatch after recovery for %s: expected %q, got %q",
+					k, v, string(got))
+			}
+		}
+
+		if err := repo.CreateSnapshot(MAIN, 42); err != nil {
+			t.Fatalf("CreateSnapshot after recovery failed: %v", err)
+		}
+
+		txnid, got := snapshotContents(t, repo, MAIN)
+		if txnid != 42 {
+			t.Errorf("expected snapshot txnid 42, got %d", txnid)
+		}
+		for k, v := range want {
+			if got[k] != v {
+				t.Errorf("post-recovery snapshot missing %s: expected %q, got %q", k, v, got[k])
+			}
+		}
+	}))
+}
+
 func TestMagmaRepository_DeleteNoCommitAfterReopen(t *testing.T) {
 	dir := filepath.Join(os.TempDir(), "test_repo")
 	if os.Getenv(CHILD_PROC_TEST_ENV) != "1" {
